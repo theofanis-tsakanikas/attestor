@@ -45,3 +45,8 @@ infra/agent/tools/*
 
 # macOS
 .DS_Store
+
+# Personal notes — a reading aid, never published and never part of the repository's
+# public surface. The folder is ignored rather than the file, so anything else that goes in
+# later is covered by the same decision instead of needing a new one.
+notes/
