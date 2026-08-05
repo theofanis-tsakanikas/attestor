@@ -122,7 +122,9 @@ class Grounding(_Base):
     #: `evidence` is the tenant's own (untrusted) documents.
     corpus: Literal["regulatory", "evidence", "both"] = "both"
     #: Contextual-grounding threshold the guardrail is configured with, mirrored here so a
-    #: contract and the deployed guardrail can be cross-checked in CI.
+    #: contract and the deployed guardrail can be cross-checked. That cross-check is
+    #: `scripts/check_guardrail_alignment.py`, and it runs in CI — for a while this comment
+    #: claimed a check that did not exist, which is a worse state than having no comment.
     threshold: float = Field(default=0.75, ge=0.0, le=1.0)
 
 

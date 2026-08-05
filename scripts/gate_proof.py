@@ -166,6 +166,52 @@ def _publish_despite_a_blocker(root: Path) -> bool:
     )
 
 
+def _make_a_policy_unparseable(root: Path) -> bool:
+    """Leave the last forbid in the file unterminated.
+
+    Deleting a policy is the obvious attack and `_drop_the_cross_tenant_forbid` covers it.
+    This is the quiet one: the forbid is still *in the file*, so a reviewer reading the
+    directory sees the retrieval filter exactly where they expect it — and the parser used to
+    skip it, load the rest, and report a healthy policy set one control short.
+
+    The *last* policy on purpose. A missing semicolon in the middle of a file makes the next
+    policy's text run into the broken one, which fails in the scope parser; the last one has
+    nothing after it to run into, so what catches it is the residue check itself.
+    """
+    return _replace(
+        root / "policy/cedar/tenant_isolation.cedar",
+        "    context.filter_tenant == principal.tenant\n};",
+        "    context.filter_tenant == principal.tenant\n}",
+    )
+
+
+def _drop_the_issuer_binding(root: Path) -> bool:
+    """Stop checking that a token's issuer is the tenant's own.
+
+    Plausible as a fix for "the integration tests do not have real tokens" — and it puts
+    tenant selection back in the caller's hands.
+    """
+    return _replace(
+        root / "src/attestor/policy/tenants.py",
+        "        cls._check_provider(claims, tenant)",
+        "        pass  # _check_provider(claims, tenant)",
+    )
+
+
+def _replay_a_stale_narrative(root: Path) -> bool:
+    """Accept a recorded draft whose prompt has since changed.
+
+    This is the narrative half of `StaleRecording`: without it, editing a prompt leaves the
+    old prose in the report and every gate stays green, because the prose was valid — for a
+    prompt nobody is using any more.
+    """
+    return _replace(
+        root / "src/attestor/agent/narrative.py",
+        'if entry.get("prompt_digest") != digest:',
+        "if False:",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -246,6 +292,30 @@ MUTATIONS: tuple[Mutation, ...] = (
         "test_a_blocked_report_produces_no_artefact",
         _publish_despite_a_blocker,
         "The night-before-the-deadline change.",
+    ),
+    Mutation(
+        "leave a forbid unterminated so the parser cannot see it",
+        "Cedar parser",
+        ["attestor", "policy", "verify"],
+        "outside any policy",
+        _make_a_policy_unparseable,
+        "A one-character typo. The policy stays visible in the file and stops being enforced.",
+    ),
+    Mutation(
+        "stop binding a token's issuer to its tenant",
+        "issuer binding",
+        ["attestor", "eval", "isolation"],
+        "isolation",
+        _drop_the_issuer_binding,
+        "Removes the only thing making a caller-supplied tenant id safe.",
+    ),
+    Mutation(
+        "replay a narrative captured against an older prompt",
+        "narrative staleness",
+        ["pytest", "-q", "tests/agent/test_narrative.py", "-x"],
+        "stale",
+        _replay_a_stale_narrative,
+        "Editing a prompt and shipping the previous prompt's prose, silently.",
     ),
 )
 

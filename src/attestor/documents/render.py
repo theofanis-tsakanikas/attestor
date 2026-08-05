@@ -464,6 +464,13 @@ def _render_table(
 
         case "annex":
             for row in results.ledger.as_annex():
+                # `assurance.auditor_annex` decides whether a datapoint's full lineage is put
+                # in front of the auditor. Every contract declared it and nothing read it, so
+                # a datapoint marked `auditor_annex: false` appeared in the annex anyway —
+                # the field was documentation of an intention, not a control over output.
+                contract = contracts.get(row["datapoint"])
+                if contract is not None and not contract.assurance.auditor_annex:
+                    continue
                 rendered.rows.append(
                     [
                         cell(RunKind.META, row["datapoint"], datapoint_id=row["datapoint"]),

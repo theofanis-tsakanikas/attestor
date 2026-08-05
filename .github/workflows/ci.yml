@@ -10,6 +10,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Deploy re-runs this whole file against the exact ref being deployed. Without
+  # `workflow_call` the `uses: ./.github/workflows/ci.yml` in deploy.yml is not a reusable
+  # workflow at all and the deploy fails before its first step — which is how a repository
+  # ends up with a deploy path nobody has ever successfully started.
+  workflow_call:
 
 permissions:
   contents: read
@@ -69,6 +74,16 @@ jobs:
 
       - name: evidence manifests name only declared classes
         run: python pipelines/ingest/evidence.py
+
+      - name: the regulatory corpus covers every datapoint
+        # A datapoint with no corpus entry is a datapoint the model can never find guidance
+        # for, and the failure is invisible: retrieval returns something, just not this.
+        run: python pipelines/ingest/regulatory.py --check
+
+      - name: the MCP tool schema matches the handlers
+        # Terraform configures the gateway target from a committed file. A tool added to
+        # SPECS without regenerating it is a handler the Gateway never exposes.
+        run: attestor gateway spec --check
 
       - name: "claim 1 — indirect prompt injection"
         run: attestor eval injection
@@ -145,3 +160,8 @@ jobs:
         run: checkov -d infra --compact --quiet
       - name: the container build context is complete
         run: python scripts/check_docker_context.py
+      - name: the gateway target compromise is still justified
+        # `infra/agent` attaches its tools with a provisioner because no provider has a
+        # gateway-target resource. This turns red the day one ships, so the workaround is
+        # removed by a failing build rather than by somebody remembering.
+        run: python scripts/check_gateway_target.py

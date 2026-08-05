@@ -108,6 +108,14 @@ report: ## Render a tenant's full report set (DOCX + XLSX + PPTX) into out/
 ingest-plan: ## Validate the evidence manifests and report what would be uploaded
 	$(PY) pipelines/ingest/evidence.py
 
+.PHONY: gateway-spec
+gateway-spec: ## Regenerate the MCP tool schema terraform configures the gateway target with
+	$(PY) -m attestor.cli.main gateway spec
+
+.PHONY: regulatory-corpus
+regulatory-corpus: ## Regenerate the regulatory corpus from the contract set
+	$(PY) pipelines/ingest/regulatory.py
+
 .PHONY: govern-docs
 govern-docs: ## Regenerate the governance docs from code (CI runs this with --check)
 	$(PY) -m attestor.cli.main govern generate

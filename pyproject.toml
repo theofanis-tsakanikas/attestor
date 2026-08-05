@@ -12,10 +12,14 @@ license = { file = "LICENSE" }
 authors = [{ name = "Theofanis Tsakanikas" }]
 keywords = ["responsible-ai", "rag", "bedrock", "agentcore", "csrd", "esrs", "eu-ai-act"]
 
+# `jsonschema` used to be here and was imported by nothing. It shipped in the Lambda payload
+# and in the container for no reason — and it contradicted the position this project actually
+# takes, which is that `contracts/model.py` *is* the schema and a second description of one
+# contract diverges on the first busy afternoon. `tests/test_dependencies.py` fails if a
+# declared dependency stops being imported.
 dependencies = [
     "pydantic>=2.9",
     "pyyaml>=6.0",
-    "jsonschema>=4.23",
     "python-docx>=1.1",
     "python-pptx>=1.0",
     "openpyxl>=3.1",
@@ -28,15 +32,11 @@ dependencies = [
 # run without them. Installing this extra is only needed to talk to a live estate.
 cloud = [
     "boto3>=1.35",
-    "opentelemetry-sdk>=1.27",
-    "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 dev = [
     "pytest>=8.3",
     "pytest-cov>=5.0",
     "ruff>=0.7",
-    "moto[s3,sts]>=5.0",
-    "hypothesis>=6.112",
     "checkov>=3.2",
 ]
 
@@ -87,6 +87,7 @@ ignore = [
 # hardcoded absolute path would be wrong on every machine but the one that wrote it, and the
 # commands are fixed literals with no user input anywhere near them.
 "scripts/preflight.py" = ["S607"]
+"scripts/check_gateway_target.py" = ["S607"]
 "scripts/tf_validate.py" = ["S607"]
 "scripts/check_docker_context.py" = ["S607"]
 "tests/retrieval/test_chunking_and_bakeoff.py" = ["RUF001"]

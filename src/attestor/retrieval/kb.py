@@ -20,7 +20,7 @@ belongs to Cedar and happens before this module is reached.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from attestor.policy.tenants import Session
 from attestor.retrieval.chunking import ChunkingConfig, Strategy
@@ -169,26 +169,9 @@ def retrieve(
     )
 
 
-class RecordedRetrieval:
-    """Replays retrieval results captured from a live index. The offline default."""
-
-    def __init__(self, results: dict[str, list[dict[str, Any]]]) -> None:
-        self._results = results
-
-    def search(
-        self, *, query: str, index: str, metadata_filter: dict[str, str], top_k: int
-    ) -> list[Passage]:
-        key = (
-            f"{index}|{metadata_filter.get('tenant', metadata_filter.get('standard', ''))}|{query}"
-        )
-        entries = self._results.get(key, [])
-        return [
-            Passage(
-                id=entry["id"],
-                text=entry["text"],
-                score=float(entry["score"]),
-                document_id=entry["document_id"],
-                metadata=dict(entry.get("metadata", {})),
-            )
-            for entry in entries[:top_k]
-        ]
+# A `RecordedRetrieval` class used to sit here, documented as "the offline default". It was
+# a replay cache keyed on exact query text, it had no recordings behind it, and nothing in the
+# repository constructed one — so the docstring was the only part of it that did anything, and
+# what it did was mislead. It is deleted rather than left in place: an offline retrieval
+# replay is worth building the day there is something captured to replay, and until then
+# `search_evidence` returning "no retrieval backend configured" is the honest answer.

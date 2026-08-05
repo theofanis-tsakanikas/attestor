@@ -76,9 +76,27 @@ jobs:
 
       - name: compute expiry
         id: expiry
-        run: echo "date=$(date -u -d "+${{ inputs.days }} days" +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+        # `days` reaches the shell as an environment variable, never as `${{ }}` inside the
+        # script. A dispatch input interpolated directly into a `run:` block is executed by
+        # the shell before bash ever sees it as a value — the standard GitHub Actions script
+        # injection, and not a shape this repository should contain.
+        env:
+          DAYS: ${{ inputs.days }}
+        run: |
+          set -euo pipefail
+          case "$DAYS" in
+            ''|*[!0-9]*) echo "days must be a positive integer, got '$DAYS'" >&2; exit 1 ;;
+          esac
+          echo "date=$(date -u -d "+$DAYS days" +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - run: pip install -e ".[dev,cloud]"
+
+      - name: generate the MCP tool schema
+        # Terraform reads this file to configure the gateway target. Regenerating it here
+        # rather than trusting the commit means a tool added to `SPECS` cannot reach the
+        # estate as a handler the Gateway never exposes. CI already fails on drift; this is
+        # the belt to that pair of braces.
+        run: attestor gateway spec --check
 
       - name: package the tool lambda
         # Vendors the library and the declarative material beside the handler so terraform's
@@ -153,6 +171,17 @@ jobs:
             aws s3 sync "evidence/$tenant" "s3://$EVIDENCE/$tenant/"
           done
 
+      - name: ingest the regulatory corpus
+        if: contains(fromJSON('["knowledge","agent","full"]'), inputs.stage)
+        # Shared across tenants, under a prefix no tenant id can collide with. Without this
+        # the regulatory knowledge base has nothing in it and `search_regulation` answers
+        # every query with silence — which is what it did.
+        run: |
+          set -euo pipefail
+          EVIDENCE=$(terraform -chdir=infra/foundation output -raw evidence_bucket)
+          python pipelines/ingest/regulatory.py --check
+          aws s3 sync corpus/regulatory "s3://$EVIDENCE/_shared/regulatory/" --delete
+
       - name: sync the knowledge bases
         if: contains(fromJSON('["knowledge","agent","full"]'), inputs.stage)
         run: ./.github/scripts/kb-sync.sh
@@ -186,11 +215,21 @@ jobs:
         # refusal would teach everyone to ignore it.
         env:
           # Without this the run replays `recordings/` and prints PASS without touching
-          # Athena — a deploy that appears to succeed while proving nothing.
+          # Athena — a deploy that appears to succeed while proving nothing. The same switch
+          # now also chooses the narrative provider, so this step drafts against the real
+          # model instead of replaying a captured draft.
           ATTESTOR_BACKEND: athena
         run: |
           set -uo pipefail
           export ATTESTOR_ATHENA_OUTPUT="s3://$(terraform -chdir=infra/foundation output -raw lake_bucket)/athena-results/"
+          # The narrative provider needs the knowledge estate, and it asserts each of these
+          # rather than defaulting: falling back to a recorded draft against a live estate
+          # would publish captured prose as if a model had just written it.
+          export ATTESTOR_EVIDENCE_KB="$(terraform -chdir=infra/knowledge output -raw evidence_kb_id)"
+          export ATTESTOR_REGULATORY_KB="$(terraform -chdir=infra/knowledge output -raw regulatory_kb_id)"
+          export ATTESTOR_GUARDRAIL_ID="$(terraform -chdir=infra/knowledge output -raw guardrail_id)"
+          export ATTESTOR_GUARDRAIL_VER="$(terraform -chdir=infra/knowledge output -raw guardrail_version)"
+          export ATTESTOR_REASONING_MODEL="$(terraform -chdir=infra/agent output -raw reasoning_model)"
           for tenant in helios aegis lumen; do
             attestor run --tenant "$tenant" --run-id "${{ github.run_id }}" || true
           done

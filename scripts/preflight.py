@@ -140,6 +140,20 @@ CHECKS: list[Check] = [
     ),
     Check(
         "consistency",
+        "regulatory corpus",
+        [PYTHON, "pipelines/ingest/regulatory.py", "--check"],
+        "A datapoint with no corpus entry is one the model can never find guidance for, and "
+        "the failure is invisible: retrieval returns something, just not this.",
+    ),
+    Check(
+        "consistency",
+        "guardrail alignment",
+        [PYTHON, "scripts/check_guardrail_alignment.py"],
+        "A contract stating a grounding threshold the deployed guardrail does not enforce is "
+        "a disclosure about a control that does not exist.",
+    ),
+    Check(
+        "consistency",
         "evidence manifests",
         [PYTHON, "pipelines/ingest/evidence.py"],
         "Every document is filed under a class some contract actually requires.",
@@ -194,6 +208,23 @@ CHECKS: list[Check] = [
         "terraform's archive_file has something to zip. Without it the apply fails on a "
         "missing file, after the expensive layers are already up.",
         slow=True,
+    ),
+    Check(
+        "deployability",
+        "MCP tool schema",
+        [PYTHON, "-m", "attestor.cli.main", "gateway", "spec", "--check"],
+        "Terraform configures the gateway target from this file. A tool added to SPECS "
+        "without regenerating it is a handler the Gateway never exposes.",
+    ),
+    Check(
+        "deployability",
+        "gateway target",
+        [sys.executable, "scripts/check_gateway_target.py"],
+        "The tools are attached by a provisioner because no provider has the resource. This "
+        "turns red the day one ships, so the workaround is removed by a build and not by "
+        "somebody remembering.",
+        slow=True,
+        needs="terraform",
     ),
     Check(
         "deployability",

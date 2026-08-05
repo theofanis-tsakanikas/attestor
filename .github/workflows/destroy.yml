@@ -24,8 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: check the typed confirmation
+        # Through the environment, not through `${{ }}` inside the script. Interpolating a
+        # free-text dispatch input into a `run:` block hands the shell whatever was typed —
+        # and this is the workflow that deletes the estate, so it is the last place to be
+        # relaxed about it.
+        env:
+          CONFIRM: ${{ inputs.confirm }}
         run: |
-          if [ "${{ inputs.confirm }}" != "DESTROY" ]; then
+          set -euo pipefail
+          if [ "$CONFIRM" != "DESTROY" ]; then
             echo "confirmation not given" >&2
             exit 1
           fi
