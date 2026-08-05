@@ -1,0 +1,24 @@
+# Lumen Advisory — the EU AI Act tenant.
+#
+# Deliberately on an external OIDC provider rather than Cognito. If all three tenants
+# authenticated the same way, "identity is per tenant" would be a statement about
+# configuration rather than about the design, and the first customer arriving with Entra ID
+# would be the one to discover the difference.
+#
+# Its claim shape differs too — `groups` rather than `cognito:groups` — which is exactly the
+# kind of provider disagreement the per-tenant role map exists to absorb.
+id: lumen
+name: Lumen Advisory Partners
+standard: EU_AI_ACT
+periods: ["2026"]
+reporting_contact: conformity@lumen.example
+
+identity:
+  kind: oidc
+  issuer: https://lumen.eu.auth0.com/
+  audience: attestor-lumen
+  groups_claim: groups
+  role_map:
+    conformity-analysts: role:reporter
+    conformity-leads: role:preparer
+    external-assessor: role:auditor

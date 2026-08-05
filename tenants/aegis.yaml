@@ -1,0 +1,21 @@
+# Aegis Foods — the CSRD tenant that cannot issue.
+#
+# Its corpus is complete and its paperwork is in order; the defects are in the data. Two
+# tenants in one vertical is what makes the isolation suite mean something: a leak between
+# tenants running different standards could be explained away by a schema difference, and a
+# leak between these two cannot.
+id: aegis
+name: Aegis Foods N.V.
+standard: ESRS
+periods: ["2026"]
+reporting_contact: esg@aegisfoods.example
+
+identity:
+  kind: cognito
+  issuer: https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_EXAMPLE
+  audience: attestor-aegis
+  groups_claim: "cognito:groups"
+  role_map:
+    aegis-esg: role:reporter
+    aegis-esg-leads: role:preparer
+    aegis-audit: role:auditor

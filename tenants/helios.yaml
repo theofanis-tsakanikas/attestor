@@ -1,0 +1,16 @@
+# Helios Logistics — the CSRD tenant that issues cleanly.
+id: helios
+name: Helios Logistics S.A.
+standard: ESRS
+periods: ["2026"]
+reporting_contact: sustainability-reporting@helios.example
+
+identity:
+  kind: cognito
+  issuer: https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_EXAMPLE
+  audience: attestor-helios
+  groups_claim: "cognito:groups"
+  role_map:
+    helios-reporting: role:reporter
+    helios-preparers: role:preparer
+    helios-assurance: role:auditor
