@@ -126,6 +126,22 @@ class UnknownRole(ValueError):
     """A token carried a group that maps to nothing. The session is not created."""
 
 
+class WrongIssuer(ValueError):
+    """A token was minted by a provider that does not serve the tenant it was presented for.
+
+    This is the control that makes tenant selection safe. The tenant a request names is
+    caller-supplied — it has to be, because the gateway cannot know which undertaking a
+    principal means. What is *not* caller-supplied is which issuer signed the token, and
+    which audience it was minted for; both are inside the verified claims and both are
+    declared per tenant in the registry.
+
+    Before this existed, `issuer` and `audience` were fields nobody read, and helios/aegis
+    isolation rested entirely on their Cognito groups happening to carry different name
+    prefixes. That is a naming convention, not a control: the first tenant to call its group
+    `preparers` would have inherited another tenant's roles.
+    """
+
+
 class Session(BaseModel):
     """One authenticated principal, scoped to one tenant, for the life of one request."""
 
@@ -158,15 +174,18 @@ class Session(BaseModel):
     ) -> Session:
         """Build a session from a verified token's claims.
 
-        The token is assumed already verified — signature, issuer, audience and expiry are
-        the gateway's job. What happens here is the mapping from *this provider's* group
-        names to our roles, which is per tenant precisely because providers disagree.
+        The gateway verifies the token: signature, expiry, and that the issuer is one this
+        deployment trusts at all. What it cannot check is the binding this method enforces —
+        that the issuer and audience are *this tenant's*. The gateway sees a valid token; only
+        the registry knows which undertaking that token speaks for.
 
-        A group the tenant's map does not know is dropped rather than passed through. Passing
-        it through would put an unrecognised string into a policy evaluation, where it would
-        match no permit and produce a deny that looks like a policy decision instead of a
-        configuration error.
+        After that, the mapping from *this provider's* group names to our roles, which is per
+        tenant precisely because providers disagree. A group the tenant's map does not know is
+        dropped rather than passed through: passing it through would put an unrecognised
+        string into a policy evaluation, where it would match no permit and produce a deny
+        that looks like a policy decision instead of a configuration error.
         """
+        cls._check_provider(claims, tenant)
         raw = claims.get(tenant.identity.groups_claim, [])
         groups = raw if isinstance(raw, list) else [raw]
         roles = {
@@ -186,6 +205,32 @@ class Session(BaseModel):
             period=period,
             session_id=session_id,
         )
+
+    @staticmethod
+    def _check_provider(claims: dict[str, object], tenant: Tenant) -> None:
+        """`iss` and `aud` must be the ones this tenant declares.
+
+        Both are required. A token that carries neither is not a token this system has any
+        business trusting, and treating an absent claim as "nothing to check" is how a
+        control becomes conditional on the attacker's cooperation.
+        """
+        issuer = str(claims.get("iss", "")).rstrip("/")
+        if issuer != tenant.identity.issuer.rstrip("/"):
+            raise WrongIssuer(
+                f"token issued by {issuer or '<absent>'!r}, but tenant {tenant.id} "
+                f"authenticates against {tenant.identity.issuer!r}"
+            )
+
+        # `aud` is a string or a list, depending on the provider — and Cognito access tokens
+        # carry the app client in `client_id` instead. Both forms are accepted; neither is
+        # allowed to be missing.
+        raw = claims.get("aud", claims.get("client_id", []))
+        audiences = {str(a) for a in (raw if isinstance(raw, list) else [raw]) if a != ""}
+        if tenant.identity.audience not in audiences:
+            raise WrongIssuer(
+                f"token audience {sorted(audiences) or '<absent>'} does not include "
+                f"{tenant.identity.audience!r}, which tenant {tenant.id} requires"
+            )
 
     # ── Deriving everything else from the session ────────────────────────────
 

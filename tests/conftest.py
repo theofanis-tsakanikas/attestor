@@ -6,8 +6,25 @@ import pytest
 
 from attestor.contracts import loader
 from attestor.contracts.loader import ContractSet
+from attestor.policy.tenants import TenantRegistry
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def claims_for(tenant_id: str, group: str, *, subject: str = "user-1") -> dict:
+    """A well-formed token for a tenant, built from that tenant's own registry entry.
+
+    Tests construct claims through this rather than by hand so that adding a claim the
+    session verifies — `iss` and `aud` are the current pair — updates every test at once
+    instead of leaving half of them asserting against a token shape nothing accepts.
+    """
+    tenant = TenantRegistry.load(REPO_ROOT)[tenant_id]
+    return {
+        "sub": subject,
+        "iss": tenant.identity.issuer,
+        "aud": tenant.identity.audience,
+        tenant.identity.groups_claim: [group],
+    }
 
 
 @pytest.fixture(scope="session")

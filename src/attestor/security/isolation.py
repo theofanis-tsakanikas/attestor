@@ -19,7 +19,7 @@ The probes and where each would leak if the control were absent:
  7   pass a tenant as a query parameter          parameters built from the session
  8   read a cache entry across tenants           tenant is inside the cache key
  9   reuse another tenant's memory namespace     namespace derived from tenant id
-10   claim a role from another tenant's IdP       per-tenant role map
+10   replay a valid token from another IdP        `iss`/`aud` bound to the registry
 11   rely on an override signed for another       override matches on tenant exactly
 12   ask, via injected text, for other clients    filter comes from the session
 ===  =========================================  ==================================
@@ -43,7 +43,7 @@ from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import ResolutionContext, Resolver
 from attestor.policy import cedar
 from attestor.policy.cedar import PolicySet
-from attestor.policy.tenants import Session, TenantRegistry, UnknownRole
+from attestor.policy.tenants import Session, TenantRegistry, UnknownRole, WrongIssuer
 from attestor.security import injection
 
 VICTIM = "helios"
@@ -267,20 +267,35 @@ def _probe_9_memory_namespace(harness: Harness) -> ProbeResult:
 
 
 def _probe_10_foreign_role(harness: Harness) -> ProbeResult:
-    """A token minted by one tenant's IdP, replayed against another tenant's role map."""
+    """A genuine token from one tenant's IdP, replayed against another tenant.
+
+    The token is *valid*: correctly signed, unexpired, and carrying a group its own tenant
+    recognises. The only thing wrong with it is which undertaking it speaks for — which is
+    exactly the attack, because the tenant a request names is caller-supplied.
+
+    Note what the probe does *not* rely on. The victim's group name is rewritten to one the
+    attacker's own map recognises, so the naming convention cannot be what saves us: if the
+    issuer binding were absent, this token would be granted `role:preparer` on aegis.
+    """
+    victim = harness.registry[VICTIM]
     attacker_tenant = harness.registry[ATTACKER]
-    claims = {"sub": "u1", "cognito:groups": ["helios-preparers"]}
+    claims = {
+        "sub": "u1",
+        "iss": victim.identity.issuer,
+        "aud": victim.identity.audience,
+        victim.identity.groups_claim: ["aegis-esg-leads"],
+    }
     try:
         session = Session.from_claims(
             claims, tenant=attacker_tenant, period="2026", session_id="probe"
         )
-    except UnknownRole as exc:
-        return ProbeResult(10, "role claimed from another tenant's IdP", False, str(exc)[:90])
+    except (UnknownRole, WrongIssuer) as exc:
+        return ProbeResult(10, "token from another tenant's IdP", False, str(exc)[:90])
     return ProbeResult(
         10,
-        "role claimed from another tenant's IdP",
+        "token from another tenant's IdP",
         True,
-        f"granted {sorted(session.roles)}",
+        f"granted {sorted(session.roles)} on {session.tenant}",
     )
 
 

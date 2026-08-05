@@ -245,11 +245,26 @@ _COMMENT = re.compile(r"//[^\n]*")
 
 
 def parse(text: str, *, source: str = "<memory>") -> tuple[Policy, ...]:
+    """Every policy in the file, or an error. There is no third outcome.
+
+    The "or an error" is the whole point and it was, for a while, not true. `_POLICY` matched
+    the policies it could and the rest of the file was simply not there — so a missing
+    semicolon, a typo in `forbid`, or a condition using an operator outside the subset made a
+    policy *vanish*, and the only symptom was one fewer entry in a list nobody counted.
+
+    A vanished `permit` is a confusing afternoon. A vanished `forbid` is an authorization
+    layer that has quietly stopped separating tenants while every probe still reports
+    `closed`, because the probes evaluate the policies that loaded.
+
+    So the residue is checked: everything outside a matched policy must be whitespace.
+    """
     stripped = _COMMENT.sub("", text)
     policies: list[Policy] = []
-    consumed = 0
+    residue: list[str] = []
+    cursor = 0
     for index, match in enumerate(_POLICY.finditer(stripped)):
-        consumed += len(match.group(0))
+        residue.append(stripped[cursor : match.start()])
+        cursor = match.end()
         scopes = tuple(_parse_scope(part) for part in _split_scope(match.group("scope")))
         when: list[Comparison] = []
         unless: list[Comparison] = []
@@ -266,9 +281,16 @@ def parse(text: str, *, source: str = "<memory>") -> tuple[Policy, ...]:
                 source=source,
             )
         )
-    leftover = _COMMENT.sub("", text).strip()
-    if not policies and leftover:
-        raise PolicyError(f"{source}: no policy could be parsed from a non-empty file")
+    residue.append(stripped[cursor:])
+    unparsed = "".join(residue).strip()
+    if unparsed:
+        excerpt = " ".join(unparsed.split())[:160]
+        raise PolicyError(
+            f"{source}: {len(unparsed.split())} token(s) outside any policy this parser "
+            f"recognises, beginning {excerpt!r}. A policy that does not parse is a policy "
+            "that is not enforced, and a forbid that is not enforced fails open — so the "
+            "file is refused rather than partially loaded."
+        )
     return tuple(policies)
 
 

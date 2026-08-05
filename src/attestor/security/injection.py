@@ -14,7 +14,8 @@ and it is spread across the rest of the repository:
 - **A model cannot produce a figure.** Narrative resolvers serve narrative datapoints only,
   and a narrative run carrying a digit fails the build (`documents/manifest.py`).
 - **A model cannot call a tool with arguments of its choosing.** Tenant, period and scope
-  come from the session, not from the conversation (`agent/session.py`).
+  come from the session, not from the conversation (`policy/tenants.py`), and the session
+  comes from a token whose issuer is bound to the tenant it names.
 - **A model cannot authorize anything.** Cedar decides before execution, and no automated
   principal may sign an override (`contracts/overrides.py`).
 - **A model cannot widen its own retrieval.** The metadata filter is built from the session.
