@@ -1,0 +1,64 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: attestor_raw
+    tables:
+      - name: electricity_invoice
+      - name: fuel_transaction
+      - name: general_ledger
+      - name: supplier_attestation
+      - name: model_evaluation_run
+      - name: risk_register_entry
+      - name: incident_report
+
+models:
+  - name: stg_electricity
+    description: >-
+      Metered electricity, one row per reading. The tests below are the data contract, and a
+      row that fails one is quarantined with the rule's name rather than dropped.
+    columns:
+      - name: tenant_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_tenant')
+              field: tenant_id
+      - name: kwh
+        tests:
+          # Negative consumption is a meter rollover or a credit note, and both are real
+          # events that must not be summed into a disclosure as if they were consumption.
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: reading_type
+        tests:
+          - accepted_values:
+              values: ["actual", "estimated"]
+      - name: reading_date
+        tests:
+          - not_null
+
+  - name: stg_fuel
+    columns:
+      - name: litres
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: fuel_type
+        tests:
+          - not_null
+          - relationships:
+              to: ref('ref_fuel_emission_factor')
+              field: fuel_type
+
+  - name: stg_ledger
+    columns:
+      - name: period_status
+        tests:
+          - accepted_values:
+              values: ["open", "closed"]
+      - name: account_code
+        tests:
+          - not_null

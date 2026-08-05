@@ -81,9 +81,27 @@ bake-off: ## Compare chunking strategies + embedding models (offline replay of a
 
 # ── Documents ────────────────────────────────────────────────────────────────
 
+.PHONY: run
+run: ## Resolve, render, gate and record one tenant (TENANT=helios)
+	$(PY) -m attestor.cli.main run --tenant $(TENANT)
+
+.PHONY: run-all
+run-all: ## Every tenant, then the dashboard. A blocked tenant still records why.
+	@for t in helios aegis lumen; do $(PY) -m attestor.cli.main run --tenant $$t || true; done
+	$(PY) -m attestor.cli.main dashboard
+	@echo "open out/dashboard.html"
+
+.PHONY: dashboard
+dashboard: ## Build the static page from the recorded runs
+	$(PY) -m attestor.cli.main dashboard
+
 .PHONY: report
 report: ## Render a tenant's full report set (DOCX + XLSX + PPTX) into out/
 	$(PY) -m attestor.cli.main report render --tenant $(TENANT)
+
+.PHONY: ingest-plan
+ingest-plan: ## Validate the evidence manifests and report what would be uploaded
+	$(PY) pipelines/ingest/evidence.py
 
 .PHONY: govern-docs
 govern-docs: ## Regenerate the governance docs from code (CI runs this with --check)
@@ -113,6 +131,14 @@ tf-validate: ## terraform validate per layer, offline (no backend, no provider c
 iac-scan: ## checkov over the Terraform layers
 	.venv/bin/checkov -d infra --quiet --compact
 
+.PHONY: package
+package: ## Vendor the library into the Lambda source dir so terraform can zip it
+	rm -rf infra/agent/tools/attestor infra/agent/tools/*.dist-info
+	$(PIP) install --quiet --target infra/agent/tools --no-compile .
+	cp -R contracts queries prompts templates tenants overrides policy evidence \
+		infra/agent/tools/
+	@echo "packaged infra/agent/tools ($$(du -sh infra/agent/tools | cut -f1))"
+
 # ── Cloud (never run implicitly; always a deliberate act) ────────────────────
 
 .PHONY: cost
@@ -121,3 +147,4 @@ cost: ## Print the current estate's running cost and time-to-expiry
 
 .PHONY: ci
 ci: lint test claims policy tf-validate ## Everything CI runs, in CI's order
+

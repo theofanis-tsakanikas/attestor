@@ -1,0 +1,14 @@
+# Credentials come from the assumed role, never from this file. There is no password field
+# here to leave a secret in, which is deliberate.
+attestor:
+  target: prod
+  outputs:
+    prod:
+      type: athena
+      s3_staging_dir: "{{ env_var('ATTESTOR_ATHENA_OUTPUT') }}"
+      s3_data_dir: "{{ env_var('ATTESTOR_LAKE_S3') }}/gold/"
+      region_name: "{{ env_var('AWS_REGION', 'eu-central-1') }}"
+      database: awsdatacatalog
+      schema: attestor_gold
+      work_group: "{{ env_var('ATTESTOR_WORKGROUP', 'attestor') }}"
+      threads: 4

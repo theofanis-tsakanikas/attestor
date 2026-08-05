@@ -29,7 +29,12 @@ permit (
         Action::"search_regulation",
         Action::"read_lineage",
         Action::"draft_narrative",
-        Action::"render_report"
+        Action::"render_report",
+        // Reading an existing acceptance and drafting a request for a new one are both
+        // preparer work — the preparer is the person who discovers the gap. Neither is
+        // approval: `forbid-approval-through-the-agent` below has no exception for a role.
+        Action::"read_override",
+        Action::"request_override"
     ],
     resource
 );

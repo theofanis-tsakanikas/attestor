@@ -210,14 +210,24 @@ resource "aws_iam_role_policy" "tools" {
 # permissions, or sign an acceptance — which is the same statement Cedar makes, made again
 # one layer down where a policy bug cannot reach.
 
+# `make package` vendors the attestor package and its dependencies into this directory
+# before a deploy. The zip is built here rather than committed: a committed artefact drifts
+# from the source it was built from, and the drift is invisible.
+data "archive_file" "tools" {
+  type        = "zip"
+  source_dir  = "${path.module}/tools"
+  output_path = "${path.module}/.build/tools.zip"
+}
+
 resource "aws_lambda_function" "tools" {
-  function_name = "${var.project}-tools"
-  role          = aws_iam_role.tools.arn
-  runtime       = "python3.12"
-  handler       = "handler.invoke"
-  filename      = "${path.module}/tools.zip"
-  timeout       = 60
-  memory_size   = 1024
+  function_name    = "${var.project}-tools"
+  role             = aws_iam_role.tools.arn
+  runtime          = "python3.12"
+  handler          = "handler.invoke"
+  filename         = data.archive_file.tools.output_path
+  source_code_hash = data.archive_file.tools.output_base64sha256
+  timeout          = 60
+  memory_size      = 1024
 
   vpc_config {
     subnet_ids         = data.terraform_remote_state.foundation.outputs.private_subnet_ids

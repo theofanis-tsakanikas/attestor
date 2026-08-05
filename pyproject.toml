@@ -37,6 +37,7 @@ dev = [
     "ruff>=0.7",
     "moto[s3,sts]>=5.0",
     "hypothesis>=6.112",
+    "checkov>=3.2",
 ]
 
 [project.scripts]
@@ -79,6 +80,9 @@ ignore = [
 "src/attestor/retrieval/chunking.py" = ["RUF001"]
 "src/attestor/retrieval/kb.py" = ["RUF001"]
 "src/attestor/observability/governance.py" = ["RUF001"]
+# The dashboard embeds a CSS block as a string literal. Wrapping stylesheet declarations to
+# satisfy a Python line limit makes the CSS harder to read and the Python no easier.
+"src/attestor/observability/dashboard.py" = ["E501"]
 "tests/retrieval/test_chunking_and_bakeoff.py" = ["RUF001"]
 
 [tool.pytest.ini_options]

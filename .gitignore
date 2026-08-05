@@ -36,5 +36,11 @@ dist/
 evals/**/corpus/**/*.pdf
 evals/**/corpus/**/*.bin
 
+# Lambda payloads are vendored by `make package` and zipped by terraform. A committed
+# artefact drifts from the source it was built from, and the drift is invisible.
+infra/*/.build/
+infra/agent/tools/*
+!infra/agent/tools/handler.py
+
 # macOS
 .DS_Store

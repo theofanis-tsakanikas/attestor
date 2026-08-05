@@ -19,6 +19,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.70"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.6"
+    }
   }
   backend "s3" {
     key = "foundation/terraform.tfstate"
@@ -275,13 +279,22 @@ resource "aws_iam_role_policy" "reaper" {
 # It reports; it does not delete. A lambda with permission to destroy the estate is a larger
 # risk than the estate outliving its window by a day, and the destroy workflow already exists
 # and is already gated. What the reaper removes is the excuse "nobody noticed".
+# Built from source at plan time. A committed .zip is a binary nobody reviews and everybody
+# forgets to rebuild.
+data "archive_file" "reaper" {
+  type        = "zip"
+  source_dir  = "${path.module}/reaper"
+  output_path = "${path.module}/.build/reaper.zip"
+}
+
 resource "aws_lambda_function" "reaper" {
-  function_name = "${local.prefix}-reaper"
-  role          = aws_iam_role.reaper.arn
-  runtime       = "python3.12"
-  handler       = "reaper.handler"
-  filename      = "${path.module}/reaper.zip"
-  timeout       = 60
+  function_name    = "${local.prefix}-reaper"
+  role             = aws_iam_role.reaper.arn
+  runtime          = "python3.12"
+  handler          = "reaper.handler"
+  filename         = data.archive_file.reaper.output_path
+  source_code_hash = data.archive_file.reaper.output_base64sha256
+  timeout          = 60
 
   environment {
     variables = {

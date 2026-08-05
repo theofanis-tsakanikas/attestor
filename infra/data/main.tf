@@ -109,6 +109,75 @@ resource "aws_glue_catalog_table" "gold" {
       { name = "net_amount_eur", type = "decimal(18,2)" },
       { name = "dq_status", type = "string" },
     ]
+    # One row per report run, and one per datapoint within it. This is what the analytics
+    # views read, and it is the only place a trend across periods can be asked about — a
+    # per-run JSON beside the artefacts answers "what happened", never "is it getting worse".
+    report_run = [
+      { name = "run_id", type = "string" },
+      { name = "tenant_id", type = "string" },
+      { name = "standard", type = "string" },
+      { name = "period", type = "string" },
+      { name = "started_at", type = "string" },
+      { name = "finished_at", type = "string" },
+      { name = "issued", type = "boolean" },
+      { name = "published_count", type = "int" },
+      { name = "limitation_count", type = "int" },
+      { name = "blocker_count", type = "int" },
+      { name = "artefact_count", type = "int" },
+      { name = "cost_eur", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    # Published figures and omissions share one table, distinguished by `disclosed`. Splitting
+    # them would make "what did we not disclose, and why" a join, and the omissions register
+    # has to be as easy to read as the figures.
+    report_datapoint = [
+      { name = "run_id", type = "string" },
+      { name = "tenant_id", type = "string" },
+      { name = "period", type = "string" },
+      { name = "datapoint_id", type = "string" },
+      { name = "reference", type = "string" },
+      { name = "disclosed", type = "boolean" },
+      { name = "value", type = "string" },
+      { name = "unit", type = "string" },
+      { name = "lineage_id", type = "string" },
+      { name = "resolver_kind", type = "string" },
+      { name = "reason_code", type = "string" },
+      { name = "outcome", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    # The AI Act vertical's sources.
+    model_evaluation_prediction = [
+      { name = "tenant_id", type = "string" },
+      { name = "evaluated_at", type = "date" },
+      { name = "example_id", type = "string" },
+      { name = "predicted_label", type = "string" },
+      { name = "true_label", type = "string" },
+      { name = "is_held_out", type = "boolean" },
+      { name = "dq_status", type = "string" },
+    ]
+    model_evaluation_confusion = [
+      { name = "tenant_id", type = "string" },
+      { name = "evaluated_at", type = "date" },
+      { name = "predicted_label", type = "string" },
+      { name = "true_label", type = "string" },
+      { name = "count", type = "bigint" },
+      { name = "dq_status", type = "string" },
+    ]
+    risk_register = [
+      { name = "tenant_id", type = "string" },
+      { name = "assessed_at", type = "date" },
+      { name = "risk_id", type = "string" },
+      { name = "mitigation_status", type = "string" },
+      { name = "residual_rating", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    incident_log = [
+      { name = "tenant_id", type = "string" },
+      { name = "occurred_at", type = "date" },
+      { name = "incident_id", type = "string" },
+      { name = "classification", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
     # Rows that failed a data contract land here rather than being dropped, carrying the rule
     # they violated. A quarantined row is why E_UPSTREAM_QUARANTINE exists, and a figure
     # computed over an unexamined quarantine is a figure computed over missing data.

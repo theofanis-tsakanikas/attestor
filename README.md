@@ -67,7 +67,7 @@ of a command in this repository, not a summary of one.
 | **claim 4** · reproducibility | **9/9** (ESRS) and **7/7** (AI Act) lineage ids identical across runs |
 | **claim 5** · disciplined abstention | **24/24** expected refusals · **0** fabrications · nothing undamaged refused |
 | `make gate-proof` | **10 refused, 0 accepted, 0 stale** |
-| test suite | **231 passing**, offline, credential-free |
+| test suite | **258 passing**, offline, credential-free |
 
 The last two rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks each control on purpose and requires the *named* gate to refuse it,
@@ -154,13 +154,33 @@ magic number in a regulated report should have a human's name on it.
 
 ```bash
 make install          # venv + editable install
+make run-all          # resolve, render, gate and record every tenant, then build the page
+open out/dashboard.html
+
 make test             # full suite, offline
 make claims           # the five claim gates
 make gate-proof       # break every gate on purpose; each must be refused, for the right reason
-make lint
 ```
 
 Requires Python 3.12+. No AWS account, no credentials, no network.
+
+## Where the results are
+
+Three surfaces, all generated from one run record so they cannot disagree.
+
+**The artefacts** — `out/<tenant>/`: the Word statement, the Excel annex, the board deck, each
+beside the render manifest the provenance gate checked it against.
+
+**The dashboard** — `out/dashboard.html`. One self-contained file, no scripts, no network. It
+answers the two questions somebody deciding whether to file actually has: *can we issue?* and
+*what are we admitting to?* Blockers are red and first; accepted defects show who signed and
+when the acceptance lapses. It still opens after the estate is destroyed, which is when
+somebody usually wants it.
+
+**The warehouse** — `gold.report_run` and `gold.report_datapoint`, with views in
+[`analytics/views.sql`](analytics/views.sql). That is where the questions a single run cannot
+answer live: which reason code blocks every quarter, how much of a tenant's disclosure rate
+rests on overrides that are about to lapse, and what a blocked run cost to produce nothing.
 
 ---
 

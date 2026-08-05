@@ -1,0 +1,37 @@
+# The transformation layer between raw evidence and the tables a disclosure resolves through.
+#
+# The load-bearing idea here is `store_failures`. Every data-contract test writes the rows it
+# rejected into a table rather than just printing a count, and `gold.quarantine` unions them
+# with the rule each row violated. That is what makes `E_UPSTREAM_QUARANTINE` a real answer:
+# the resolver can say "this figure was computed over incomplete data" *and* point at the
+# rows that were left out and why.
+#
+# A pipeline that drops bad rows silently produces a figure that is smaller than the truth
+# and looks perfectly clean.
+
+name: attestor
+version: "1.0.0"
+config-version: 2
+profile: attestor
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+models:
+  attestor:
+    +materialized: table
+    +file_format: iceberg
+    staging:
+      # Views: staging is a rename-and-cast layer, and materialising it would double storage
+      # for no query anybody runs.
+      +materialized: view
+    gold:
+      +materialized: incremental
+      +incremental_strategy: merge
+
+tests:
+  attestor:
+    # Every rejected row is kept. This is the whole quarantine mechanism.
+    +store_failures: true
+    +schema: quarantine

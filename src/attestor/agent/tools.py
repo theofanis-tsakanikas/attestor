@@ -219,8 +219,12 @@ class Toolbox:
         What comes back is a template for a human to complete, sign and commit. The signature
         lives in a reviewed file with a named approver and an expiry date — never in a tool
         result, never in a conversation. See ADR-0001.
+
+        Note the action: `request_override`, not `read_override`. Drafting a request and
+        reading an existing acceptance are different acts, and collapsing them would mean a
+        role that may only look at the register could also generate requests against it.
         """
-        self._authorize("read_override", "Override", datapoint_id)
+        self._authorize("request_override", "Override", datapoint_id)
         return {
             "draft": {
                 "tenant": self._session.tenant,
@@ -280,7 +284,7 @@ SPECS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         name="request_override",
-        action="read_override",
+        action="request_override",
         summary="Draft an override request for a human to sign. Cannot approve one.",
         parameters={
             "datapoint_id": "The contract identifier.",

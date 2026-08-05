@@ -168,7 +168,9 @@ Rules:
   A new reason code is a deliberate, reviewed addition — not a free-text string.
 - Changing a contract's `unit`, `boundary` or `methodology` is a **restatement**: it requires a
   `supersedes` entry and CI will demand the prior-period note.
-- Every contract is validated against `contracts/schema/datapoint.schema.json` on every push.
+- Every contract is validated by `src/attestor/contracts/model.py` on every push. The model
+  *is* the schema: a separate JSON Schema beside it would be a second description of one
+  contract, and the two diverge on the first busy afternoon.
 
 ---
 

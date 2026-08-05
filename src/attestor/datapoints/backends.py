@@ -18,6 +18,8 @@ logic under test is the logic that runs.
 from __future__ import annotations
 
 import hashlib
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -51,6 +53,9 @@ class QueryResult:
     #: Rows that failed their data contract and were excluded. Non-zero means the figure is
     #: computed over incomplete data, which the resolver turns into E_UPSTREAM_QUARANTINE.
     quarantined_rows: int = 0
+    #: What the query cost to run, in bytes. Feeds the per-tenant cost meter; not part of
+    #: lineage, because a figure does not change because the scan got cheaper.
+    scanned_bytes: int = 0
 
 
 def query_digest(sql: str) -> str:
@@ -130,6 +135,9 @@ class AthenaBackend:
         output_location: str,
         region: str,
         client: Any = None,
+        timeout_seconds: float = 120.0,
+        clock: Callable[[], float] | None = None,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
         self._workgroup = workgroup
         self._catalog = catalog
@@ -137,6 +145,10 @@ class AthenaBackend:
         self._output_location = output_location
         self._region = region
         self._client = client
+        self._timeout_seconds = timeout_seconds
+        # Injected so the polling loop is testable without a test that actually waits.
+        self._clock = clock or time.monotonic
+        self._sleep = sleep or time.sleep
 
     def _athena(self) -> Any:
         if self._client is None:
@@ -148,31 +160,123 @@ class AthenaBackend:
     def execute(
         self, *, sql: str, parameters: dict[str, str], snapshot_id: str | None
     ) -> QueryResult:
-        """Run the statement with **bound** parameters.
+        """Run the statement with **bound** parameters and wait for one scalar.
 
         `ExecutionParameters` is positional in the Athena API, so named `:tenant_id` markers
-        are rewritten to `?` in a fixed order and the values are passed alongside. The
-        rewrite happens here and nowhere else — no caller ever builds a SQL string with a
-        tenant id in it.
+        are rewritten to `?` in a fixed order and the values are passed alongside. The rewrite
+        happens here and nowhere else — no caller ever builds a SQL string with a tenant id
+        in it.
         """
-        statement, ordered = _bind(sql, parameters)
-        response = self._athena().start_query_execution(
+        statement, ordered = _bind(sql, parameters, snapshot_id=snapshot_id)
+        started = self._athena().start_query_execution(
             QueryString=statement,
             QueryExecutionContext={"Catalog": self._catalog, "Database": self._database},
             WorkGroup=self._workgroup,
             ResultConfiguration={"OutputLocation": self._output_location},
             ExecutionParameters=ordered,
         )
-        raise QueryError(
-            "AthenaBackend.execute is wired for submission only until the estate is stood up; "
-            f"query {response.get('QueryExecutionId', '?')} was submitted but result polling "
-            "is deliberately unimplemented offline"
+        execution_id = started["QueryExecutionId"]
+        execution = self._await(execution_id)
+        return self._scalar(execution_id, execution, sql=sql, snapshot_id=snapshot_id)
+
+    def _await(self, execution_id: str) -> dict[str, Any]:
+        """Poll until the query settles, or give up loudly.
+
+        The timeout is not a nicety. A query that has not finished in this long has a missing
+        predicate or a cold metastore, and a resolver that waits indefinitely turns one bad
+        query into a report that never renders and never explains why.
+        """
+        deadline = self._clock() + self._timeout_seconds
+        delay = 0.25
+        while True:
+            execution = self._athena().get_query_execution(QueryExecutionId=execution_id)[
+                "QueryExecution"
+            ]
+            state = execution["Status"]["State"]
+            if state == "SUCCEEDED":
+                return execution
+            if state in {"FAILED", "CANCELLED"}:
+                reason = execution["Status"].get("StateChangeReason", state)
+                raise QueryError(f"athena query {execution_id} {state.lower()}: {reason}")
+            if self._clock() > deadline:
+                self._athena().stop_query_execution(QueryExecutionId=execution_id)
+                raise QueryError(
+                    f"athena query {execution_id} exceeded {self._timeout_seconds}s and was "
+                    "cancelled; a query this slow has a missing predicate"
+                )
+            self._sleep(delay)
+            delay = min(delay * 2, 5.0)
+
+    def _scalar(
+        self,
+        execution_id: str,
+        execution: dict[str, Any],
+        *,
+        sql: str,
+        snapshot_id: str | None,
+    ) -> QueryResult:
+        page = self._athena().get_query_results(QueryExecutionId=execution_id, MaxResults=2)
+        rows = page.get("ResultSet", {}).get("Rows", [])
+        # Row 0 is the header. A scalar query returning more than one data row is a query
+        # whose GROUP BY escaped, and silently taking the first row would publish one group.
+        data = rows[1:]
+        if len(data) > 1:
+            raise QueryError(
+                f"athena query {execution_id} returned {len(data)} rows where one was "
+                "expected; a scalar resolver cannot choose between them"
+            )
+        raw = None
+        if data:
+            cells = data[0].get("Data", [])
+            raw = cells[0].get("VarCharValue") if cells else None
+
+        # Athena does not report which tables it read, so they are parsed from the statement
+        # the resolver just sent. That is not a guess: the query text is the authority on what
+        # it touched, and it is the same text whose digest goes into the lineage hash.
+        tables = tables_in(sql)
+        statistics = execution.get("Statistics", {})
+        return QueryResult(
+            value=None if raw in (None, "") else Decimal(raw),
+            tables=tables,
+            snapshot_ids={table: snapshot_id for table in tables} if snapshot_id else {},
+            row_counts={},
+            quarantined_rows=0,
+            scanned_bytes=int(statistics.get("DataScannedInBytes", 0)),
         )
 
 
-def _bind(sql: str, parameters: dict[str, str]) -> tuple[str, list[str]]:
-    """Rewrite `:name` markers to positional `?`, returning values in matching order."""
+#: `FROM`/`JOIN` followed by a qualified table name. Deliberately narrow: every query in
+#: `queries/` is a reviewed statement in this shape, and a parser that accepted more would be
+#: guessing about statements this repository does not contain.
+_TABLE = __import__("re").compile(
+    r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", __import__("re").IGNORECASE
+)
+
+
+def tables_in(sql: str) -> tuple[str, ...]:
+    """Qualified table names a statement reads, in first-seen order."""
+    seen: dict[str, None] = {}
+    for match in _TABLE.finditer(sql):
+        seen.setdefault(match.group(1).lower(), None)
+    return tuple(seen)
+
+
+def _bind(
+    sql: str, parameters: dict[str, str], *, snapshot_id: str | None = None
+) -> tuple[str, list[str]]:
+    """Rewrite `:name` markers to positional `?`, returning values in matching order.
+
+    `:snapshot_id` is special: Athena will not accept a table-version pin as a bound
+    parameter, so an unset snapshot is rewritten to `NULL` in the statement and the query's
+    own `COALESCE` falls back to the current snapshot. What that resolved to is recorded in
+    the lineage, so "current" is never what an auditor has to re-read.
+    """
     import re  # noqa: PLC0415 — local to keep the module's import surface honest
+
+    if snapshot_id is None:
+        sql = sql.replace(":snapshot_id", "NULL")
+    else:
+        sql = sql.replace(":snapshot_id", f"'{snapshot_id}'")
 
     ordered: list[str] = []
 

@@ -28,6 +28,8 @@ from attestor.documents import writers
 from attestor.documents.render import RenderContext, ReportBlocked
 from attestor.documents.template import Template
 from attestor.gates import abstention, provenance
+from attestor.observability import dashboard as dashboard_module
+from attestor.observability import run_record
 from attestor.policy import cedar
 from attestor.policy.tenants import TenantRegistry
 from attestor.retrieval import bakeoff
@@ -365,6 +367,94 @@ def govern_generate(
             console.print(f"  stale: {name}")
         _fail("governance docs are out of date; run `make govern-docs`")
     _ok("governance docs in sync")
+
+
+# ── run ──────────────────────────────────────────────────────────────────────
+
+
+@app.command("run")
+def run_report(
+    tenant: str = typer.Option(..., "--tenant"),
+    root: Path = typer.Option(ROOT, "--root"),
+    out: Path = typer.Option(Path("out"), "--out"),
+    run_id: str = typer.Option("local", "--run-id"),
+) -> None:
+    """Resolve, render, gate, and record — the whole pipeline for one tenant.
+
+    A blocked run still writes its record. That is the point: "we could not issue, and here
+    is exactly what stopped us" is the most useful output this system produces, and throwing
+    it away because no document was written would leave the failure undocumented.
+    """
+    started = dt.datetime.now(dt.UTC)
+    registry = TenantRegistry.load(root)
+    tenant_config = registry[tenant]
+    contracts = _contracts_for(tenant, root)
+    results = _resolve(tenant, root)
+
+    record = run_record.build(
+        run_id=run_id,
+        tenant=tenant,
+        tenant_name=tenant_config.name,
+        standard=tenant_config.standard,
+        period="2026",
+        started_at=started,
+        results=results,
+        contracts=contracts,
+    )
+
+    if results.can_issue:
+        produced = _render(tenant, root, out)
+        gate_results = provenance.check_all(produced)
+        for (path, _), gate in zip(produced, gate_results, strict=True):
+            record.artefacts.append(
+                run_record.ArtefactRecord(
+                    path=str(path.relative_to(out)),
+                    artefact=path.suffix.lstrip("."),
+                    sha256=run_record.digest_file(path),
+                    numerals_checked=gate.numerals_checked,
+                    provenance_clean=gate.passed,
+                )
+            )
+            record.gates.append(
+                run_record.GateRecord(
+                    name=f"provenance:{path.name}",
+                    passed=gate.passed,
+                    detail=gate.summary(),
+                )
+            )
+        console.print(f"  {len(produced)} artefact(s) under {out / tenant}")
+    else:
+        console.print(f"  [red]blocked[/] — {len(results.blockers)} datapoint(s), no artefact")
+        for blocker in results.blockers:
+            console.print(f"      {blocker.datapoint_id}: {blocker.reason_code} — {blocker.detail}")
+
+    record.finished_at = dt.datetime.now(dt.UTC)
+    path = record.write(out / "runs")
+    console.print(f"  recorded {path}")
+
+    if not record.issued:
+        _fail(f"{tenant} could not issue; the record says why")
+    failed_gates = [gate for gate in record.gates if not gate.passed]
+    if failed_gates:
+        _fail(f"{len(failed_gates)} gate(s) failed")
+    _ok(
+        f"{tenant} issued · {len(record.published)} disclosed · "
+        f"{len(record.limitations)} limitation(s)"
+    )
+
+
+@app.command("dashboard")
+def build_dashboard(
+    out: Path = typer.Option(Path("out"), "--out"),
+    target: Path = typer.Option(Path("out/dashboard.html"), "--target"),
+) -> None:
+    """Build the static page from every recorded run."""
+    records = run_record.RunRecord.load_all(out / "runs")
+    if not records:
+        _fail(f"no run records under {out / 'runs'}; run `attestor run --tenant <id>` first")
+    path = dashboard_module.write(records, target)
+    issued = sum(1 for record in records if record.issued)
+    _ok(f"{path} — {len(records)} run(s), {issued} issued")
 
 
 # ── cost ─────────────────────────────────────────────────────────────────────
