@@ -1,0 +1,219 @@
+# Evidence corpus manifest — tenant `aegis`, reporting period 2026.
+#
+# The corpus is complete: every document class a contract asks for is here, in period.
+# Aegis still cannot issue its report, and that is the point of having a second tenant.
+# Its defects live in the data rather than in the paperwork — Scope 1 fails its own
+# cross-check by 4.3%, and Scope 3 is computed over rows that failed a data contract.
+# A corpus that looks complete is not evidence that a figure is right.
+#
+# Documents are synthetic. Nothing here came from a real undertaking.
+
+documents:
+  - document_id: UTIL-AEG-2026-01
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-01-01
+    covers_to: 2026-01-31
+    content_sha256: 48dd5c664843f08c9e4e57b8464eec679f03b863c6479faca5f0456ddec4ec58
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-01.pdf
+
+  - document_id: UTIL-AEG-2026-02
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-02-01
+    covers_to: 2026-02-28
+    content_sha256: a9870b872e300c6c24cbfea83b54c310e80dd56930cdbe56354b6bdb2ef8d958
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-02.pdf
+
+  - document_id: UTIL-AEG-2026-03
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-03-01
+    covers_to: 2026-03-31
+    content_sha256: 14acfaf751aa742293e646c47f52fac9544b5a594a340b45223546312c1f715f
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-03.pdf
+
+  - document_id: UTIL-AEG-2026-04
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-04-01
+    covers_to: 2026-04-30
+    content_sha256: 0b7ad165475ed4721e9f9799e095b45604b405b3ff85e8f62c236b1f08098874
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-04.pdf
+
+  - document_id: UTIL-AEG-2026-05
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-05-01
+    covers_to: 2026-05-31
+    content_sha256: ba5f2557578361bfcacfd44e3d416d941e1cc41a961651bfb920b913b129ad3e
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-05.pdf
+
+  - document_id: UTIL-AEG-2026-06
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-06-01
+    covers_to: 2026-06-30
+    content_sha256: 0ed6a212c379e8eb61b3cbb61b95e651b262e69bc039c93ec1cf2e082b338002
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-06.pdf
+
+  - document_id: UTIL-AEG-2026-07
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-07-01
+    covers_to: 2026-07-31
+    content_sha256: 9fc85314fffd85be44571304300e758256cd2503038d1333bfefe282397d981f
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-07.pdf
+
+  - document_id: UTIL-AEG-2026-08
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-08-01
+    covers_to: 2026-08-31
+    content_sha256: fdc50fe056b36d9c7a57dbcbb6dd985748730affa1bd91f691502b5644cb6348
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-08.pdf
+
+  - document_id: UTIL-AEG-2026-09
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-09-01
+    covers_to: 2026-09-30
+    content_sha256: 72e55f8784de7d4b674ce0185c086f798cd571f600c9ecf32179b24eb448f8f8
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-09.pdf
+
+  - document_id: UTIL-AEG-2026-10
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-10-01
+    covers_to: 2026-10-31
+    content_sha256: 2753c659bfd0dfd7c69f31ac12be99be00cd5b071a00d4d632e8f314c9b5c16a
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-10.pdf
+
+  - document_id: UTIL-AEG-2026-11
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-11-01
+    covers_to: 2026-11-30
+    content_sha256: c570085d7a35f7e08b86ebbc3506834a732ea9747e676ae46b5a29c1f0053ca7
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-11.pdf
+
+  - document_id: UTIL-AEG-2026-12
+    tenant: aegis
+    document_class: utility_invoice
+    covers_from: 2026-12-01
+    covers_to: 2026-12-31
+    content_sha256: fe9271f723727e98ffa990226696f90725f9edde5c8b227f1dcbf33d9c146716
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-12.pdf
+
+  - document_id: FUEL-AEG-2026-FY
+    tenant: aegis
+    document_class: fuel_invoice
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 88153c9fb141801c2d533263fc80db13c594f2dc62eba283e5a41e99b3be8e08
+    source_uri: s3://attestor-evidence-aegis/fuel/2026-invoices.pdf
+
+  - document_id: TELE-AEG-2026-FY
+    tenant: aegis
+    document_class: fleet_telematics_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 65577f7934609bccb930be5a509eebc4e27b852a0db612636420a4af1c350919
+    source_uri: s3://attestor-evidence-aegis/fleet/2026-telematics.parquet
+
+  - document_id: REFR-AEG-2026-FY
+    tenant: aegis
+    document_class: refrigerant_service_record
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 43485450783d4b16cbe718c8b95fdebdba621b5f9b65a88b3c19971ea242ba54
+    source_uri: s3://attestor-evidence-aegis/fleet/2026-refrigerant-log.csv
+
+  - document_id: METER-AEG-2026-FY
+    tenant: aegis
+    document_class: meter_reading_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 3a6745a3946a881e3ea1f80d4d226104999dff86b8ed2ca0f94c97ff5de8e415
+    source_uri: s3://attestor-evidence-aegis/utilities/2026-meter-intervals.parquet
+
+  - document_id: SUPP-AEG-2026-001
+    tenant: aegis
+    document_class: supplier_attestation
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: cfd65055045659caf6a19bd16ace72c2fe0893a72d76b596d661aabb9aa2e447
+    source_uri: s3://attestor-evidence-aegis/suppliers/attestation-001.pdf
+
+  - document_id: PROC-AEG-2026-FY
+    tenant: aegis
+    document_class: procurement_ledger_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: f486f7b40dc674a8506773421de209bbc2cec0cbacfe7f74f537a732b0d1cbe8
+    source_uri: s3://attestor-evidence-aegis/procurement/2026-ledger.parquet
+
+  - document_id: LOGI-AEG-2026-FY
+    tenant: aegis
+    document_class: logistics_manifest
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: a4b0f9ee1aee6c6716e260f74e01cedd5df7849221d1c0af13e93f388c5cdb7f
+    source_uri: s3://attestor-evidence-aegis/logistics/2026-manifests.parquet
+
+  - document_id: FIN-AEG-2026-AR
+    tenant: aegis
+    document_class: financial_statement
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 8e9c54d2c9e47699b87fda7c5a7f955b8e33abdb4ae8f3bdbb4a815ee6923929
+    source_uri: s3://attestor-evidence-aegis/finance/2026-annual-report.pdf
+
+  - document_id: GL-AEG-2026-FY
+    tenant: aegis
+    document_class: general_ledger_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 54e4abce4ec9a23e073f608ab517020167acdfb77d3737c6cd4649ec64dfeda9
+    source_uri: s3://attestor-evidence-aegis/finance/2026-gl.parquet
+
+  - document_id: FACTOR-EEA-EN38-2026-AEG
+    tenant: aegis
+    document_class: published_factor_source
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: c1d882e54b4f8656b798395f56345d6fcbb14052a8a25003b1c6e1b24992f803
+    source_uri: s3://attestor-evidence-aegis/methodology/eea-en38-2026.pdf
+
+  - document_id: TPLAN-AEG-2026
+    tenant: aegis
+    document_class: board_approved_transition_plan
+    covers_from: 2026-01-01
+    covers_to: 2030-12-31
+    content_sha256: 0d984a79df12750f261fcc08449c8b10ba06f733b9f5d55a4854d623ddbd572d
+    source_uri: s3://attestor-evidence-aegis/governance/transition-plan-2026.pdf
+
+  - document_id: CAPEX-AEG-2026
+    tenant: aegis
+    document_class: capex_plan
+    covers_from: 2026-01-01
+    covers_to: 2030-12-31
+    content_sha256: 7781e22cd901fa35a1a9621fa2fb6d226d06692872270806b6c0ab3627db7abb
+    source_uri: s3://attestor-evidence-aegis/governance/capex-2026-2030.xlsx
+
+  - document_id: SUPP-AEG-2026-002
+    tenant: aegis
+    document_class: supplier_attestation
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 46038dd221b01fb74804f100665e1003c8ce08b033fa8a8b3aab6308154033b4
+    source_uri: s3://attestor-evidence-aegis/suppliers/attestation-002.pdf
+
+  - document_id: SUPP-AEG-2026-003
+    tenant: aegis
+    document_class: supplier_attestation
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 44a080dacb44df8f83d9b68a4a837b7e8a1a1834e4c63cf27de21422eee78541
+    source_uri: s3://attestor-evidence-aegis/suppliers/attestation-003.pdf
+

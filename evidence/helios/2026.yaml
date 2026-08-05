@@ -1,0 +1,235 @@
+# Evidence corpus manifest — tenant `helios`, reporting period 2026.
+#
+# Metadata is trusted; content is not. These entries say which document exists, what it
+# covers and what bytes it is. The *text* inside those documents is untrusted user content,
+# handled by `src/attestor/security/injection.py` — including `INV-HEL-2026-0009`, which a
+# supplier filled with instructions addressed to whatever would read it.
+#
+# Documents are synthetic. Nothing here came from a real undertaking.
+
+documents:
+  # ── Fuel and fleet: supports Scope 1 ──────────────────────────────────────
+  - document_id: FUEL-HEL-2026-Q1
+    tenant: helios
+    document_class: fuel_invoice
+    covers_from: 2026-01-01
+    covers_to: 2026-03-31
+    content_sha256: e21c9675d21bb69a8d81301142573d9cd7d3611fe1a33f88306f857da0ab09c8
+    source_uri: s3://attestor-evidence-helios/fuel/2026-q1-invoices.pdf
+
+  - document_id: FUEL-HEL-2026-Q2
+    tenant: helios
+    document_class: fuel_invoice
+    covers_from: 2026-04-01
+    covers_to: 2026-06-30
+    content_sha256: 4e2d5ae16bc83755785578bd7fdcd89d1ba007f1c7144c700f24814b843dff74
+    source_uri: s3://attestor-evidence-helios/fuel/2026-q2-invoices.pdf
+
+  - document_id: TELE-HEL-2026-FY
+    tenant: helios
+    document_class: fleet_telematics_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 2fd68cbe3b059f0eb8a2322ad689fdc46642c6b6661f2fcda4fd80a7f86faea3
+    source_uri: s3://attestor-evidence-helios/fleet/2026-telematics.parquet
+
+  - document_id: REFR-HEL-2026-FY
+    tenant: helios
+    document_class: refrigerant_service_record
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 16848435c6e803cdd24cc6b84c47e7186a49a4321d86a8324b7c9decafa439f4
+    source_uri: s3://attestor-evidence-helios/fleet/2026-refrigerant-log.csv
+
+  # ── Electricity: twelve monthly invoices, as the contract demands ─────────
+  - document_id: UTIL-HEL-2026-01
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-01-01
+    covers_to: 2026-01-31
+    content_sha256: d036643d0385a49cb2b142d22dbcdd13cd80a8d5b70356e570b8dea1ec274db9
+    source_uri: s3://attestor-evidence-helios/utilities/2026-01.pdf
+
+  - document_id: UTIL-HEL-2026-02
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-02-01
+    covers_to: 2026-02-28
+    content_sha256: 37911bc721224eec3bb91ef7539479e3450aa7efeeb32b3accfe6969db18d09b
+    source_uri: s3://attestor-evidence-helios/utilities/2026-02.pdf
+
+  - document_id: UTIL-HEL-2026-03
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-03-01
+    covers_to: 2026-03-31
+    content_sha256: e7a79342e2ab3af9346eaa35f82ed9d52d85ca504d0c7af47f7f4d8921dfeefa
+    source_uri: s3://attestor-evidence-helios/utilities/2026-03.pdf
+
+  - document_id: UTIL-HEL-2026-04
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-04-01
+    covers_to: 2026-04-30
+    content_sha256: f5fa9199e7dff3cc1f5f26786ae7b0a2e563f11c5887bd2cba89adbf2ec84689
+    source_uri: s3://attestor-evidence-helios/utilities/2026-04.pdf
+
+  - document_id: UTIL-HEL-2026-05
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-05-01
+    covers_to: 2026-05-31
+    content_sha256: bf244bec8e292ed617af35c424da687f0a4fd4a8e53e91b55706b1766228f561
+    source_uri: s3://attestor-evidence-helios/utilities/2026-05.pdf
+
+  - document_id: UTIL-HEL-2026-06
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-06-01
+    covers_to: 2026-06-30
+    content_sha256: 3187993eaa917eb0b89c05784ab7b09ef52073e5fd65cc711e082fb31c5b9c35
+    source_uri: s3://attestor-evidence-helios/utilities/2026-06.pdf
+
+  - document_id: UTIL-HEL-2026-07
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-07-01
+    covers_to: 2026-07-31
+    content_sha256: 3cb9b422b99ee5847a64e7d883297e847192ab747b0ec7aeac2de8a4bca33f10
+    source_uri: s3://attestor-evidence-helios/utilities/2026-07.pdf
+
+  - document_id: UTIL-HEL-2026-08
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-08-01
+    covers_to: 2026-08-31
+    content_sha256: 3617f23015f6adfd30f077cdddf38276102cab5c36eb1cfbe1cdd28093a0762e
+    source_uri: s3://attestor-evidence-helios/utilities/2026-08.pdf
+
+  - document_id: UTIL-HEL-2026-09
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-09-01
+    covers_to: 2026-09-30
+    content_sha256: a9dc497622675e797197d6880ad23dba5d7f46c22d3f844e902ed756f5344823
+    source_uri: s3://attestor-evidence-helios/utilities/2026-09.pdf
+
+  - document_id: UTIL-HEL-2026-10
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-10-01
+    covers_to: 2026-10-31
+    content_sha256: 499e1368e7996338cb88ebc450a6c7f4b4aa0e0c7b86861094e41c58b412f412
+    source_uri: s3://attestor-evidence-helios/utilities/2026-10.pdf
+
+  - document_id: UTIL-HEL-2026-11
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-11-01
+    covers_to: 2026-11-30
+    content_sha256: da37affd26e3f18d7cf88ee3b2d83c3c7261a4b8662b340e82663157f5d4f907
+    source_uri: s3://attestor-evidence-helios/utilities/2026-11.pdf
+
+  - document_id: UTIL-HEL-2026-12
+    tenant: helios
+    document_class: utility_invoice
+    covers_from: 2026-12-01
+    covers_to: 2026-12-31
+    content_sha256: 112c2501585757a33867279ec9e727484c50910171ac67b7dcaf0555d5692961
+    source_uri: s3://attestor-evidence-helios/utilities/2026-12.pdf
+
+  - document_id: METER-HEL-2026-FY
+    tenant: helios
+    document_class: meter_reading_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 7e73e66c8195c62b97fd44d54d1ae7434ae6d5d9271b481628fa32530936f865
+    source_uri: s3://attestor-evidence-helios/utilities/2026-meter-intervals.parquet
+
+  # ── Value chain: supports Scope 3 ─────────────────────────────────────────
+  - document_id: SUPP-HEL-2026-001
+    tenant: helios
+    document_class: supplier_attestation
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 8e3a46a52470655c35d7495d3b4d17b2013adca7031907a9f9d9ab2aca1623fa
+    source_uri: s3://attestor-evidence-helios/suppliers/attestation-001.pdf
+
+  - document_id: INV-HEL-2026-0009
+    tenant: helios
+    document_class: supplier_attestation
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: f63335667e50de6b322d3097cbdb0f007e5a883619c5499e9dcfb3e1d9f99d44
+    source_uri: s3://attestor-evidence-helios/suppliers/attestation-009-scanned.pdf
+    # Flagged by the injection scanner: the scanned PDF contains white-on-white text
+    # addressed to the reporting system. The document still counts as evidence — the
+    # metadata above is ours and is trustworthy — but its text is never an instruction.
+    flagged_injection: true
+
+  - document_id: PROC-HEL-2026-FY
+    tenant: helios
+    document_class: procurement_ledger_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 25e30452061b7fde8587c5560e9f6ea09537af7cfdf1d34d79892580b761c2ff
+    source_uri: s3://attestor-evidence-helios/procurement/2026-ledger.parquet
+
+  - document_id: LOGI-HEL-2026-FY
+    tenant: helios
+    document_class: logistics_manifest
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: a9d92959db3cead7a0ec6681e73df0e2d49e0f9ed978abba235e6cc41a03fd80
+    source_uri: s3://attestor-evidence-helios/logistics/2026-manifests.parquet
+
+  # ── Finance ───────────────────────────────────────────────────────────────
+  - document_id: FIN-HEL-2026-AR
+    tenant: helios
+    document_class: financial_statement
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 127e1fcc38f2ecc6149da50e373de14df1b475d4371dd0948a85ef33c3299e5a
+    source_uri: s3://attestor-evidence-helios/finance/2026-annual-report.pdf
+
+  - document_id: GL-HEL-2026-FY
+    tenant: helios
+    document_class: general_ledger_export
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: b3df058a1bad7127f941235cc0b7f0b00c04c13e17ffeb66b259a92e6540f600
+    source_uri: s3://attestor-evidence-helios/finance/2026-gl.parquet
+
+  # ── Methodology and governance ────────────────────────────────────────────
+  - document_id: FACTOR-EEA-EN38-2026
+    tenant: helios
+    document_class: published_factor_source
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: 8e7ff01d3f97cde5f7245dba31fd38907a122d8d8d1a81cdc4cd3f2e6b28c0b2
+    source_uri: s3://attestor-evidence-helios/methodology/eea-en38-2026.pdf
+
+  - document_id: TPLAN-HEL-2026
+    tenant: helios
+    document_class: board_approved_transition_plan
+    covers_from: 2026-01-01
+    covers_to: 2030-12-31
+    content_sha256: d7425f65f7225f701b25d70df47927b9da5b9ce25f5d19cfa017c37a5f793b9c
+    source_uri: s3://attestor-evidence-helios/governance/transition-plan-2026.pdf
+
+  - document_id: CAPEX-HEL-2026
+    tenant: helios
+    document_class: capex_plan
+    covers_from: 2026-01-01
+    covers_to: 2030-12-31
+    content_sha256: 33940edbee8b1f443209598795ba224e7df50b1913927a22994ff3c59d5232c0
+    source_uri: s3://attestor-evidence-helios/governance/capex-2026-2030.xlsx
+
+  - document_id: SUPP-HEL-2026-002
+    tenant: helios
+    document_class: supplier_attestation
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: a4b9a32f679fc8bff6ecf02358dfbe101a65342dfe0ab6b3650a12f770adfc5a
+    source_uri: s3://attestor-evidence-helios/suppliers/attestation-002.pdf
+

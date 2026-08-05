@@ -1,0 +1,77 @@
+tenant: aegis
+period: '2026'
+provenance: synthetic
+note: Shaped by hand to exercise the resolver's branches. Re-captured against the
+  live estate by `python scripts/seed_recordings.py --capture`, which stamps provenance
+  with the run id.
+results:
+- query: esrs/e1_6_gross_scope_1.sql
+  query_digest: ea2684e13ebaabe35ce52b5c9963b6b19638342f2d2b708e8d939941cd37b183
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '9130.0'
+  tables:
+  - gold.ghg_scope_1_activity
+  snapshot_ids:
+    gold.ghg_scope_1_activity: '5551419023871123001'
+- query: esrs/e1_6_gross_scope_1_crosscheck_fuel_spend.sql
+  query_digest: c099f696a6381bdf3051ba295e6f0ef6f12838c54265a812edc1fac23f358979
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '9523.0'
+  tables:
+  - gold.procurement_fuel_spend
+  - ref.fuel_price_period
+- query: esrs/e1_5_electricity_consumption.sql
+  query_digest: 13a89bd2b535d285f2d593197a2c5b4708f7e46c9052e68135eff854b63a367c
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '4417.9'
+  tables:
+  - gold.electricity_consumption
+  snapshot_ids:
+    gold.electricity_consumption: '5551419023871123003'
+- query: esrs/e1_5_electricity_consumption_crosscheck_meter.sql
+  query_digest: 3c76d37f0a2377b1ad096a99561f5126f280c623acbd5f23a82958e796f21948
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '4421.0'
+  tables:
+  - gold.meter_interval_reading
+- query: esrs/e1_6_gross_scope_3.sql
+  query_digest: cb87bb14d581a7e3a9a32c4f52693d2c9ccbb42cec877b60eacd7b20dff4fe24
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '51204.0'
+  tables:
+  - gold.ghg_scope_3_activity
+  quarantined_rows: 1284
+- query: esrs/e1_6_net_revenue.sql
+  query_digest: c091b5fc5ac25d8975a51e49d750a535e821edacccddaa2810b4f1f4201ffe8a
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '118.40'
+  tables:
+  - gold.general_ledger_posting
+  - ref.chart_of_accounts
+- query: esrs/e1_6_net_revenue_crosscheck_ledger.sql
+  query_digest: ae78a456400e80bce81a1923be2e97efd9a07d048346d23e79d3ac3e4c300e65
+  parameters:
+    tenant_id: aegis
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '118.40'
+  tables:
+  - gold.financial_statement_extract

@@ -33,6 +33,7 @@ tolerance:
 abstention:
   allowed_reasons:
     - E_PHASE_IN
+    - E_NOT_MATERIAL
 
 assurance:
   level: limited

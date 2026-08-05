@@ -241,6 +241,26 @@ def _check_derived(
             )
         )
 
+    # An aggregate must be able to say what its components can say. If Scope 3 may lawfully
+    # be phased in but the total may not, then the day Scope 3 is omitted the total abstains
+    # with a reason it never declared — and the resolver turns that into a block. Catching it
+    # here means the inconsistency surfaces in review rather than on the deadline.
+    for operand_id in sorted(referenced):
+        operand = contracts[operand_id]
+        undeclared = set(operand.abstention.allowed_reasons) - set(
+            contract.abstention.allowed_reasons
+        )
+        if undeclared:
+            issues.append(
+                ContractIssue(
+                    where,
+                    contract.id,
+                    f"operand {operand_id} may lawfully omit for "
+                    f"{', '.join(sorted(undeclared))}, which this datapoint does not declare — "
+                    "an aggregate must be able to state what its components can",
+                )
+            )
+
     try:
         actual = derivation.infer_dimension(expression, dict(dimensions))
     except (units.DimensionMismatch, derivation.InvalidExpression) as exc:

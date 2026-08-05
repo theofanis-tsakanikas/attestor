@@ -64,6 +64,9 @@ ignore = [
 # returns; collapsing them into fewer returns would hide which node types are handled, which
 # is the one thing a reader of a safe-evaluation whitelist needs to see at a glance.
 "src/attestor/contracts/derivation.py" = ["PLR0911"]
+# `_resolve_one` dispatches one branch per resolver kind and returns from each. Folding
+# them together would hide which kinds exist, which is the first thing a reader needs.
+"src/attestor/datapoints/resolver.py" = ["PLR0911"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
