@@ -1,0 +1,95 @@
+# A small regulatory corpus for the chunking bake-off.
+#
+# Paraphrased from the ESRS structure rather than reproduced verbatim: the point is the
+# *shape* — headings that disambiguate article numbers, requirements separated by paragraph
+# breaks, methodology notes sitting under the article they qualify. That shape is what the
+# four chunking strategies disagree about.
+
+documents:
+  - document_id: ESRS-E1
+    text: |
+      # ESRS E1 Climate change
+
+      ## E1-1 Transition plan for climate change mitigation
+
+      The undertaking shall disclose its transition plan for climate change mitigation. The
+      disclosure shall explain how the undertaking's strategy and business model are
+      compatible with limiting global warming to 1.5 degrees Celsius.
+
+      The undertaking shall explain the decarbonisation levers identified and the key actions
+      planned, including changes to its product and service portfolio and the adoption of new
+      technologies in its own operations and its upstream value chain.
+
+      The undertaking shall disclose locked-in greenhouse gas emissions from its key assets
+      and products, and explain how those locked-in emissions may jeopardise the achievement
+      of its targets.
+
+      ## E1-5 Energy consumption and mix
+
+      The undertaking shall disclose total energy consumption in megawatt hours, disaggregated
+      between energy from fossil sources, from nuclear sources and from renewable sources.
+
+      Electricity purchased or otherwise acquired from third parties shall be measured at the
+      point of delivery. Where an invoice line is an estimate rather than a meter reading it
+      shall not be presented as measured consumption.
+
+      ## E1-6 Gross Scopes 1, 2 and 3 and total greenhouse gas emissions
+
+      The undertaking shall disclose gross Scope 1 greenhouse gas emissions in metric tonnes
+      of CO2 equivalent. Gross Scope 1 emissions are direct emissions from sources owned or
+      controlled by the undertaking, reported before any deduction for removals, carbon
+      credits or contractual instruments.
+
+      The undertaking shall disclose gross location-based Scope 2 greenhouse gas emissions and
+      gross market-based Scope 2 greenhouse gas emissions separately. The location-based
+      method applies the average emission factor of the grid on which consumption occurs.
+
+      The undertaking shall disclose gross Scope 3 greenhouse gas emissions covering the
+      significant categories identified in its screening. A category that has not been
+      screened shall not be presented as zero.
+
+      The undertaking shall disclose total greenhouse gas emissions as the sum of gross
+      Scope 1, gross Scope 2 and gross Scope 3 emissions.
+
+      The greenhouse gas intensity shall be expressed per net revenue, and the net revenue
+      used as the denominator shall be the amount reported in the financial statements for
+      the same reporting period.
+
+  - document_id: ESRS-1
+    text: |
+      # ESRS 1 General requirements
+
+      ## Materiality
+
+      The undertaking shall apply the double materiality principle. An impact, risk or
+      opportunity is material where it meets the criteria of impact materiality, of financial
+      materiality, or of both.
+
+      Where a datapoint is assessed as not material for the undertaking, the undertaking may
+      omit it, and shall describe the materiality assessment that led to that conclusion.
+
+      ## Omissions
+
+      The undertaking may omit information corresponding to intellectual property, know-how or
+      the results of innovation where disclosure would be seriously prejudicial to its
+      commercial position.
+
+      An omission shall be recorded together with the provision relied upon. Information that
+      the undertaking was unable to compute is not an omission within the meaning of this
+      section.
+
+  - document_id: EFRAG-AR
+    text: |
+      # Application requirements
+
+      ## Conversion factors
+
+      Where the undertaking applies published conversion factors, it shall disclose the source
+      and the reporting year of each factor applied. A factor shall not be interpolated
+      between published years, and shall not be forecast.
+
+      ## Consolidation boundary
+
+      The undertaking shall state whether greenhouse gas figures are prepared under the
+      operational control approach, the financial control approach or the equity share
+      approach, and shall apply the chosen approach consistently across the reporting period.

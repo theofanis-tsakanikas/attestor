@@ -1,0 +1,81 @@
+# Tearing the estate down. Typed confirmation, reverse dependency order, and a check that it
+# actually went.
+#
+# The last step matters more than it looks: a destroy that fails halfway leaves the most
+# expensive layer standing while the summary says "completed". Confirming emptiness is how
+# "we destroyed it" stops being something we believe and becomes something we checked.
+
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DESTROY to confirm
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  confirm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check the typed confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "DESTROY" ]; then
+            echo "confirmation not given" >&2
+            exit 1
+          fi
+
+  destroy:
+    needs: confirm
+    runs-on: ubuntu-latest
+    environment: destroy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: destroy in reverse order
+        env:
+          TF_VAR_expires_at: "1970-01-01"
+          TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+          TF_VAR_deploy_role_arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          for layer in agent knowledge data foundation; do
+            echo "── $layer"
+            terraform -chdir="infra/$layer" init \
+              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+              -backend-config="region=${{ vars.AWS_REGION }}" \
+              -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+              -backend-config="encrypt=true"
+            terraform -chdir="infra/$layer" destroy -auto-approve -input=false
+          done
+
+      - name: confirm nothing survived
+        run: |
+          set -euo pipefail
+          survivors=$(aws resourcegroupstaggingapi get-resources \
+            --tag-filters Key=attestor:managed,Values=terraform \
+            --query 'length(ResourceTagMappingList)' --output text)
+          echo "tagged resources remaining: $survivors"
+          if [ "$survivors" != "0" ]; then
+            echo "the estate did not fully go down" >&2
+            aws resourcegroupstaggingapi get-resources \
+              --tag-filters Key=attestor:managed,Values=terraform \
+              --query 'ResourceTagMappingList[].ResourceARN' --output table
+            exit 1
+          fi
+          echo "### Estate down — 0 tagged resources remain" >> "$GITHUB_STEP_SUMMARY"
+
+      # infra/bootstrap is deliberately untouched: it holds the state and the identity this
+      # workflow just used, and destroying it would leave no way to stand anything up again.

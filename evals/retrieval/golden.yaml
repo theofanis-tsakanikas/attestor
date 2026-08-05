@@ -1,0 +1,60 @@
+# Golden retrieval set for the chunking bake-off.
+#
+# Relevance is a document plus an anchor phrase, not a chunk id. Chunk ids differ per
+# strategy — that is exactly what is being compared — so an id-based golden set could only
+# ever score the strategy it was built from.
+#
+# The anchors are the words a chunk must actually contain to answer the question. A strategy
+# that splits an answer across two chunks fails here no matter how it ranks, which is the
+# failure mode the whole exercise exists to expose.
+
+questions:
+  - id: GQ-01
+    question: What does ESRS require for gross Scope 1 greenhouse gas emissions?
+    document_id: ESRS-E1
+    anchors: ["direct emissions from sources owned or controlled by the undertaking"]
+
+  - id: GQ-02
+    question: Which method applies the average emission factor of the grid?
+    document_id: ESRS-E1
+    anchors: ["location-based method applies the average emission factor"]
+
+  - id: GQ-03
+    question: Can an unscreened Scope 3 category be reported as zero?
+    document_id: ESRS-E1
+    anchors: ["has not been screened shall not be presented as zero"]
+
+  - id: GQ-04
+    question: Which net revenue figure is used as the denominator of GHG intensity?
+    document_id: ESRS-E1
+    anchors: ["amount reported in the financial statements"]
+
+  - id: GQ-05
+    question: How is purchased electricity measured, and how are estimated invoice lines treated?
+    document_id: ESRS-E1
+    anchors: ["measured at the point of delivery"]
+
+  - id: GQ-06
+    question: What must a transition plan say about locked-in emissions?
+    document_id: ESRS-E1
+    anchors: ["locked-in greenhouse gas emissions from its key assets"]
+
+  - id: GQ-07
+    question: When may an undertaking omit a datapoint as not material?
+    document_id: ESRS-1
+    anchors: ["assessed as not material for the undertaking"]
+
+  - id: GQ-08
+    question: Is a figure we could not compute an omission under ESRS 1?
+    document_id: ESRS-1
+    anchors: ["unable to compute is not an omission"]
+
+  - id: GQ-09
+    question: What must be disclosed about published conversion factors?
+    document_id: EFRAG-AR
+    anchors: ["disclose the source and the reporting year of each factor"]
+
+  - id: GQ-10
+    question: Which consolidation boundary approaches may be used for greenhouse gas figures?
+    document_id: EFRAG-AR
+    anchors: ["operational control approach, the financial control approach"]

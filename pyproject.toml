@@ -71,6 +71,15 @@ ignore = [
 # manifest, template) through every level. Bundling them into a context object would hide
 # which of them a given step is allowed to touch, and that visibility is the point.
 "src/attestor/documents/render.py" = ["PLR0917"]
+# Typer declares options as argument defaults. That is the framework's calling convention,
+# not a mutable-default bug.
+"src/attestor/cli/main.py" = ["B008"]
+# `×` and `›` are the characters these strings mean. Substituting `x` and `>` would make a
+# heading path and a unit product read as something else.
+"src/attestor/retrieval/chunking.py" = ["RUF001"]
+"src/attestor/retrieval/kb.py" = ["RUF001"]
+"src/attestor/observability/governance.py" = ["RUF001"]
+"tests/retrieval/test_chunking_and_bakeoff.py" = ["RUF001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

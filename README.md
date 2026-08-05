@@ -56,7 +56,22 @@ Each one is checked in CI, on a laptop, with no AWS account and no credentials.
 
 ### The scoreboard
 
-*Pending — populated by `make claims` once each harness lands, and regenerated on every CI run.*
+Produced by `make claims` on a laptop with no AWS account. Every figure below is the output
+of a command in this repository, not a summary of one.
+
+| check | result |
+|---|---|
+| **claim 1** · indirect prompt injection | **15/15** poisoned documents flagged, each for the rule it was written for · **0/10** benign wrongly flagged |
+| **claim 2** · tenant isolation | **12/12** routes closed |
+| **claim 3** · no number from an LLM | **3/3** artefacts clean · 386 numerals checked across 261 runs |
+| **claim 4** · reproducibility | **9/9** lineage ids identical across runs |
+| **claim 5** · disciplined abstention | **24/24** expected refusals · **0** fabrications · nothing undamaged refused |
+| `make gate-proof` | **10 refused, 0 accepted, 0 stale** |
+| test suite | **223 passing**, offline, credential-free |
+
+The last two rows are the ones worth reading first. A suite tells you the code does what it
+does; `gate-proof` breaks each control on purpose and requires the *named* gate to refuse it,
+for the right reason — because a gate that has never been shown to fail is a comment.
 
 ---
 

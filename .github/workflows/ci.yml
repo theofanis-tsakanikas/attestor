@@ -1,0 +1,135 @@
+# Every pull request. No credentials, no cloud, no network beyond installing dependencies.
+#
+# That is not a limitation to apologise for — it is the design. Every claim this repository
+# makes is checked here, on a runner with no AWS account, which is the same thing as saying a
+# reviewer can check them on a laptop.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  quality:
+    name: lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests evals scripts
+      - run: ruff format --check src tests evals scripts
+      - run: pytest -q
+
+  claims:
+    name: the five claims
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+
+      - name: contracts are consistent
+        run: attestor contracts validate
+
+      - name: recordings match the queries
+        # A query edited without re-capturing would replay a stale answer and every gate
+        # below would pass against the previous version of the system.
+        run: python scripts/seed_recordings.py --check
+
+      - name: "claim 1 — indirect prompt injection"
+        run: attestor eval injection
+
+      - name: "claim 2 — tenant isolation"
+        run: attestor eval isolation
+
+      - name: "claim 3 — no number comes from an LLM"
+        run: attestor gate provenance --all
+
+      - name: "claim 4 — reproducible resolution"
+        run: attestor eval reproducibility
+
+      - name: "claim 5 — disciplined abstention"
+        run: attestor eval abstention
+
+      - name: authorization policies
+        run: attestor policy verify
+
+      - name: retrieval golden set
+        run: attestor eval retrieval
+
+      - name: governance docs are in sync with the code
+        run: attestor govern generate --check
+
+  gate-proof:
+    name: attack our own gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # Breaks every control on purpose and requires the real gate to refuse it, for the
+      # right reason. A gate that has never been shown to fail is a comment.
+      - run: python scripts/gate_proof.py
+
+  overrides:
+    name: override register
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # An expired override turns this red. That is the mechanism, not a bug: nobody gets to
+      # accept a defect permanently and quietly.
+      - run: python scripts/check_overrides.py --warn-days 30
+
+  infrastructure:
+    name: terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - run: terraform fmt -check -recursive infra
+      - name: validate every layer offline
+        # `-backend=false`: no state, no credentials, no network beyond the provider registry.
+        run: |
+          for layer in infra/*/; do
+            echo "── $layer"
+            terraform -chdir="$layer" init -backend=false -input=false
+            terraform -chdir="$layer" validate
+          done
+      - uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infra
+          quiet: true
+          soft_fail: false

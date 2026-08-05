@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+"""Break every gate on purpose, and require the real gate to refuse it.
+
+A test suite tells you the code does what it does. It does not tell you the *gates* still
+bite, because a gate that has quietly stopped checking anything passes every test it has.
+This script plants a genuine violation and demands a refusal.
+
+Three rules keep it a proof rather than a ritual:
+
+**Green first.** Every mutation runs against a repository that currently passes. A refusal
+from an already-broken baseline proves nothing.
+
+**A non-zero exit is not evidence.** The *named* check must be the thing that failed, with a
+message that names the violation. A mutation that happens to cause an unrelated crash is
+reported as inconclusive, not as a pass — otherwise the day a gate is deleted, its mutation
+still "passes" because the import now fails.
+
+**A mutation whose target has moved is STALE.** If the code a mutation edits no longer looks
+the way it expects, the mutation is not silently skipped and is not counted as a pass. It is
+reported, and the run is red, because a proof that quietly stopped running is worse than one
+that never existed.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@dataclass(frozen=True)
+class Mutation:
+    name: str
+    gate: str
+    #: The command that must fail, run inside the mutated copy.
+    command: list[str]
+    #: A phrase the failure must contain. Presence of this is what makes the refusal *the*
+    #: refusal rather than any old error.
+    expect: str
+    apply: Callable[[Path], bool]
+    #: Why this mutation is worth planting — usually because it is a mistake somebody could
+    #: plausibly make, not an absurd one.
+    rationale: str
+
+
+def _replace(path: Path, old: str, new: str) -> bool:
+    """Edit a file, returning False if the target text is not there any more."""
+    text = path.read_text(encoding="utf-8")
+    if old not in text:
+        return False
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    return True
+
+
+# ── The mutations ────────────────────────────────────────────────────────────
+
+
+def _launder_a_resolver_error(root: Path) -> bool:
+    """Make a crashed resolver look like a lawful omission — the exact laundering ADR-0001
+    exists to prevent, and a one-word diff."""
+    return _replace(
+        root / "src/attestor/contracts/reason_codes.py",
+        'code="E_RESOLVER_ERROR",\n        disposition=Disposition.INTERNAL_FAILURE,',
+        'code="E_RESOLVER_ERROR",\n        disposition=Disposition.LAWFUL_OMISSION,',
+    )
+
+
+def _let_a_model_write_a_number(root: Path) -> bool:
+    """Allow digits in model-authored prose. Somebody would do this to fix a 'false positive'
+    on a citation marker."""
+    return _replace(
+        root / "src/attestor/documents/manifest.py",
+        "        return self is not RunKind.NARRATIVE",
+        "        return True",
+    )
+
+
+def _drop_the_cross_tenant_forbid(root: Path) -> bool:
+    """Delete the policy that separates tenants."""
+    path = root / "policy/cedar/tenant_isolation.cedar"
+    text = path.read_text(encoding="utf-8")
+    marker = '@id("forbid-cross-tenant")'
+    if marker not in text:
+        return False
+    start = text.index(marker)
+    end = text.index("};", start) + 2
+    path.write_text(text[:start] + text[end:], encoding="utf-8")
+    return True
+
+
+def _put_the_tenant_in_the_cache_key_last(root: Path) -> bool:
+    """Remove the tenant from the cache digest. The classic multi-tenant leak, and it looks
+    like a harmless refactor."""
+    return _replace(
+        root / "src/attestor/agent/cache.py",
+        '            "tenant": self.tenant,\n            "period": self.period,',
+        '            "period": self.period,',
+    )
+
+
+def _widen_the_retrieval_filter(root: Path) -> bool:
+    """Let a caller override the session's tenant in a retrieval filter."""
+    return _replace(
+        root / "src/attestor/retrieval/kb.py",
+        "        if key in base and base[key] != value:",
+        "        if False:",
+    )
+
+
+def _soften_an_injection_rule(root: Path) -> bool:
+    """Remove the imperative anchor, which is how the rules stop distinguishing an attack
+    from a document that merely discusses one."""
+    return _replace(
+        root / "src/attestor/security/injection.py",
+        '_IMPERATIVE + r"(?:ignore|disregard|forget|override|bypass)',
+        'r"\\b(?:ignore|disregard|forget|override|bypass)',
+    )
+
+
+def _accept_a_dimension_mismatch(root: Path) -> bool:
+    """Stop checking that a derived figure's unit matches what its expression produces."""
+    return _replace(
+        root / "src/attestor/contracts/loader.py",
+        "    if actual != expected:",
+        "    if False:",
+    )
+
+
+def _let_a_contract_preauthorize_a_crash(root: Path) -> bool:
+    """Allow a contract to declare an internal failure as an acceptable omission."""
+    return _replace(
+        root / "src/attestor/contracts/model.py",
+        "            if not resolved.is_lawful:",
+        "            if False:",
+    )
+
+
+def _let_an_agent_approve_an_override(root: Path) -> bool:
+    """Delete the forbid that stops an override being signed through the agent."""
+    path = root / "policy/cedar/roles.cedar"
+    text = path.read_text(encoding="utf-8")
+    marker = '@id("forbid-approval-through-the-agent")'
+    if marker not in text:
+        return False
+    start = text.index(marker)
+    # This policy has no condition block, so it closes with `);` rather than `};`.
+    end = text.index(");", start) + 2
+    path.write_text(text[:start] + text[end:], encoding="utf-8")
+    return True
+
+
+def _publish_despite_a_blocker(root: Path) -> bool:
+    """Render a report that has blockers — a draft with a hole in it, which is what somebody
+    reaches for the night before a deadline."""
+    return _replace(
+        root / "src/attestor/documents/render.py",
+        "    if not results.can_issue:\n        raise ReportBlocked(results.blockers)",
+        "    if False:\n        raise ReportBlocked(results.blockers)",
+    )
+
+
+MUTATIONS: tuple[Mutation, ...] = (
+    Mutation(
+        "launder a resolver error into a lawful omission",
+        "reason-code vocabulary",
+        ["pytest", "-q", "tests/contracts/test_reason_codes.py", "-x"],
+        "pipeline_failures_are_never_lawful",
+        _launder_a_resolver_error,
+        "One word. It turns every crash into 'not material' and the report still ships.",
+    ),
+    Mutation(
+        "let a model write a number",
+        "narrative rule",
+        ["pytest", "-q", "tests/documents", "-x"],
+        "narrative",
+        _let_a_model_write_a_number,
+        "Plausible as a fix for a citation-marker false positive.",
+    ),
+    Mutation(
+        "delete the cross-tenant forbid",
+        "Cedar isolation",
+        ["attestor", "eval", "isolation"],
+        "isolation",
+        _drop_the_cross_tenant_forbid,
+        "The policy everything else assumes is there.",
+    ),
+    Mutation(
+        "drop the tenant from the cache key",
+        "cache scoping",
+        ["pytest", "-q", "tests/policy", "-x"],
+        "tenant",
+        _put_the_tenant_in_the_cache_key_last,
+        "Looks like a harmless refactor; serves one tenant another's answer.",
+    ),
+    Mutation(
+        "let a caller widen the retrieval filter",
+        "retrieval scoping",
+        ["pytest", "-q", "tests/retrieval", "-x"],
+        "filter",
+        _widen_the_retrieval_filter,
+        "An 'extra filters' feature that quietly accepts a tenant override.",
+    ),
+    Mutation(
+        "remove the imperative anchor from an injection rule",
+        "injection false positives",
+        ["attestor", "eval", "injection"],
+        "benign",
+        _soften_an_injection_rule,
+        "Broadening a rule to catch more attacks, and catching real documents instead.",
+    ),
+    Mutation(
+        "accept a dimension mismatch",
+        "unit algebra",
+        ["pytest", "-q", "tests/contracts/test_loader.py", "-x"],
+        "dimension",
+        _accept_a_dimension_mismatch,
+        "The check that stops a figure being published a thousand times too small.",
+    ),
+    Mutation(
+        "let a contract pre-authorize an internal failure",
+        "abstention vocabulary",
+        ["pytest", "-q", "tests/contracts/test_model.py", "-x"],
+        "test_contract_cannot_pre_authorize_an_internal_failure",
+        _let_a_contract_preauthorize_a_crash,
+        "A contract declaring E_RESOLVER_ERROR as an acceptable omission.",
+    ),
+    Mutation(
+        "let an agent approve an override",
+        "authorization",
+        ["pytest", "-q", "tests/policy", "-x"],
+        "test_nobody_approves_an_override_through_the_agent",
+        _let_an_agent_approve_an_override,
+        "A second, weaker path to a signature.",
+    ),
+    Mutation(
+        "render a report that has blockers",
+        "issue refusal",
+        ["pytest", "-q", "tests/documents", "-x"],
+        "test_a_blocked_report_produces_no_artefact",
+        _publish_despite_a_blocker,
+        "The night-before-the-deadline change.",
+    ),
+)
+
+
+# ── Running them ─────────────────────────────────────────────────────────────
+
+
+def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    # PYTHONPATH points at the *copy*, not at the editable install. Without this the mutation
+    # is planted in a directory nothing imports from, every gate passes, and the script
+    # reports a perfect score while proving nothing at all.
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = str(cwd / "src")
+    return subprocess.run(  # noqa: S603 — fixed command list, no shell
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+
+def main() -> int:
+    print("gate-proof: establishing the baseline")
+    baseline = _run([sys.executable, "-m", "pytest", "-q"], ROOT)
+    if baseline.returncode != 0:
+        print("the suite is not green; every mutation below would be meaningless", file=sys.stderr)
+        print(baseline.stdout[-4000:], file=sys.stderr)
+        return 1
+    print("  baseline green\n")
+
+    passes: list[str] = []
+    failures: list[str] = []
+    stale: list[str] = []
+
+    for mutation in MUTATIONS:
+        with tempfile.TemporaryDirectory() as raw:
+            copy = Path(raw) / "attestor"
+            shutil.copytree(
+                ROOT,
+                copy,
+                ignore=shutil.ignore_patterns(
+                    ".venv", ".git", "__pycache__", ".pytest_cache", ".ruff_cache", "out"
+                ),
+            )
+            try:
+                applied = mutation.apply(copy)
+            except (ValueError, OSError) as exc:
+                applied = False
+                print(f"         ({type(exc).__name__}: {exc})")
+            if not applied:
+                stale.append(mutation.name)
+                print(f"  STALE  {mutation.name} — its target has moved; the proof is not running")
+                continue
+
+            result = _run([sys.executable, "-m", *(_module(mutation.command))], copy)
+            output = (result.stdout + result.stderr).lower()
+
+            if result.returncode == 0:
+                failures.append(mutation.name)
+                print(f"  FAIL   {mutation.name} — {mutation.gate} accepted the violation")
+            elif mutation.expect.lower() not in output:
+                failures.append(mutation.name)
+                print(
+                    f"  FAIL   {mutation.name} — something failed, but not {mutation.gate}; "
+                    f"{mutation.expect!r} is absent from the output"
+                )
+            else:
+                passes.append(mutation.name)
+                print(f"  ok     {mutation.name} — refused by {mutation.gate}")
+
+    print()
+    print(f"gate-proof: {len(passes)} refused, {len(failures)} accepted, {len(stale)} stale")
+    if stale:
+        print("\nstale mutations point at code that has moved. Update them:", file=sys.stderr)
+        for name in stale:
+            print(f"  {name}", file=sys.stderr)
+    return 1 if failures or stale else 0
+
+
+def _module(command: list[str]) -> list[str]:
+    """Run through `python -m` so the mutated copy is the code under test, not the installed one."""
+    if command[0] == "pytest":
+        return ["pytest", *command[1:]]
+    if command[0] == "attestor":
+        return ["attestor.cli.main", *command[1:]]
+    return command
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

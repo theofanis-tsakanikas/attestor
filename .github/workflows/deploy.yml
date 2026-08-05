@@ -1,0 +1,86 @@
+# The only way anything reaches AWS.
+#
+# `workflow_dispatch` only, behind a GitHub Environment whose reviewers must approve. The
+# OIDC trust in infra/bootstrap is scoped to that environment, so a workflow that has not
+# been approved cannot mint credentials at all — the gate is in IAM, not in a job condition
+# somebody can edit.
+#
+# `days` has no default. Standing the estate up requires saying how long it is meant to live,
+# and that answer becomes the `attestor:expires-at` tag the reaper enforces.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      layers:
+        description: Which layers to apply
+        type: choice
+        options: [foundation, foundation+data, all]
+        default: foundation
+      days:
+        description: How many days this estate should live (drives attestor:expires-at)
+        required: true
+        type: string
+      production_topology:
+        description: OpenSearch standby replicas — on for the capture run only
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    # The same gates a pull request runs, re-run on the exact ref being deployed. A green
+    # check on a branch is not evidence about the commit somebody typed into a dispatch box.
+    uses: ./.github/workflows/ci.yml
+
+  apply:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: compute expiry
+        id: expiry
+        run: echo "date=$(date -u -d "+${{ inputs.days }} days" +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: apply in dependency order
+        env:
+          TF_VAR_expires_at: ${{ steps.expiry.outputs.date }}
+          TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+          TF_VAR_deploy_role_arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          TF_VAR_production_topology: ${{ inputs.production_topology }}
+        run: |
+          set -euo pipefail
+          case "${{ inputs.layers }}" in
+            foundation) layers="foundation" ;;
+            foundation+data) layers="foundation data" ;;
+            all) layers="foundation data knowledge agent" ;;
+          esac
+          for layer in $layers; do
+            echo "── $layer"
+            terraform -chdir="infra/$layer" init \
+              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+              -backend-config="region=${{ vars.AWS_REGION }}" \
+              -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+              -backend-config="encrypt=true"
+            terraform -chdir="infra/$layer" apply -auto-approve -input=false
+          done
+
+      - name: record what was created and when it expires
+        run: |
+          echo "### Estate up" >> "$GITHUB_STEP_SUMMARY"
+          echo "Layers: \`${{ inputs.layers }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Expires: \`${{ steps.expiry.outputs.date }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run \`Destroy\` before that date, or the reaper will say so." >> "$GITHUB_STEP_SUMMARY"
