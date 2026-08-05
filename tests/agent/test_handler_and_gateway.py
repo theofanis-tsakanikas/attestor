@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 
 import pytest
+from tests.conftest import claims_for
 
 from attestor.agent import gateway, handler
 from attestor.agent.tools import SPECS, Denied, Toolbox
@@ -27,6 +27,20 @@ def _session(tenant: str = "helios", role: str = "role:preparer") -> Session:
         period="2026",
         session_id="sess-01",
     )
+
+
+@pytest.fixture(autouse=True)
+def _handler_root(repo_root: Path, monkeypatch) -> None:
+    """Point the handler at this repository.
+
+    It defaults to `/var/task`, the Lambda task root. Leaving it there meant every handler
+    test reached an empty directory and got a 500 — so `test_an_unknown_tool_is_refused`
+    asserted a rejection that was really a `FileNotFoundError` wearing a different number.
+    """
+    monkeypatch.setattr(handler, "ROOT", repo_root)
+    handler.reset_cache()
+    yield
+    handler.reset_cache()
 
 
 @pytest.fixture
@@ -106,11 +120,7 @@ def test_every_call_is_recorded_whether_or_not_it_was_allowed(toolbox: Toolbox) 
 
 def test_resolve_returns_the_string_that_will_be_printed(toolbox: Toolbox) -> None:
     """A float would let the model round it differently and describe a number nobody published."""
-    result = toolbox.resolve_datapoint(
-        "ESRS_E1-6_gross_scope_1",
-        period_start=dt.date(2026, 1, 1),
-        period_end=dt.date(2027, 1, 1),
-    )
+    result = toolbox.resolve_datapoint("ESRS_E1-6_gross_scope_1")
     assert isinstance(result["value"], str)
     assert result["lineage"]
 
@@ -158,7 +168,7 @@ def test_an_argument_naming_a_scope_is_refused() -> None:
             "tool": "resolve_datapoint",
             "tenant_id": "helios",
             "period": "2026",
-            "claims": {"sub": "user-1", "cognito:groups": ["helios-preparers"]},
+            "claims": claims_for("helios", "helios-preparers"),
             "arguments": {"datapoint_id": "X", "tenant": "aegis"},
         }
     )
@@ -168,7 +178,12 @@ def test_an_argument_naming_a_scope_is_refused() -> None:
 
 def test_an_unknown_tool_is_refused() -> None:
     response = handler.invoke(
-        {"tool": "drop_everything", "tenant_id": "helios", "period": "2026", "claims": {}}
+        {
+            "tool": "drop_everything",
+            "tenant_id": "helios",
+            "period": "2026",
+            "claims": claims_for("helios", "helios-preparers"),
+        }
     )
     assert response["statusCode"] == 400
 
@@ -180,7 +195,7 @@ def test_an_internal_error_does_not_leak_its_message() -> None:
             "tool": "resolve_datapoint",
             "tenant_id": "helios",
             "period": "2026",
-            "claims": {"sub": "user-1", "cognito:groups": ["helios-preparers"]},
+            "claims": claims_for("helios", "helios-preparers"),
             "arguments": {"datapoint_id": "X"},
         }
     )
@@ -198,6 +213,139 @@ def test_denied_is_reported_as_403_not_as_an_error(monkeypatch) -> None:
     monkeypatch.setattr(handler, "build_session", lambda *a, **k: _session())
     monkeypatch.setattr(handler, "build_toolbox", lambda _session: Refusing())
     response = handler.invoke(
-        {"tool": "resolve_datapoint", "tenant_id": "helios", "period": "2026", "arguments": {}}
+        {
+            "tool": "resolve_datapoint",
+            "tenant_id": "helios",
+            "period": "2026",
+            "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
+        }
     )
     assert response["statusCode"] == 403
+
+
+# ── One question costs one question ──────────────────────────────────────────
+
+
+def test_resolving_one_datapoint_runs_only_its_closure(
+    repo_root: Path, contract_set: ContractSet
+) -> None:
+    """The agent asks for one figure. Answering by resolving the whole set is the same
+    answer at many times the scan, and `€/tenant` is a first-class metric here."""
+    executed: list[str] = []
+    contracts = contract_set.for_standard(Standard.ESRS)
+
+    class Counting(RecordedBackend):
+        def execute(self, *, sql, parameters, snapshot_id):
+            executed.append(sql.splitlines()[0])
+            return super().execute(sql=sql, parameters=parameters, snapshot_id=snapshot_id)
+
+    box = Toolbox(
+        session=_session(),
+        policies=cedar.load(repo_root),
+        contracts=contracts,
+        resolver=Resolver(
+            contracts=contracts,
+            backend=Counting(RecordedBackend.from_directory(repo_root / "recordings")._recordings),
+            evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
+            override_register=overrides.load_register(repo_root),
+            root=repo_root,
+        ),
+        overrides=overrides.load_register(repo_root),
+    )
+    box.resolve_datapoint("ESRS_E1-5_electricity_consumption")
+    everything = len(contracts)
+    assert 0 < len(executed) < everything, executed
+
+
+def test_a_derived_figure_still_gets_its_operands(toolbox: Toolbox) -> None:
+    """Narrowing must not narrow past what the expression needs."""
+    result = toolbox.resolve_datapoint("ESRS_E1-6_total_ghg")
+    assert result.get("value"), result
+
+
+def test_read_lineage_returns_lineage_not_instructions(toolbox: Toolbox) -> None:
+    """It used to answer with a note telling the caller to do something else."""
+    result = toolbox.read_lineage("ESRS_E1-6_gross_scope_1")
+    assert result["lineage"]
+    assert len(result["lineage_id"]) == 64
+    assert result["resolver"].startswith("sql:")
+    assert result["parameters"]["tenant_id"] == "helios"
+
+
+def test_read_lineage_on_an_abstention_says_why(repo_root: Path, contract_set: ContractSet) -> None:
+    contracts = contract_set.for_standard(Standard.ESRS)
+    box = Toolbox(
+        session=_session(tenant="aegis"),
+        policies=cedar.load(repo_root),
+        contracts=contracts,
+        resolver=Resolver(
+            contracts=contracts,
+            backend=RecordedBackend.from_directory(repo_root / "recordings"),
+            evidence=EvidenceIndex.for_tenant(repo_root, "aegis"),
+            override_register=overrides.load_register(repo_root),
+            root=repo_root,
+        ),
+        overrides=overrides.load_register(repo_root),
+    )
+    result = box.read_lineage("ESRS_E1-6_gross_scope_1")
+    assert result["lineage"] is None
+    assert result["reason"] == "E_OUT_OF_TOLERANCE"
+
+
+def test_no_tool_takes_a_period_argument() -> None:
+    """The period is the session's, like the tenant. The old signature demanded two dates
+    the schema did not expose, so a well-formed Gateway call raised TypeError."""
+    for spec in SPECS:
+        assert not {"period", "period_start", "period_end"} & set(spec.parameters)
+
+
+def test_an_argument_outside_the_schema_is_a_400_not_a_500() -> None:
+    response = handler.invoke(
+        {
+            "tool": "resolve_datapoint",
+            "tenant_id": "helios",
+            "period": "2026",
+            "claims": claims_for("helios", "helios-preparers"),
+            "arguments": {"datapoint_id": "X", "limit": "999"},
+        }
+    )
+    assert response["statusCode"] == 400
+    assert "does not accept" in response["body"]["error"]
+
+
+def test_a_missing_required_argument_is_a_400() -> None:
+    response = handler.invoke(
+        {
+            "tool": "resolve_datapoint",
+            "tenant_id": "helios",
+            "period": "2026",
+            "claims": claims_for("helios", "helios-preparers"),
+            "arguments": {},
+        }
+    )
+    assert response["statusCode"] == 400
+    assert "requires argument" in response["body"]["error"]
+
+
+def test_a_token_from_another_tenant_is_403(repo_root: Path) -> None:
+    """The tenant id is caller-supplied; the token is what says which one it may name."""
+    response = handler.invoke(
+        {
+            "tool": "resolve_datapoint",
+            "tenant_id": "aegis",
+            "period": "2026",
+            "claims": claims_for("helios", "helios-preparers"),
+            "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
+        }
+    )
+    assert response["statusCode"] == 403
+    assert "aegis" not in response["body"]["error"]
+
+
+def test_the_declarative_cache_is_built_once(repo_root: Path) -> None:
+    """Re-reading and re-validating every contract per invocation is a cold start's work
+    on every warm one; nothing tenant-scoped is cached alongside it."""
+    handler.reset_cache()
+    first = handler.declarative()
+    assert handler.declarative() is first
+    assert not hasattr(first, "evidence")

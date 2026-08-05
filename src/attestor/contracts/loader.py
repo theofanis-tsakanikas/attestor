@@ -105,6 +105,32 @@ class ContractSet:
         """Datapoint ids in an order where every derived operand precedes its dependant."""
         return tuple(_topological_order(self.contracts))
 
+    def closure(self, datapoint_id: str) -> tuple[str, ...]:
+        """`datapoint_id` and the operands it transitively needs, in resolution order.
+
+        Resolving one figure used to mean resolving the whole set, because that was the only
+        entry point the resolver had. Against Athena that turned a single tool call into one
+        query per datapoint in the tenant's standard — the same answer, at ten times the
+        scan. A derived figure genuinely needs its operands; it does not need its siblings.
+        """
+        if datapoint_id not in self.contracts:
+            raise KeyError(f"no contract for datapoint {datapoint_id!r}")
+        needed: set[str] = set()
+        frontier = [datapoint_id]
+        while frontier:
+            current = frontier.pop()
+            if current in needed:
+                continue
+            needed.add(current)
+            contract = self.contracts[current]
+            if contract.resolver.kind == "derived":
+                try:
+                    refs = derivation.referenced_datapoints(contract.resolver.expression)
+                except derivation.InvalidExpression:  # pragma: no cover — load-time failure
+                    refs = frozenset()
+                frontier.extend(ref for ref in refs if ref in self.contracts)
+        return tuple(key for key in self.resolution_order() if key in needed)
+
 
 def load(root: Path | str = ".", *, strict: bool = True) -> ContractSet:
     """Load every contract under `root/contracts`, cross-check, and index.

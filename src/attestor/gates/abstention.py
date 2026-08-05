@@ -28,6 +28,7 @@ from pathlib import Path
 
 import yaml
 
+from attestor.agent.narrative import RecordedNarrativeProvider
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
 from attestor.contracts.model import Standard
@@ -35,7 +36,6 @@ from attestor.datapoints.backends import RecordedBackend
 from attestor.datapoints.evidence import EvidenceDocument, EvidenceIndex
 from attestor.datapoints.resolver import (
     Abstained,
-    NarrativeDraft,
     ResolutionContext,
     Resolved,
     Resolver,
@@ -180,15 +180,6 @@ def _corpus(root: Path, scenario: Scenario) -> EvidenceIndex:
     return EvidenceIndex(documents, tenant=scenario.tenant)
 
 
-def _narrative(_contract, _context) -> NarrativeDraft:
-    """A cooperative provider. The eval is about evidence, not about the model."""
-    return NarrativeDraft(
-        text="The undertaking maintains a transition plan. [ev:aaaa] [ev:bbbb] [ev:cccc]",
-        citations=("ev:aaaa", "ev:bbbb", "ev:cccc"),
-        prompt_ref="esrs_e1_1_transition_plan@3",
-    )
-
-
 def evaluate(scenario: Scenario, *, root: Path, contracts: ContractSet) -> ScenarioResult:
     result = ScenarioResult(scenario=scenario)
     registry = TenantRegistry.load(root)
@@ -198,7 +189,9 @@ def evaluate(scenario: Scenario, *, root: Path, contracts: ContractSet) -> Scena
         evidence=_corpus(root, scenario),
         override_register=overrides.load_register(root),
         root=root,
-        narrative_provider=_narrative,
+        # The same recorded drafts the CLI replays. An eval with its own cooperative stub
+        # would score a program that is not the one being shipped.
+        narrative_provider=RecordedNarrativeProvider.from_root(root),
     )
     resolved = resolver.resolve_all(
         ResolutionContext(

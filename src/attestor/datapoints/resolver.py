@@ -37,6 +37,10 @@ from attestor.datapoints import evidence as evidence_module
 from attestor.datapoints.backends import QueryBackend, QueryError, QueryResult, query_digest
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.lineage import LineageLedger, LineageRecord, SourceRef
+from attestor.observability.cost import CostMeter, Meter
+
+#: Athena is priced per terabyte scanned; the backend reports bytes.
+_BYTES_PER_TB = Decimal(1024**4)
 
 #: Signature of the narrative provider. It receives the contract and the tenant context and
 #: returns prose plus the citations behind it. It is injected, so the resolver has no
@@ -166,6 +170,7 @@ class Resolver:
         root: Path | str = ".",
         narrative_provider: NarrativeProvider | None = None,
         clock: Callable[[], dt.datetime] | None = None,
+        cost_meter: CostMeter | None = None,
     ) -> None:
         if evidence.tenant is None:  # pragma: no cover — defensive
             raise ValueError("the evidence index must be tenant-scoped")
@@ -176,10 +181,26 @@ class Resolver:
         self._root = Path(root)
         self._narrative = narrative_provider
         self._clock = clock
+        # Optional, and metered where the charge is actually incurred rather than
+        # apportioned afterwards from a bill. Apportionment is a guess dressed as accounting
+        # and it always flatters whichever tenant nobody is looking at.
+        self._cost = cost_meter
 
     # ── Entry point ──────────────────────────────────────────────────────────
 
     def resolve_all(self, context: ResolutionContext) -> ResolutionSet:
+        return self._resolve_order(self._contracts.resolution_order(), context)
+
+    def resolve_one(self, context: ResolutionContext, *, datapoint_id: str) -> ResolutionSet:
+        """One figure and exactly the operands it needs — nothing else runs.
+
+        The agent asks for a single datapoint at a time. Answering that by resolving the
+        whole contract set is the same answer at many times the cost, and on a platform where
+        `€/tenant` is a first-class metric that is not a detail.
+        """
+        return self._resolve_order(self._contracts.closure(datapoint_id), context)
+
+    def _resolve_order(self, order: tuple[str, ...], context: ResolutionContext) -> ResolutionSet:
         if context.tenant != self._evidence.tenant:
             raise ValueError(
                 f"resolver is scoped to tenant {self._evidence.tenant!r} "
@@ -195,7 +216,7 @@ class Resolver:
             )
         results: dict[str, Resolution] = {}
         ledger = LineageLedger()
-        for datapoint_id in self._contracts.resolution_order():
+        for datapoint_id in order:
             contract = self._contracts[datapoint_id]
             results[datapoint_id] = self._resolve_one(contract, context, results, ledger)
         return ResolutionSet(results, ledger)
@@ -370,6 +391,7 @@ class Resolver:
                 "no narrative provider is configured; prose is not invented here",
             )
         draft = self._narrative(contract, context)
+        self._meter_model(context)
         required = contract.resolver.grounding.min_citations
         if len(draft.citations) < required:
             raise _Abstain(
@@ -467,11 +489,43 @@ class Resolver:
 
     def _run(self, sql: str, parameters: dict[str, str], context: ResolutionContext) -> QueryResult:
         try:
-            return self._backend.execute(
+            result = self._backend.execute(
                 sql=sql, parameters=parameters, snapshot_id=context.snapshots.get("*")
             )
         except QueryError as exc:
             raise _Abstain("E_RESOLVER_ERROR", str(exc)) from exc
+        self._meter(Meter.ATHENA, Decimal(result.scanned_bytes) / _BYTES_PER_TB, context)
+        return result
+
+    def _meter_model(self, context: ResolutionContext) -> None:
+        """Token usage from the narrative provider, if it reports any.
+
+        Read off the provider rather than passed back through `NarrativeDraft`, because a
+        draft is a regulated artefact and a token count is an operational one; putting a
+        price inside the thing an auditor reads is how the two start being confused.
+        """
+        usage = getattr(self._narrative, "last_usage", None)
+        if not isinstance(usage, dict):
+            return
+        for meter, key in (
+            (Meter.MODEL_INPUT, "inputTokens"),
+            (Meter.MODEL_OUTPUT, "outputTokens"),
+        ):
+            tokens = usage.get(key)
+            if isinstance(tokens, int) and tokens > 0:
+                self._meter(meter, Decimal(tokens) / 1000, context)
+
+    def _meter(self, meter: Meter, quantity: Decimal, context: ResolutionContext) -> None:
+        """Attribute a charge to the tenant that incurred it, at the moment it is incurred."""
+        if self._cost is None or quantity <= 0:
+            return
+        self._cost.record(
+            meter,
+            quantity,
+            tenant=context.tenant,
+            session_id=context.run_id or "unattributed",
+            operation="resolve_datapoint",
+        )
 
     def _read_query(self, relative: str) -> str:
         path = self._root / "queries" / relative

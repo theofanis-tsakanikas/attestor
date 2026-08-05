@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from attestor.agent.narrative import RecordedNarrativeProvider
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
 from attestor.contracts.model import Standard
@@ -39,17 +40,11 @@ PERIOD_END = dt.date(2027, 1, 1)
 REPORT_DATE = dt.date(2026, 7, 1)
 
 
-def _narrative(_contract, _context) -> NarrativeDraft:
-    return NarrativeDraft(
-        text=(
-            "The undertaking has a board-approved transition plan covering its owned fleet "
-            "and leased depots. [ev:7f3a] Decarbonisation relies on fleet replacement and "
-            "site electrification. [ev:91c0] Board approval is evidenced in the minutes. "
-            "[ev:2d55]"
-        ),
-        citations=("ev:7f3a", "ev:91c0", "ev:2d55"),
-        prompt_ref="esrs_e1_1_transition_plan@3",
-    )
+# The committed drafts, not a paragraph invented here. Rendering a fixture would test the
+# render path against prose that never goes near a document; what has to survive the
+# provenance gate is the text this repository actually ships.
+def _narrative(repo_root: Path):
+    return RecordedNarrativeProvider.from_root(repo_root)
 
 
 @pytest.fixture
@@ -60,7 +55,7 @@ def resolved(repo_root: Path, contract_set: ContractSet):
         evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
         override_register=overrides.load_register(repo_root),
         root=repo_root,
-        narrative_provider=_narrative,
+        narrative_provider=_narrative(repo_root),
     )
     return resolver.resolve_all(
         ResolutionContext(
@@ -179,7 +174,7 @@ def test_a_blocked_report_produces_no_artefact(
         evidence=EvidenceIndex.for_tenant(repo_root, "aegis"),
         override_register=overrides.load_register(repo_root),
         root=repo_root,
-        narrative_provider=_narrative,
+        narrative_provider=_narrative(repo_root),
     )
     blocked = resolver.resolve_all(
         ResolutionContext(

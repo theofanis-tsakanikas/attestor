@@ -26,6 +26,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from attestor.agent.narrative import prompt_digest
 from attestor.datapoints.backends import query_digest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,6 +157,119 @@ SCENARIOS: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
+# ── Narratives ───────────────────────────────────────────────────────────────
+#
+# Model-authored prose, captured rather than composed. Each entry is keyed to the digest of
+# the prompt it came from, so editing a prompt without re-capturing raises instead of
+# replaying text the current prompt would never have produced.
+#
+# Two rules the drafts below obey, because the system enforces both and a fixture that
+# violates them would be testing a program nobody ships:
+#
+#   - **not one digit.** `injection.check_draft` strips the citation markers and refuses any
+#     remaining digit; the manifest refuses a NARRATIVE run carrying one; the provenance gate
+#     looks for it again in the finished file.
+#   - **every marker is declared.** `render._narrative_runs` refuses a quoted `[ev:...]` that
+#     is not in the citation list — hallucinated or smuggled, the remedy is the same.
+NARRATIVES: tuple[dict[str, Any], ...] = (
+    {
+        "tenant": "helios",
+        "datapoint_id": "ESRS_E1-1_transition_plan",
+        "prompt_id": "esrs_e1_1_transition_plan",
+        "citations": ["ev:7f3a", "ev:91c0", "ev:2d55"],
+        "text": (
+            "The undertaking maintains a transition plan for climate change mitigation, "
+            "approved by the board and reviewed by the sustainability committee within the "
+            "reporting period. [ev:7f3a] The plan covers the undertaking's own operations "
+            "and its upstream value chain, and names fleet replacement, site electrification "
+            "and modal shift to rail as its principal decarbonisation levers. [ev:91c0] "
+            "Capital allocation for those levers is sequenced against the approved capital "
+            "plan, and the plan identifies which of them depend on charging and grid "
+            "infrastructure the undertaking does not control. [ev:2d55] Board approval and "
+            "the review cycle are evidenced in the minutes of the sustainability committee. "
+            "Where the plan's alignment with limiting global warming has not yet been "
+            "assessed against a recognised methodology, the plan states that rather than "
+            "asserting an alignment it has not tested."
+        ),
+    },
+    {
+        "tenant": "aegis",
+        "datapoint_id": "ESRS_E1-1_transition_plan",
+        "prompt_id": "esrs_e1_1_transition_plan",
+        "citations": ["ev:4b1e", "ev:c07d", "ev:ea55"],
+        "text": (
+            "The undertaking has a transition plan for climate change mitigation covering "
+            "its manufacturing sites and its agricultural supply base, approved by the board "
+            "in the reporting period. [ev:4b1e] Its stated levers are refrigerant "
+            "substitution, process heat recovery and supplier engagement on land use. "
+            "[ev:c07d] The plan records that the supply-base lever depends on primary data "
+            "the undertaking does not yet collect from all growers, and describes the "
+            "programme intended to close that gap. [ev:ea55] The plan does not claim "
+            "alignment with a recognised decarbonisation pathway for the reporting period."
+        ),
+    },
+    {
+        "tenant": "lumen",
+        "datapoint_id": "AIACT_ANNEX-IV-1_intended_purpose",
+        "prompt_id": "ai_act_intended_purpose",
+        "citations": ["ev:11aa", "ev:22bb"],
+        "text": (
+            "The system is a regulated-report production platform. Its intended purpose is "
+            "to assemble sustainability and conformity documentation from an undertaking's "
+            "own evidence corpus, under the supervision of a named preparer. [ev:11aa] The "
+            "provider is the undertaking documented in the general disclosures, and the "
+            "system is deployed as a hosted service reached through an authenticated "
+            "session. [ev:22bb] The system interacts with a managed data lakehouse and a "
+            "managed retrieval service that it is not itself part of; both are named in the "
+            "system documentation. The documentation is silent on use outside the reporting "
+            "workflow, and this file therefore makes no claim about such use."
+        ),
+    },
+    {
+        "tenant": "lumen",
+        "datapoint_id": "AIACT_ANNEX-IV-3_human_oversight",
+        "prompt_id": "ai_act_human_oversight",
+        "citations": ["ev:33cc", "ev:44dd"],
+        "text": (
+            "Human oversight is exercised by the preparer who holds the session under which "
+            "the system runs, and by the approvers named in the override register. [ev:33cc] "
+            "The documented procedure states that the system refuses to issue a report while "
+            "any datapoint is in a blocking state, and that the refusal can be lifted only by "
+            "a signed, expiring override recorded outside the system. [ev:44dd] No automated "
+            "principal may request, approve or classify such an override, and one class of "
+            "failure admits no override at all. Every figure carries a lineage identifier "
+            "that lets a reviewer reach the source records behind it, which is the technical "
+            "measure that makes the output interpretable rather than merely readable."
+        ),
+    },
+)
+
+
+def build_narratives() -> dict[str, Any]:
+    drafts = []
+    for entry in NARRATIVES:
+        prompt = (ROOT / "prompts" / f"{entry['prompt_id']}.md").read_text(encoding="utf-8")
+        drafts.append(
+            {
+                "tenant": entry["tenant"],
+                "datapoint_id": entry["datapoint_id"],
+                "prompt_id": entry["prompt_id"],
+                "prompt_digest": prompt_digest(prompt),
+                "citations": entry["citations"],
+                "text": entry["text"],
+            }
+        )
+    return {
+        "provenance": "synthetic",
+        "note": (
+            "Drafts captured from a model run and reviewed before commit. Re-captured by "
+            "`python scripts/seed_recordings.py --capture`. Editing a prompt without "
+            "re-capturing makes the replay stale and the resolver refuses it."
+        ),
+        "drafts": drafts,
+    }
+
+
 def build(tenant: str, scenario: dict[str, dict[str, Any]]) -> dict[str, Any]:
     results = []
     for relative, recorded in scenario.items():
@@ -188,10 +302,15 @@ def main() -> int:
 
     RECORDINGS.mkdir(exist_ok=True)
     stale: list[str] = []
-    for tenant, scenario in SCENARIOS.items():
-        payload = build(tenant, scenario)
+
+    wanted: list[tuple[Path, dict[str, Any]]] = [
+        (RECORDINGS / f"{tenant}-2026.yaml", build(tenant, scenario))
+        for tenant, scenario in SCENARIOS.items()
+    ]
+    wanted.append((RECORDINGS / "narratives.yaml", build_narratives()))
+
+    for target, payload in wanted:
         rendered = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
-        target = RECORDINGS / f"{tenant}-2026.yaml"
         if args.check:
             if not target.is_file() or target.read_text(encoding="utf-8") != rendered:
                 stale.append(str(target.relative_to(ROOT)))
@@ -200,7 +319,7 @@ def main() -> int:
             print(f"wrote {target.relative_to(ROOT)}")
 
     if stale:
-        print("stale recordings (a query changed without re-capture):", file=sys.stderr)
+        print("stale recordings (a query or prompt changed without re-capture):", file=sys.stderr)
         for name in stale:
             print(f"  {name}", file=sys.stderr)
         print("run: python scripts/seed_recordings.py", file=sys.stderr)

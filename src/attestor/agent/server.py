@@ -99,7 +99,13 @@ class Handler(BaseHTTPRequestHandler):
         # source of identity: nothing in the body can name a tenant, a role or a principal,
         # and `tool_handler.invoke` refuses an argument that tries.
         claims = _claims(self.headers.get("X-Amzn-Bedrock-AgentCore-Runtime-Custom-Claims"))
-        session_id = self.headers.get("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id", "local")
+        # Runtime always sets this header; the fallback is for a container reached directly.
+        # It has to be at least six characters or `Session` refuses to construct, which is
+        # how "no session header" used to present as an internal error.
+        session_id = (
+            self.headers.get("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id")
+            or "local-no-session-header"
+        )
 
         response = tool_handler.invoke(
             {

@@ -81,6 +81,9 @@ class Toolbox:
         overrides: OverrideRegister,
         retrieval: RetrievalBackend | None = None,
         clock: Callable[[], dt.datetime] | None = None,
+        report_date: dt.date | None = None,
+        period_start: dt.date | None = None,
+        period_end: dt.date | None = None,
     ) -> None:
         self._session = session
         self._policies = policies
@@ -89,6 +92,10 @@ class Toolbox:
         self._overrides = overrides
         self._retrieval = retrieval
         self._clock = clock or (lambda: dt.datetime.now(dt.UTC))
+        year = int(session.period[:4])
+        self._period_start = period_start or dt.date(year, 1, 1)
+        self._period_end = period_end or dt.date(year + 1, 1, 1)
+        self._report_date = report_date or self._period_end
         self.calls: list[ToolCall] = []
 
     # ── The gate every handler passes through ────────────────────────────────
@@ -111,22 +118,37 @@ class Toolbox:
 
     # ── Tools ────────────────────────────────────────────────────────────────
 
-    def resolve_datapoint(self, datapoint_id: str, *, period_start: dt.date, period_end: dt.date):
-        """Resolve one figure, or explain why it cannot be stated."""
+    def _context(self, period_start: dt.date, period_end: dt.date) -> ResolutionContext:
+        """The resolution context for this session.
+
+        `as_of` is the report date, not today. Whether an override was live is a question
+        about the moment the report is issued, and answering it with `date.today()` made the
+        same request return different outcomes on either side of an expiry — from a tool the
+        caller cannot pass a date to.
+        """
+        return ResolutionContext(
+            tenant=self._session.tenant,
+            period=self._session.period,
+            period_start=period_start,
+            period_end=period_end,
+            as_of=self._report_date,
+            run_id=self._session.session_id,
+        )
+
+    def resolve_datapoint(self, datapoint_id: str):
+        """Resolve one figure, or explain why it cannot be stated.
+
+        No period arguments. The reporting period is the session's, like the tenant — and the
+        previous signature demanded two dates the OpenAPI schema did not expose, so a
+        well-formed Gateway call reached this method and raised `TypeError`.
+        """
         self._authorize("resolve_datapoint", "Datapoint", datapoint_id)
         contract = self._contracts.get(datapoint_id)
         if contract is None:
             return {"error": f"no contract for {datapoint_id}"}
 
-        results = self._resolver.resolve_all(
-            ResolutionContext(
-                tenant=self._session.tenant,
-                period=self._session.period,
-                period_start=period_start,
-                period_end=period_end,
-                as_of=dt.date.today(),
-                run_id=self._session.session_id,
-            )
+        results = self._resolver.resolve_one(
+            self._context(self._period_start, self._period_end), datapoint_id=datapoint_id
         )
         outcome = results.get(datapoint_id)
         if isinstance(outcome, Resolved):
@@ -193,9 +215,40 @@ class Toolbox:
         }
 
     def read_lineage(self, datapoint_id: str):
-        """How a published figure was produced. The auditor's view."""
+        """How a published figure was produced. The auditor's view.
+
+        This used to return a note telling the caller to resolve the datapoint instead. An
+        advertised tool that answers with instructions is a tool that does not exist, and the
+        agent picked it, got nothing, and moved on — which reads as "there is no lineage".
+        """
         self._authorize("read_lineage", "Lineage", datapoint_id)
-        return {"datapoint": datapoint_id, "note": "resolve the datapoint to populate lineage"}
+        if self._contracts.get(datapoint_id) is None:
+            return {"error": f"no contract for {datapoint_id}"}
+
+        results = self._resolver.resolve_one(
+            self._context(self._period_start, self._period_end), datapoint_id=datapoint_id
+        )
+        record = results.ledger.get(datapoint_id)
+        if record is None:
+            outcome = results.get(datapoint_id)
+            reason = outcome.reason_code if isinstance(outcome, Abstained) else "unresolved"
+            return {"datapoint": datapoint_id, "lineage": None, "reason": reason}
+
+        return {
+            "datapoint": datapoint_id,
+            "lineage": record.short_id,
+            "lineage_id": record.lineage_id,
+            "resolver": f"{record.resolver_kind}:{record.resolver_ref}",
+            "value": record.value,
+            "unit": record.unit,
+            "parameters": dict(record.parameters),
+            "sources": [
+                {"table": s.table, "snapshot_id": s.snapshot_id, "rows": s.rows}
+                for s in record.sources
+            ],
+            "inputs": [i[:12] for i in record.inputs],
+            "prompt_ref": record.prompt_ref,
+        }
 
     def read_override(self, datapoint_id: str):
         """Whether a defect on this datapoint has been accepted, by whom, and until when."""

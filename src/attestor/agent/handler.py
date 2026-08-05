@@ -27,6 +27,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from attestor.agent import narrative
 from attestor.agent.tools import SPECS, Denied, Toolbox
 from attestor.contracts import loader, overrides
 from attestor.contracts.model import Standard
@@ -34,7 +35,7 @@ from attestor.datapoints.backends import AthenaBackend
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import Resolver
 from attestor.policy import cedar
-from attestor.policy.tenants import Session, TenantRegistry, UnknownRole
+from attestor.policy.tenants import Session, TenantRegistry, UnknownRole, WrongIssuer
 
 LOG = logging.getLogger("attestor.agent")
 LOG.setLevel(logging.INFO)
@@ -56,9 +57,40 @@ def _emit(event: str, **fields: Any) -> None:
     LOG.info(json.dumps({"event": event, **fields}, default=str))
 
 
+# The declarative material is immutable for the life of the container: contracts, tenants,
+# the Cedar policies and the override register all ship inside the image, so re-reading and
+# re-validating them on every invocation buys nothing and costs a cold start's worth of work
+# on every warm one. It is cached here rather than at each call site so there is one place
+# where "this cannot change while the process lives" is asserted.
+#
+# Nothing tenant-scoped is cached. The evidence index, the resolver and the toolbox are built
+# per session, because a cache that outlived a session is exactly the shape of a leak.
+class _Declarative:
+    def __init__(self) -> None:
+        self.contracts = loader.load(ROOT)
+        self.registry = TenantRegistry.load(ROOT)
+        self.policies = cedar.load(ROOT)
+        self.overrides = overrides.load_register(ROOT)
+
+
+_DECLARATIVE: _Declarative | None = None
+
+
+def declarative() -> _Declarative:
+    global _DECLARATIVE  # noqa: PLW0603 — process-lifetime cache of immutable material
+    if _DECLARATIVE is None:
+        _DECLARATIVE = _Declarative()
+    return _DECLARATIVE
+
+
+def reset_cache() -> None:
+    """Drop the process cache. For tests that rewrite `ATTESTOR_ROOT` between cases."""
+    global _DECLARATIVE  # noqa: PLW0603
+    _DECLARATIVE = None
+
+
 def build_session(claims: dict[str, Any], *, tenant_id: str, period: str, session_id: str):
-    registry = TenantRegistry.load(ROOT)
-    tenant = registry.get(tenant_id)
+    tenant = declarative().registry.get(tenant_id)
     if tenant is None:
         raise Rejected(f"unknown tenant {tenant_id!r}")
     return Session.from_claims(claims, tenant=tenant, period=period, session_id=session_id)
@@ -66,9 +98,9 @@ def build_session(claims: dict[str, Any], *, tenant_id: str, period: str, sessio
 
 def build_toolbox(session: Session) -> Toolbox:
     """Wire a toolbox for one session. Every collaborator is scoped by it."""
-    contracts = loader.load(ROOT)
-    registry = TenantRegistry.load(ROOT)
-    standard = Standard(registry[session.tenant].standard)
+    shared = declarative()
+    standard = Standard(shared.registry[session.tenant].standard)
+    for_tenant = shared.contracts.for_standard(standard)
 
     backend = AthenaBackend(
         workgroup=os.environ["ATTESTOR_WORKGROUP"],
@@ -78,18 +110,22 @@ def build_toolbox(session: Session) -> Toolbox:
         region=os.environ.get("AWS_REGION", "eu-central-1"),
     )
     resolver = Resolver(
-        contracts=contracts.for_standard(standard),
+        contracts=for_tenant,
         backend=backend,
         evidence=EvidenceIndex.for_tenant(ROOT, session.tenant),
-        override_register=overrides.load_register(ROOT),
+        override_register=shared.overrides,
         root=ROOT,
+        # Without this a narrative datapoint abstained with E_METHOD_UNAVAILABLE — an
+        # internal failure — so every ESRS tenant blocked on a control that was working
+        # exactly as designed against a provider nobody had connected.
+        narrative_provider=narrative.build(ROOT, session=session, backend="athena"),
     )
     return Toolbox(
         session=session,
-        policies=cedar.load(ROOT),
-        contracts=contracts.for_standard(standard),
+        policies=shared.policies,
+        contracts=for_tenant,
         resolver=resolver,
-        overrides=overrides.load_register(ROOT),
+        overrides=shared.overrides,
         retrieval=_retrieval(),
     )
 
@@ -110,7 +146,11 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     tool = str(event.get("tool") or event.get("operationId") or "")
     arguments = dict(event.get("arguments") or {})
     claims = dict(event.get("claims") or {})
-    request_id = getattr(context, "aws_request_id", "local")
+    # Not "local". A `Session` requires at least six characters, so the old default could not
+    # construct one — and every invocation arriving without a Lambda context died as a 500
+    # with a pydantic message, which reads as a broken tool rather than a missing correlation
+    # id. The default is now valid *and* obviously a default.
+    request_id = getattr(context, "aws_request_id", None) or "local-no-request-id"
 
     try:
         smuggled = sorted(set(arguments) & FORBIDDEN_ARGUMENTS)
@@ -121,6 +161,25 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
                 f"arguments {', '.join(smuggled)} name a scope; scope comes from the session"
             )
 
+        # The call is checked for shape before anything is built. Constructing a toolbox
+        # opens an Athena client and a Bedrock provider; doing that for a tool that does not
+        # exist means a malformed call is answered by whichever dependency fails first, and
+        # `unknown tool` arrives as a 500 about an unset environment variable.
+        spec = next((s for s in SPECS if s.name == tool), None)
+        if spec is None:
+            raise Rejected(f"unknown tool {tool!r}")
+
+        # The schema declares `additionalProperties: false`, but a schema is enforced by
+        # whatever validates it. An argument outside the spec would otherwise reach the
+        # handler as an unexpected keyword and surface as a 500 — an internal error for
+        # what is plainly a malformed call.
+        unexpected = sorted(set(arguments) - set(spec.parameters))
+        if unexpected:
+            raise Rejected(f"{tool} does not accept argument(s) {', '.join(unexpected)}")
+        missing = sorted(set(spec.required) - set(arguments))
+        if missing:
+            raise Rejected(f"{tool} requires argument(s) {', '.join(missing)}")
+
         session = build_session(
             claims,
             tenant_id=str(event.get("tenant_id", "")),
@@ -128,9 +187,8 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
             session_id=request_id,
         )
         toolbox = build_toolbox(session)
-
         handler = getattr(toolbox, tool, None)
-        if handler is None or tool not in {spec.name for spec in SPECS}:
+        if handler is None:  # pragma: no cover — SPECS and Toolbox are cross-checked in tests
             raise Rejected(f"unknown tool {tool!r}")
 
         result = handler(**arguments)
@@ -153,6 +211,20 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
             policies=list(denied.decision.determining),
         )
         return {"statusCode": 403, "body": {"error": str(denied)}}
+
+    except WrongIssuer as wrong:
+        # Not a 400. A well-formed call presenting a token from another tenant's provider is
+        # an authorization event, and it belongs on the same metric filter as a Cedar denial
+        # so that probing shows up as a spike rather than as scattered client errors.
+        _emit(
+            "authorization.denied",
+            action=tool,
+            tenant=str(event.get("tenant_id", "")),
+            session_id=request_id,
+            reason=str(wrong),
+            policies=["tenant-issuer-binding"],
+        )
+        return {"statusCode": 403, "body": {"error": "the token does not serve this tenant"}}
 
     except (Rejected, UnknownRole) as rejected:
         _emit(

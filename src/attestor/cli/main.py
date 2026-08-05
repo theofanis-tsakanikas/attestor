@@ -19,11 +19,12 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from attestor.agent import narrative
 from attestor.contracts import loader, overrides
 from attestor.contracts.model import Standard
 from attestor.datapoints.backends import AthenaBackend, QueryBackend, RecordedBackend
 from attestor.datapoints.evidence import EvidenceIndex
-from attestor.datapoints.resolver import NarrativeDraft, ResolutionContext, Resolver
+from attestor.datapoints.resolver import ResolutionContext, Resolver
 from attestor.documents import render as render_module
 from attestor.documents import writers
 from attestor.documents.render import RenderContext, ReportBlocked
@@ -32,7 +33,7 @@ from attestor.gates import abstention, provenance
 from attestor.observability import dashboard as dashboard_module
 from attestor.observability import run_record
 from attestor.policy import cedar
-from attestor.policy.tenants import TenantRegistry
+from attestor.policy.tenants import Session, TenantRegistry
 from attestor.retrieval import bakeoff
 from attestor.security import harness, isolation
 
@@ -44,6 +45,7 @@ report_app = typer.Typer(help="Render a tenant's report set.")
 policy_app = typer.Typer(help="Cedar policies.")
 retrieval_app = typer.Typer(help="Retrieval engineering.")
 govern_app = typer.Typer(help="Generated governance documents.")
+gateway_app = typer.Typer(help="The MCP surface AgentCore Gateway exposes.")
 
 app.add_typer(contracts_app, name="contracts")
 app.add_typer(gate_app, name="gate")
@@ -52,6 +54,7 @@ app.add_typer(report_app, name="report")
 app.add_typer(policy_app, name="policy")
 app.add_typer(retrieval_app, name="retrieval")
 app.add_typer(govern_app, name="govern")
+app.add_typer(gateway_app, name="gateway")
 
 console = Console()
 ROOT = Path.cwd()
@@ -68,27 +71,6 @@ def _fail(message: str) -> None:
 
 def _ok(message: str) -> None:
     console.print(f"[bold green]PASS[/] {message}")
-
-
-def _narrative(_contract, _context) -> NarrativeDraft:
-    """The offline narrative provider.
-
-    It cites, it stays short, and it writes no digits — which is what the contract demands of
-    a real model. Substituting it for Bedrock is how the whole document path stays testable
-    without an account; substituting it for something that *would* fail the gates would make
-    the local run a different program from the deployed one.
-    """
-    return NarrativeDraft(
-        text=(
-            "The undertaking maintains a board-approved transition plan covering its own "
-            "operations and its upstream value chain. [ev:7f3a] Decarbonisation relies "
-            "principally on fleet replacement and site electrification, sequenced against the "
-            "capital plan. [ev:91c0] Board approval is evidenced in the minutes of the "
-            "sustainability committee. [ev:2d55]"
-        ),
-        citations=("ev:7f3a", "ev:91c0", "ev:2d55"),
-        prompt_ref="esrs_e1_1_transition_plan@3",
-    )
 
 
 def _backend(root: Path) -> QueryBackend:
@@ -136,6 +118,25 @@ def _contracts_for(tenant: str, root: Path):
     return loader.load(root).for_standard(Standard(registry[tenant].standard))
 
 
+def _narrative_provider(tenant: str, root: Path):
+    """Recorded offline, Bedrock against a live estate — the same switch as `_backend`.
+
+    An earlier version passed a paragraph written by hand in this file, and `attestor run`
+    rendered it into a real DOCX under a tenant's name. Prose now comes from a reviewed
+    recording or from a model, and from nowhere else; a missing recording is a refusal.
+    """
+    session = None
+    if os.environ.get("ATTESTOR_BACKEND", "recorded").lower() == "athena":
+        session = Session(
+            tenant=tenant,
+            subject="cli",
+            roles=frozenset({"role:preparer"}),
+            period="2026",
+            session_id=f"cli-{tenant}",
+        )
+    return narrative.build(root, session=session)
+
+
 def _resolver(tenant: str, root: Path) -> Resolver:
     return Resolver(
         contracts=_contracts_for(tenant, root),
@@ -143,7 +144,7 @@ def _resolver(tenant: str, root: Path) -> Resolver:
         evidence=EvidenceIndex.for_tenant(root, tenant),
         override_register=overrides.load_register(root),
         root=root,
-        narrative_provider=_narrative,
+        narrative_provider=_narrative_provider(tenant, root),
     )
 
 
@@ -384,6 +385,35 @@ def retrieval_bakeoff(
     if not replay:
         _fail("a live bake-off needs the estate; `--replay` is the only supported mode today")
     console.print(bakeoff.run(root, k=k).table())
+
+
+# ── gateway ──────────────────────────────────────────────────────────────────
+
+
+@gateway_app.command("spec")
+def gateway_spec(
+    root: Path = typer.Option(ROOT, "--root"),
+    check: bool = typer.Option(False, "--check", help="Fail if the committed schema is stale."),
+) -> None:
+    """Write the MCP tool schema the Gateway target is configured with.
+
+    Terraform reads the committed file rather than calling Python at plan time, so the file
+    is an artefact and can drift. `--check` is what stops it: a tool added to `SPECS` without
+    regenerating this would be a handler the Gateway never exposes.
+    """
+    from attestor.agent import gateway  # noqa: PLC0415 — keeps the import surface honest
+
+    target = root / "infra" / "agent" / "tools.openapi.json"
+    rendered = gateway.render_tool_schema()
+    if check:
+        current = target.read_text(encoding="utf-8") if target.is_file() else ""
+        if current != rendered:
+            _fail(f"{target.relative_to(root)} is stale; run `make gateway-spec`")
+        _ok(f"{len(gateway.tool_schema()['tools'])} tool(s) described, schema in sync")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(rendered, encoding="utf-8")
+    _ok(f"wrote {target.relative_to(root)}")
 
 
 # ── govern ───────────────────────────────────────────────────────────────────
