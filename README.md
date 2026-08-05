@@ -67,7 +67,7 @@ of a command in this repository, not a summary of one.
 | **claim 4** · reproducibility | **9/9** (ESRS) and **7/7** (AI Act) lineage ids identical across runs |
 | **claim 5** · disciplined abstention | **24/24** expected refusals · **0** fabrications · nothing undamaged refused |
 | `make gate-proof` | **10 refused, 0 accepted, 0 stale** |
-| test suite | **258 passing**, offline, credential-free |
+| test suite | **276 passing**, offline, credential-free |
 
 The last two rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks each control on purpose and requires the *named* gate to refuse it,
