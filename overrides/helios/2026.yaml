@@ -1,0 +1,32 @@
+# Override register — tenant `helios`, reporting period 2026.
+#
+# Each entry is a signed, expiring decision to issue the report despite a known defect.
+# It is reviewed in a pull request like any other change, it prints on the face of the
+# statement, and it lapses.
+#
+# What you will not find here: an entry for E_RESOLVER_ERROR. That door has no key.
+# See docs/adr/0001-fail-closed-with-a-recorded-key.md.
+
+- tenant: helios
+  datapoint_id: ESRS_E1-6_gross_scope_3
+  period: "2026"
+  reason_code: E_PARTIAL_BOUNDARY
+  effect: omit_with_material_limitation
+  justification: >-
+    Category 4 (upstream transportation) is covered by supplier attestations for 82% of
+    spend. The remaining 18% sits with three subcontracted hauliers who did not respond
+    within the reporting window. A spend-based estimate for the gap was rejected as it
+    would not be distinguishable from measured data in the disclosure. The category is
+    therefore omitted and declared, and the three hauliers are contractually required to
+    report from FY2027 under the revised framework agreement.
+  requested_by: Sustainability Data Lead
+  approvals:
+    - approver: M. Andreadis
+      role: head_of_sustainability_reporting
+      approved_on: 2026-06-18
+      evidence_reference: SUS-BOARD-2026-041
+    - approver: K. Vlachou
+      role: chief_financial_officer
+      approved_on: 2026-06-19
+      evidence_reference: SUS-BOARD-2026-041
+  expires_on: 2026-09-15

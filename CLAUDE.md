@@ -57,6 +57,30 @@ is a legal requirement of the CSRD, not a design nicety.
 
 ---
 
+## The doctrine — what a responsible AI business does
+
+These seven rules decide every "what happens when it goes wrong" question in this project.
+When a new control is added, work out its answer to each of them before writing it.
+Full reasoning in [ADR-0001](docs/adr/0001-fail-closed-with-a-recorded-key.md).
+
+1. **The safe state is no output.** Every gate defaults to refusal.
+2. **Every closed door has a key, and the key is a named human.** A control with no override
+   does not prevent the override — it moves it outside the system, where it leaves no
+   evidence. That is worse. The system may never open a door for itself: no model, no agent,
+   no service principal may request, approve or classify one.
+3. **An override changes what ships, never what is true.** It never relabels a defect as
+   compliant. The reason code survives the override, in the record and on the page.
+4. **An override is visible in the artefact, not only in a log.** It prints on the face of
+   the statement, where the auditor reads. Our CloudWatch is not where an auditor looks.
+5. **Overrides expire.** On expiry the finding returns and CI goes red again.
+6. **Severity decides who turns the key** — how many approvers, in which roles, for how long.
+7. **One door has no key at all.** `E_RESOLVER_ERROR`: a crashed resolver is an *unknown*
+   deficiency, so nobody — including the approver — has the information the approval would
+   be about. Having exactly one unopenable door is what keeps the other six honest; a
+   break-glass that opens everything is a rubber stamp with extra ceremony.
+
+---
+
 ## Non-negotiable engineering rules
 
 **IaC only.** Every cloud resource in Terraform. No console deployments, ever. The one
