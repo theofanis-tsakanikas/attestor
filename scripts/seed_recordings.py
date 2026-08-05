@@ -83,7 +83,12 @@ SCENARIOS: dict[str, dict[str, dict[str, Any]]] = {
             "value": "0.9412",
             "tables": ["gold.model_evaluation_prediction"],
             "snapshot_ids": {"gold.model_evaluation_prediction": "3319419023871123001"},
-            "row_counts": {"gold.model_evaluation_prediction": 4820},
+            # 5,000 rather than a rounder-looking 4,820: 0.9412 x 4820 = 4536.584, and no
+            # whole number of correct predictions over 4,820 examples rounds to 0.9412 at
+            # four decimal places. A recorded accuracy that no evaluation set could actually
+            # produce is a number that looks measured and was typed. `pipelines/seed` catches
+            # exactly this, and it caught this.
+            "row_counts": {"gold.model_evaluation_prediction": 5000},
         },
         "ai_act/evaluation_accuracy_crosscheck_confusion.sql": {
             # The same number at a different level of aggregation. It has to agree.
@@ -92,7 +97,7 @@ SCENARIOS: dict[str, dict[str, dict[str, Any]]] = {
             "snapshot_ids": {"gold.model_evaluation_confusion": "3319419023871123002"},
         },
         "ai_act/evaluation_set_size.sql": {
-            "value": "4820",
+            "value": "5000",
             "tables": ["gold.model_evaluation_prediction"],
             "snapshot_ids": {"gold.model_evaluation_prediction": "3319419023871123001"},
         },

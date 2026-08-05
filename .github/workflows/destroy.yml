@@ -44,21 +44,45 @@ jobs:
         with:
           terraform_version: 1.9.8
 
+      - name: empty the buckets
+        # Versioned buckets refuse to delete while they hold objects, and `force_destroy`
+        # covers current versions only. A teardown that stops here leaves the lake — the
+        # thing actually holding a tenant's data — standing.
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          terraform -chdir=infra/foundation init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+            -backend-config="encrypt=true" >/dev/null
+          for output in lake_bucket evidence_bucket reports_bucket; do
+            bucket=$(terraform -chdir=infra/foundation output -raw "$output" 2>/dev/null) || continue
+            echo "── emptying $bucket"
+            aws s3api delete-objects --bucket "$bucket" --delete "$(aws s3api list-object-versions \
+              --bucket "$bucket" --output json \
+              --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}')" 2>/dev/null || true
+            aws s3api delete-objects --bucket "$bucket" --delete "$(aws s3api list-object-versions \
+              --bucket "$bucket" --output json \
+              --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')" 2>/dev/null || true
+          done
+
       - name: destroy in reverse order
         env:
           TF_VAR_expires_at: "1970-01-01"
-          TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
-          TF_VAR_deploy_role_arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          TF_VAR_deploy_runtime: "true"
         run: |
           set -euo pipefail
           for layer in agent knowledge data foundation; do
             echo "── $layer"
-            terraform -chdir="infra/$layer" init \
-              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-              -backend-config="region=${{ vars.AWS_REGION }}" \
-              -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
-              -backend-config="encrypt=true"
-            terraform -chdir="infra/$layer" destroy -auto-approve -input=false
+            ./.github/scripts/tf.sh destroy "$layer"
           done
 
       - name: confirm nothing survived

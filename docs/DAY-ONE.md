@@ -15,6 +15,22 @@ initialled when it is done, so "who turned this on" has an answer a year from no
 | 7 | **Repository variables and secrets** — `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_LOCK_TABLE` | Outputs of step 5 | minutes | ☐ |
 | 8 | **Budget alert address** confirmed (SNS subscription accepted) | An unconfirmed subscription silently drops every alert | minutes | ☐ |
 
+## What the deploy workflow does that you should know about
+
+**The agent layer applies twice.** ECR is created by that layer, the image cannot be built
+before it exists, and AgentCore Runtime cannot start before the image is pushed. The workflow
+applies with `deploy_runtime=false`, builds and pushes, then applies again with it on.
+Collapsing this into one step is how a deploy fails at minute forty on a missing tag.
+
+**The lake is seeded before any report runs.** An estate that stands up and resolves against
+empty tables behaves perfectly correctly and produces nothing, which looks exactly like a
+broken deploy and is much harder to diagnose. `pipelines/seed` refuses to write if any total
+drifts from `recordings/`.
+
+**A blocked tenant does not fail the deploy.** `aegis` is *supposed* to block — its Scope 1
+misses its own cross-check by 4.3%. A workflow that went red on a correct refusal would teach
+everyone to ignore it.
+
 ## Why step 1 is first
 
 It is the only item with a lead time measured in days, and everything downstream is blocked

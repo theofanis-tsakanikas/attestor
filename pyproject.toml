@@ -83,6 +83,12 @@ ignore = [
 # The dashboard embeds a CSS block as a string literal. Wrapping stylesheet declarations to
 # satisfy a Python line limit makes the CSS harder to read and the Python no easier.
 "src/attestor/observability/dashboard.py" = ["E501"]
+# The preflight and validate scripts shell out to `terraform`, `make` and `git` by name. A
+# hardcoded absolute path would be wrong on every machine but the one that wrote it, and the
+# commands are fixed literals with no user input anywhere near them.
+"scripts/preflight.py" = ["S607"]
+"scripts/tf_validate.py" = ["S607"]
+"scripts/check_docker_context.py" = ["S607"]
 "tests/retrieval/test_chunking_and_bakeoff.py" = ["RUF001"]
 
 [tool.pytest.ini_options]

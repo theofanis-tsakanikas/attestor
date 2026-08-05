@@ -22,3 +22,12 @@ variable "expires_at" {
     exists to prevent.
   EOT
 }
+
+variable "log_retention_days" {
+  type        = number
+  default     = 14
+  description = <<-EOT
+    Matched to the estate's life rather than to a compliance minimum. A year of retention on
+    logs about a VPC that existed for a week is a bill for archaeology.
+  EOT
+}

@@ -213,6 +213,129 @@ resource "aws_glue_catalog_table" "gold" {
   }
 }
 
+# The raw landing zone the seed writes into and dbt reads from.
+#
+# JSON rather than Parquet, and external rather than Iceberg: raw is what arrived, and what
+# arrived should be legible without a reader. The Iceberg tables above are what dbt produces
+# *from* this, which is the shape a real ingestion has — the transformation is the thing with
+# a contract, not the landing.
+resource "aws_glue_catalog_database" "raw" {
+  name        = "${var.project}_raw"
+  description = "Landing zone. Written by ingestion, read only by dbt staging models."
+}
+
+resource "aws_glue_catalog_table" "raw" {
+  for_each = {
+    electricity_consumption = [
+      { name = "site_id", type = "string" },
+      { name = "reading_date", type = "string" },
+      { name = "kwh", type = "string" },
+      { name = "reading_type", type = "string" },
+      { name = "source_document_id", type = "string" },
+      { name = "dq_status", type = "string" },
+      { name = "ingested_at", type = "string" },
+    ]
+    meter_interval_reading = [
+      { name = "interval_start", type = "string" },
+      { name = "kwh", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    ghg_scope_1_activity = [
+      { name = "activity_date", type = "string" },
+      { name = "co2e_tonnes", type = "string" },
+      { name = "consolidation_boundary", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    ghg_scope_3_activity = [
+      { name = "activity_date", type = "string" },
+      { name = "category", type = "string" },
+      { name = "co2e_tonnes", type = "string" },
+      { name = "estimation_method", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    procurement_fuel_spend = [
+      { name = "invoice_date", type = "string" },
+      { name = "fuel_type", type = "string" },
+      { name = "net_amount_eur", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    general_ledger_posting = [
+      { name = "posting_date", type = "string" },
+      { name = "account_code", type = "string" },
+      { name = "amount_eur", type = "string" },
+      { name = "period_status", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    financial_statement_extract = [
+      { name = "period_start", type = "string" },
+      { name = "period_end", type = "string" },
+      { name = "net_revenue_eur", type = "string" },
+      { name = "statement_status", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    model_evaluation_prediction = [
+      { name = "evaluated_at", type = "string" },
+      { name = "example_id", type = "string" },
+      { name = "predicted_label", type = "string" },
+      { name = "true_label", type = "string" },
+      { name = "is_held_out", type = "boolean" },
+      { name = "dq_status", type = "string" },
+    ]
+    model_evaluation_confusion = [
+      { name = "evaluated_at", type = "string" },
+      { name = "predicted_label", type = "string" },
+      { name = "true_label", type = "string" },
+      { name = "count", type = "bigint" },
+      { name = "dq_status", type = "string" },
+    ]
+    risk_register = [
+      { name = "assessed_at", type = "string" },
+      { name = "risk_id", type = "string" },
+      { name = "mitigation_status", type = "string" },
+      { name = "residual_rating", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+    incident_log = [
+      { name = "occurred_at", type = "string" },
+      { name = "incident_id", type = "string" },
+      { name = "classification", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
+  }
+
+  name          = each.key
+  database_name = aws_glue_catalog_database.raw.name
+  table_type    = "EXTERNAL_TABLE"
+
+  # Partitioned by tenant. Not for speed — the data is tiny — but so that a query without a
+  # tenant predicate scans one partition's worth of nothing rather than every tenant's rows.
+  partition_keys {
+    name = "tenant_id"
+    type = "string"
+  }
+
+  storage_descriptor {
+    location      = "s3://${local.lake}/raw/${each.key}/"
+    input_format  = "org.apache.hadoop.mapred.TextInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+
+    ser_de_info {
+      serialization_library = "org.openx.data.jsonserde.JsonSerDe"
+      parameters = {
+        "ignore.malformed.json" = "false"
+      }
+    }
+
+    dynamic "columns" {
+      for_each = each.value
+      content {
+        name = columns.value.name
+        type = columns.value.type
+      }
+    }
+  }
+}
+
 resource "aws_athena_workgroup" "main" {
   name          = var.project
   force_destroy = true
@@ -229,7 +352,7 @@ resource "aws_athena_workgroup" "main" {
       output_location = "s3://${local.lake}/athena-results/"
       encryption_configuration {
         encryption_option = "SSE_KMS"
-        kms_key           = local.kms
+        kms_key_arn       = local.kms
       }
     }
   }

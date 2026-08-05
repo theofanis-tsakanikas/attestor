@@ -56,6 +56,47 @@ resource "aws_kms_key" "data" {
   description             = "${local.prefix} data at rest"
   enable_key_rotation     = true
   deletion_window_in_days = 7
+  policy                  = data.aws_iam_policy_document.data_key.json
+}
+
+# An explicit policy rather than the implicit default. The default grants the whole account
+# access through IAM, which makes "who can decrypt the evidence" a question about every policy
+# in the account instead of a question about this document.
+data "aws_iam_policy_document" "data_key" {
+  #checkov:skip=CKV_AWS_109: A KMS key policy must grant `kms:*` to the account root, or the
+  #key becomes unmanageable — AWS documents this as the one statement every key policy needs.
+  #checkov:skip=CKV_AWS_111: Same statement. Constraining the root grant is what locks a key.
+  #checkov:skip=CKV_AWS_356: `Resource = "*"` inside a *key* policy means "this key". There is
+  #no other resource a key policy can name.
+  statement {
+    sid       = "AccountRoot"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid    = "ServicesThatEncryptOnOurBehalf"
+    effect = "Allow"
+    actions = [
+      "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*",
+      "kms:GenerateDataKey*", "kms:DescribeKey",
+    ]
+    resources = ["*"]
+    principals {
+      type = "Service"
+      identifiers = [
+        "logs.${var.region}.amazonaws.com",
+        "s3.amazonaws.com",
+        "sns.amazonaws.com",
+        "athena.amazonaws.com",
+      ]
+    }
+  }
 }
 
 resource "aws_kms_alias" "data" {
@@ -70,6 +111,60 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
   enable_dns_hostnames = true
   tags                 = { Name = "${local.prefix}-vpc" }
+}
+
+# Terraform does not create the default security group, so leaving it alone leaves an
+# unmanaged group that permits all traffic within the VPC. Adopting it with no rules is the
+# only way to close it.
+resource "aws_default_security_group" "locked" {
+  vpc_id = aws_vpc.main.id
+}
+
+# Flow logs. The whole topology exists so egress has one audited path; not recording what
+# went through it would make that an assertion rather than an observation.
+resource "aws_flow_log" "vpc" {
+  vpc_id               = aws_vpc.main.id
+  traffic_type         = "ALL"
+  iam_role_arn         = aws_iam_role.flow_logs.arn
+  log_destination      = aws_cloudwatch_log_group.flow_logs.arn
+  log_destination_type = "cloud-watch-logs"
+}
+
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  #checkov:skip=CKV_AWS_338: The estate lives for days by design; a year of retention would
+  #outlive the VPC by an order of magnitude and bill for logs about a network that is gone.
+  name              = "/aws/${local.prefix}/vpc-flow-logs"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.data.arn
+}
+
+data "aws_iam_policy_document" "flow_logs_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["vpc-flow-logs.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "flow_logs" {
+  name               = "${local.prefix}-flow-logs"
+  assume_role_policy = data.aws_iam_policy_document.flow_logs_assume.json
+}
+
+resource "aws_iam_role_policy" "flow_logs" {
+  name = "write-flow-logs"
+  role = aws_iam_role.flow_logs.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
+      Resource = "${aws_cloudwatch_log_group.flow_logs.arn}:*"
+    }]
+  })
 }
 
 resource "aws_internet_gateway" "main" {
@@ -188,26 +283,127 @@ resource "aws_vpc_endpoint" "s3" {
 # ── Buckets ──────────────────────────────────────────────────────────────────
 
 resource "aws_s3_bucket" "lake" {
+  #checkov:skip=CKV_AWS_144: Cross-region replication for an estate measured in days would
+  #copy the data somewhere the destroy workflow does not reach.
+  #checkov:skip=CKV2_AWS_62: Event notifications need a consumer. Nothing here reacts to an
+  #object landing; the pipeline is driven by the deploy workflow, on purpose.
   bucket        = "${local.prefix}-lake-${data.aws_caller_identity.current.account_id}"
   force_destroy = true # the estate is ephemeral by design; teardown must not need a human
 }
 
 resource "aws_s3_bucket" "evidence" {
+  #checkov:skip=CKV_AWS_144: See the lake bucket — the estate is ephemeral by design.
+  #checkov:skip=CKV2_AWS_62: Nothing subscribes; ingestion is a deliberate workflow step.
   bucket        = "${local.prefix}-evidence-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }
 
 resource "aws_s3_bucket" "reports" {
+  #checkov:skip=CKV_AWS_144: See the lake bucket — the estate is ephemeral by design.
+  #checkov:skip=CKV2_AWS_62: Nothing subscribes; publication is a deliberate workflow step.
   bucket        = "${local.prefix}-reports-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 }
 
-resource "aws_s3_bucket_versioning" "evidence" {
-  bucket = aws_s3_bucket.evidence.id
+# Versioning everywhere the estate keeps something an auditor might re-read.
+#
+# Evidence is the obvious one: overwriting a document in place would make a lineage record
+# point at bytes that no longer exist. Reports and the lake are versioned for the same
+# reason one step removed — a figure is only re-derivable if the rows behind it still are.
+resource "aws_s3_bucket_versioning" "data" {
+  for_each = {
+    lake     = aws_s3_bucket.lake.id
+    evidence = aws_s3_bucket.evidence.id
+    reports  = aws_s3_bucket.reports.id
+  }
+
+  bucket = each.value
   versioning_configuration {
-    # Evidence is what an auditor re-reads. Overwriting a document in place would make a
-    # lineage record point at bytes that no longer exist.
     status = "Enabled"
+  }
+}
+
+# Access logging on the evidence bucket. "Who read a tenant's documents" is a question that
+# gets asked once, urgently, and cannot be answered retroactively.
+resource "aws_s3_bucket" "access_logs" {
+  #checkov:skip=CKV_AWS_145: S3 server access logging cannot write into a bucket encrypted
+  #with a customer-managed key. AES256 is the only option that keeps the logs, and losing the
+  #logs to gain a key we do not need is the wrong trade.
+  #checkov:skip=CKV2_AWS_62: A log bucket that notifies on every write notifies constantly.
+  #checkov:skip=CKV_AWS_18: A log bucket that logs itself is a recursion, not a control.
+  #checkov:skip=CKV_AWS_21: Log objects are append-only by nature; versions of them are noise.
+  #checkov:skip=CKV_AWS_144: The estate is ephemeral; replicating its logs outlives it.
+  bucket        = "${local.prefix}-access-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      # AES256, not the CMK: S3 server access logging cannot write to a bucket encrypted with
+      # a customer-managed key. Documented rather than worked around.
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  #checkov:skip=CKV_AWS_300: There are no multipart uploads to a server-access-log bucket;
+  #S3 writes those objects itself.
+  bucket = aws_s3_bucket.access_logs.id
+  rule {
+    id     = "expire"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 30
+    }
+  }
+}
+
+resource "aws_s3_bucket_logging" "data" {
+  for_each = {
+    lake     = aws_s3_bucket.lake.id
+    evidence = aws_s3_bucket.evidence.id
+    reports  = aws_s3_bucket.reports.id
+  }
+
+  bucket        = each.value
+  target_bucket = aws_s3_bucket.access_logs.id
+  target_prefix = "${each.key}/"
+}
+
+# The estate is ephemeral, so its data is too. An expiry that matches the estate's life is
+# the honest lifecycle: keeping objects after the bucket's reason to exist is gone is how a
+# "temporary" project becomes a standing data holding.
+resource "aws_s3_bucket_lifecycle_configuration" "data" {
+  for_each = {
+    lake     = aws_s3_bucket.lake.id
+    evidence = aws_s3_bucket.evidence.id
+    reports  = aws_s3_bucket.reports.id
+  }
+
+  bucket = each.value
+
+  rule {
+    id     = "expire-noncurrent"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
   }
 }
 
@@ -261,6 +457,10 @@ resource "aws_iam_role" "reaper" {
 }
 
 resource "aws_iam_role_policy" "reaper" {
+  #checkov:skip=CKV_AWS_355: `tag:GetResources` has no resource form; the tagging API is
+  #account-scoped by design. Note what is *not* here: no delete verb of any kind.
+  #checkov:skip=CKV_AWS_290: The only write is `sns:Publish`. The reaper reports; it never
+  #removes anything, which is the decision recorded beside the resource.
   name = "find-and-report-expired"
   role = aws_iam_role.reaper.id
 
@@ -288,6 +488,13 @@ data "archive_file" "reaper" {
 }
 
 resource "aws_lambda_function" "reaper" {
+  #checkov:skip=CKV_AWS_117: It reads tags and publishes to SNS. Putting it in the VPC would
+  #add an ENI and a NAT dependency to a function whose whole job is to work when things are
+  #broken.
+  #checkov:skip=CKV_AWS_116: A DLQ catches failed *async* invocations. This one runs on a
+  #schedule; a missed sweep is picked up six hours later by the next.
+  #checkov:skip=CKV_AWS_272: Code signing needs a signing profile and a key this estate would
+  #create and destroy alongside the function it signs, which signs nothing meaningful.
   function_name    = "${local.prefix}-reaper"
   role             = aws_iam_role.reaper.arn
   runtime          = "python3.12"
@@ -295,6 +502,14 @@ resource "aws_lambda_function" "reaper" {
   filename         = data.archive_file.reaper.output_path
   source_code_hash = data.archive_file.reaper.output_base64sha256
   timeout          = 60
+  # One at a time. A sweep that overlaps itself sends the same alert twice, and an alert that
+  # arrives twice is an alert people start filtering.
+  reserved_concurrent_executions = 1
+  kms_key_arn                    = aws_kms_key.data.arn
+
+  tracing_config {
+    mode = "Active"
+  }
 
   environment {
     variables = {

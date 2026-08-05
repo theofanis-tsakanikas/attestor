@@ -17,7 +17,7 @@ results:
   snapshot_ids:
     gold.model_evaluation_prediction: '3319419023871123001'
   row_counts:
-    gold.model_evaluation_prediction: 4820
+    gold.model_evaluation_prediction: 5000
 - query: ai_act/evaluation_accuracy_crosscheck_confusion.sql
   query_digest: 40165860877ddbda18b7cca264fd59b635eade3e3fc4de04b825457344c18479
   parameters:
@@ -35,7 +35,7 @@ results:
     tenant_id: lumen
     period_start: '2026-01-01'
     period_end: '2027-01-01'
-  value: '4820'
+  value: '5000'
   tables:
   - gold.model_evaluation_prediction
   snapshot_ids:

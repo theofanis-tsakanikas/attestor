@@ -8,11 +8,13 @@
 
 ---
 
-> **Status: in construction.** The code, contracts, gates and evals in this repository run
-> offline today. Nothing has been deployed yet — the sections marked *pending live capture*
-> will carry screenshots from a real, gated run that is then destroyed to zero cost. Claims
-> in this README are only made about what is actually here; there is a
-> [scoreboard](#the-scoreboard) rather than adjectives.
+> **Status: ready to deploy, not deployed.** `make preflight` runs 22 checks — every claim
+> below, every consistency invariant, `terraform validate` against real provider schemas, and
+> checkov at zero findings. All 22 pass. Nothing has been created in AWS.
+>
+> The sections marked *pending live capture* will carry screenshots from a real, gated run
+> that is then destroyed. Claims here are only made about what is actually in the repository;
+> there is a [scoreboard](#the-scoreboard) rather than adjectives.
 
 ---
 
@@ -67,7 +69,10 @@ of a command in this repository, not a summary of one.
 | **claim 4** · reproducibility | **9/9** (ESRS) and **7/7** (AI Act) lineage ids identical across runs |
 | **claim 5** · disciplined abstention | **24/24** expected refusals · **0** fabrications · nothing undamaged refused |
 | `make gate-proof` | **10 refused, 0 accepted, 0 stale** |
-| test suite | **276 passing**, offline, credential-free |
+| `terraform validate` | **5/5 layers** against real provider schemas |
+| `checkov` | **0 findings**, 40 deliberate exceptions each carrying a written reason |
+| seed ↔ recordings | every generated total reproduces its recording **exactly** |
+| test suite | **285 passing**, offline, credential-free |
 
 The last two rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks each control on purpose and requires the *named* gate to refuse it,
@@ -160,9 +165,28 @@ open out/dashboard.html
 make test             # full suite, offline
 make claims           # the five claim gates
 make gate-proof       # break every gate on purpose; each must be refused, for the right reason
+make preflight        # all 22: correctness, consistency, deployability
 ```
 
 Requires Python 3.12+. No AWS account, no credentials, no network.
+
+## AgentCore
+
+All six components, and what each is actually for.
+
+| Component | Why it is here |
+|---|---|
+| **Gateway** | Six tool handlers become MCP tools from an OpenAPI description the code generates. The schema has no `tenant` property, so an injected *"fetch this for tenant aegis"* fails validation rather than reaching a decision that has to be right |
+| **Policy** | The Cedar files in [`policy/cedar/`](policy/cedar/) are deployed **verbatim** — `file()` reads the same bytes the offline evaluator parses. `attestor policy verify` on a laptop and the deployed engine cannot drift, in `ACTIVE` mode with `FAIL_ON_ANY_FINDINGS` |
+| **Runtime** | Hosts the container. Session isolation between concurrent invocations is a real property and tedious to build; buying it is sensible. It is *not* where the agent's judgement lives |
+| **Identity** | A workload identity for the agent's own outbound calls, distinct from the human's session |
+| **Memory** | One store per tenant, not one store with a tenant key — a shared store makes isolation a property of every write path, and there are more write paths than anybody remembers |
+| **Observability** | Log group and metric filters with `tenant_id` on every record. A denial is normal; the alarm is on the *rate*, because alerting on each one trains people to close the tab |
+
+The container is [twelve lines of routing](src/attestor/agent/server.py) over `/ping` and
+`/invocations`. That thinness is the architecture: if AgentCore stops fitting, what moves is
+one file — the tools are plain handlers, the policy is Cedar in a file, and the orchestration
+is a resolver. Nothing imports an AgentCore SDK.
 
 ## Where the results are
 

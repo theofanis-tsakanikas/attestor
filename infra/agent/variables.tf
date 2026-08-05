@@ -63,3 +63,29 @@ variable "denial_alarm_threshold" {
   default     = 20
   description = "Denials in five minutes. Alarms on the rate: alerting on each one trains people to ignore it."
 }
+
+variable "memory_retention_days" {
+  type        = number
+  default     = 30
+  description = <<-EOT
+    How long AgentCore Memory keeps an event. Short on purpose: agent memory holds fragments
+    of a tenant's reporting conversation, and a store that keeps them indefinitely becomes a
+    second copy of the evidence corpus with none of its controls.
+  EOT
+}
+
+variable "deploy_runtime" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Whether to create the AgentCore Runtime. It needs an image in ECR, so the deploy workflow
+    builds and pushes first and then applies with this on. Split so that standing up Gateway,
+    the policy engine and memory does not wait on a container build.
+  EOT
+}
+
+variable "agent_image_tag" {
+  type        = string
+  default     = "latest"
+  description = "Image tag to run. The deploy workflow passes the commit sha; `latest` is a local convenience."
+}

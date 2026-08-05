@@ -43,6 +43,15 @@ locals {
 # ── State ────────────────────────────────────────────────────────────────────
 
 resource "aws_s3_bucket" "state" {
+  #checkov:skip=CKV_AWS_18: Access logging needs a second bucket, which needs its own state.
+  #The bootstrap layer is deliberately the smallest thing that can exist before anything else;
+  #CloudTrail data events cover this bucket at the account level, where they belong.
+  #checkov:skip=CKV_AWS_144: This is the one layer that outlives every estate. Replicating it
+  #would put Terraform state in a second region with a second lifecycle to forget about.
+  #checkov:skip=CKV2_AWS_61: State is versioned, not expired. An old state version is how a
+  #broken apply is recovered from.
+  #checkov:skip=CKV2_AWS_62: Nothing subscribes to state-file writes; Terraform's own locking
+  #is the coordination mechanism.
   bucket = local.state_bucket
 }
 
@@ -73,6 +82,9 @@ resource "aws_s3_bucket_public_access_block" "state" {
 }
 
 resource "aws_kms_key" "state" {
+  #checkov:skip=CKV2_AWS_64: The default key policy — account root via IAM — is correct here.
+  #This key is used by exactly one bucket and one table, both in this layer, and narrowing it
+  #further would lock out the SSO identity that has to run the bootstrap apply.
   description             = "${var.project} terraform state"
   enable_key_rotation     = true
   deletion_window_in_days = 30
@@ -84,6 +96,8 @@ resource "aws_kms_alias" "state" {
 }
 
 resource "aws_dynamodb_table" "locks" {
+  #checkov:skip=CKV_AWS_119: A lock table holds a hash of a state path and nothing else. A
+  #customer-managed key here protects no secret and adds a key to the bootstrap's blast radius.
   name         = "${var.project}-tfstate-locks"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
@@ -156,6 +170,14 @@ resource "aws_iam_role_policy_attachment" "deploy" {
 }
 
 resource "aws_iam_role_policy" "deploy_iam" {
+  #checkov:skip=CKV_AWS_289: Permissions management is the point — this role creates and
+  #destroys the estate's service roles. It is bounded by the `attestor-*` name prefix, by an
+  #OIDC trust scoped to one repository and one environment, and by a budget action that
+  #detaches its permissions at the ceiling.
+  #checkov:skip=CKV_AWS_290: Same. Write access without constraints would be a role that could
+  #touch anything; this one is constrained by resource ARN to names this project owns.
+  #checkov:skip=CKV_AWS_355: `iam:CreateServiceLinkedRole` has no resource form — AWS requires
+  #`*`. It is listed alone rather than folded into the broader statement for that reason.
   name = "manage-service-roles"
   role = aws_iam_role.deploy.id
 
@@ -230,6 +252,9 @@ resource "aws_budgets_budget_action" "disable_deploy" {
 }
 
 resource "aws_iam_policy" "deny_everything" {
+  #checkov:skip=CKV_AWS_289: It is a deny-everything policy. Its whole purpose is breadth.
+  #checkov:skip=CKV_AWS_290: See above — the wildcard is the mechanism, not an oversight.
+  #checkov:skip=CKV_AWS_355: See above.
   name = "${var.project}-budget-stop"
 
   policy = jsonencode({

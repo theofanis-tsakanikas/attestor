@@ -28,18 +28,18 @@ test: ## Full test suite — offline, no credentials
 
 .PHONY: lint
 lint: ## ruff check + format check (the exact command CI runs)
-	.venv/bin/ruff check src tests evals scripts
-	.venv/bin/ruff format --check src tests evals scripts
+	.venv/bin/ruff check src tests scripts pipelines
+	.venv/bin/ruff format --check src tests scripts pipelines
 
 .PHONY: fmt
 fmt: ## Apply ruff formatting
-	.venv/bin/ruff format src tests evals scripts
-	.venv/bin/ruff check --fix src tests evals scripts
+	.venv/bin/ruff format src tests scripts pipelines
+	.venv/bin/ruff check --fix src tests scripts pipelines
 
 # ── The five claims ──────────────────────────────────────────────────────────
 
 .PHONY: claims
-claims: contracts-validate provenance abstain injection isolation reproducible ## Run every claim gate
+claims: contracts-validate seed-check provenance abstain injection isolation reproducible ## Run every claim gate
 
 .PHONY: contracts-validate
 contracts-validate: ## Validate every datapoint contract against the schema + cross-checks
@@ -64,6 +64,11 @@ isolation: ## CLAIM 2 — 12 cross-tenant leakage paths, all closed
 .PHONY: reproducible
 reproducible: ## CLAIM 4 — as-of resolution is value- and lineage-identical
 	$(PY) -m attestor.cli.main eval reproducibility
+
+.PHONY: seed-check
+seed-check: ## The seeded lake must reproduce every recorded answer exactly
+	$(PY) scripts/seed_recordings.py --check
+	$(PY) pipelines/seed/generate.py --check
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason
@@ -145,6 +150,14 @@ package: ## Vendor the library into the Lambda source dir so terraform can zip i
 cost: ## Print the current estate's running cost and time-to-expiry
 	$(PY) -m attestor.cli.main cost status
 
+.PHONY: preflight
+preflight: ## Everything that must be true before the estate is stood up
+	$(PY) scripts/preflight.py
+
+.PHONY: preflight-fast
+preflight-fast: ## The same, without gate-proof, terraform and checkov
+	$(PY) scripts/preflight.py --fast
+
 .PHONY: ci
-ci: lint test claims policy tf-validate ## Everything CI runs, in CI's order
+ci: preflight ## Everything CI runs, in one command
 

@@ -7,21 +7,31 @@
 #
 # `days` has no default. Standing the estate up requires saying how long it is meant to live,
 # and that answer becomes the `attestor:expires-at` tag the reaper enforces.
+#
+# The order below is forced by two things, and pretending otherwise is how a deploy fails at
+# minute forty:
+#
+#   - ECR is created by the agent layer, so the image cannot be built before that layer
+#     applies; AgentCore Runtime then needs the image. The agent layer therefore applies
+#     twice — once without the runtime, once with it.
+#   - The lake must contain data before a report runs. An estate that stands up and resolves
+#     against empty tables behaves perfectly correctly and produces nothing, which looks
+#     exactly like a broken deploy and is far harder to diagnose.
 
 name: Deploy
 
 on:
   workflow_dispatch:
     inputs:
-      layers:
-        description: Which layers to apply
-        type: choice
-        options: [foundation, foundation+data, all]
-        default: foundation
       days:
         description: How many days this estate should live (drives attestor:expires-at)
         required: true
         type: string
+      stage:
+        description: How far to go
+        type: choice
+        options: [foundation, data, knowledge, agent, full]
+        default: full
       production_topology:
         description: OpenSearch standby replicas — on for the capture run only
         type: boolean
@@ -31,56 +41,173 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  TF_INPUT: "false"
+  TF_IN_AUTOMATION: "true"
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ATTESTOR_WORKGROUP: attestor
+  ATTESTOR_DATABASE: attestor_gold
+  ATTESTOR_RAW_DATABASE: attestor_raw
+
 jobs:
   validate:
     # The same gates a pull request runs, re-run on the exact ref being deployed. A green
     # check on a branch is not evidence about the commit somebody typed into a dispatch box.
     uses: ./.github/workflows/ci.yml
 
-  apply:
+  deploy:
     needs: validate
     runs-on: ubuntu-latest
     environment: deploy
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.8
 
       - name: compute expiry
         id: expiry
         run: echo "date=$(date -u -d "+${{ inputs.days }} days" +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      - name: apply in dependency order
+      - run: pip install -e ".[dev,cloud]"
+
+      - name: package the tool lambda
+        # Vendors the library and the declarative material beside the handler so terraform's
+        # archive_file has something to zip. A committed zip would drift from its source,
+        # invisibly.
+        run: make package
+
+      # ── Infrastructure ────────────────────────────────────────────────────
+
+      - name: apply foundation
         env:
           TF_VAR_expires_at: ${{ steps.expiry.outputs.date }}
-          TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
-          TF_VAR_deploy_role_arn: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: ./.github/scripts/tf.sh apply foundation
+
+      - name: apply data
+        if: inputs.stage != 'foundation'
+        env:
+          TF_VAR_expires_at: ${{ steps.expiry.outputs.date }}
+        run: ./.github/scripts/tf.sh apply data
+
+      - name: apply knowledge
+        if: contains(fromJSON('["knowledge","agent","full"]'), inputs.stage)
+        env:
+          TF_VAR_expires_at: ${{ steps.expiry.outputs.date }}
           TF_VAR_production_topology: ${{ inputs.production_topology }}
+        run: ./.github/scripts/tf.sh apply knowledge
+
+      - name: apply agent without the runtime
+        if: contains(fromJSON('["agent","full"]'), inputs.stage)
+        # Creates ECR, the gateway, the policy engine and memory. The runtime is held back
+        # because it needs an image that does not exist yet.
+        env:
+          TF_VAR_expires_at: ${{ steps.expiry.outputs.date }}
+          TF_VAR_deploy_runtime: "false"
+        run: ./.github/scripts/tf.sh apply agent
+
+      # ── Data ──────────────────────────────────────────────────────────────
+
+      - name: seed the lake
+        if: inputs.stage != 'foundation'
+        # `--check` first. The generator refuses to write if any total drifts from the
+        # recordings, which is the invariant keeping offline and live the same program.
         run: |
           set -euo pipefail
-          case "${{ inputs.layers }}" in
-            foundation) layers="foundation" ;;
-            foundation+data) layers="foundation data" ;;
-            all) layers="foundation data knowledge agent" ;;
-          esac
-          for layer in $layers; do
-            echo "── $layer"
-            terraform -chdir="infra/$layer" init \
-              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-              -backend-config="region=${{ vars.AWS_REGION }}" \
-              -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
-              -backend-config="encrypt=true"
-            terraform -chdir="infra/$layer" apply -auto-approve -input=false
+          python pipelines/seed/generate.py --check
+          python pipelines/seed/generate.py --out build/seed
+          LAKE=$(terraform -chdir=infra/foundation output -raw lake_bucket)
+          aws s3 sync build/seed "s3://$LAKE/raw/" --delete
+          echo "seeded s3://$LAKE/raw/"
+
+      - name: repair partitions
+        if: inputs.stage != 'foundation'
+        run: ./.github/scripts/athena.sh repair
+
+      - name: dbt build
+        if: inputs.stage != 'foundation'
+        run: ./.github/scripts/dbt.sh
+
+      - name: apply analytics views
+        if: inputs.stage != 'foundation'
+        run: ./.github/scripts/athena.sh views
+
+      # ── Evidence ──────────────────────────────────────────────────────────
+
+      - name: ingest evidence
+        if: contains(fromJSON('["knowledge","agent","full"]'), inputs.stage)
+        run: |
+          set -euo pipefail
+          EVIDENCE=$(terraform -chdir=infra/foundation output -raw evidence_bucket)
+          python pipelines/ingest/evidence.py
+          for tenant in helios aegis lumen; do
+            aws s3 sync "evidence/$tenant" "s3://$EVIDENCE/$tenant/"
           done
 
-      - name: record what was created and when it expires
+      - name: sync the knowledge bases
+        if: contains(fromJSON('["knowledge","agent","full"]'), inputs.stage)
+        run: ./.github/scripts/kb-sync.sh
+
+      # ── The agent container ───────────────────────────────────────────────
+
+      - name: build and push the agent image
+        if: contains(fromJSON('["agent","full"]'), inputs.stage)
         run: |
-          echo "### Estate up" >> "$GITHUB_STEP_SUMMARY"
-          echo "Layers: \`${{ inputs.layers }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Expires: \`${{ steps.expiry.outputs.date }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Run \`Destroy\` before that date, or the reaper will say so." >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          REPO=$(terraform -chdir=infra/agent output -raw ecr_repository_url)
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${REPO%%/*}"
+          docker buildx build --platform linux/arm64 -t "$REPO:${{ github.sha }}" --push .
+          echo "pushed $REPO:${{ github.sha }}"
+
+      - name: apply agent with the runtime
+        if: inputs.stage == 'full'
+        env:
+          TF_VAR_expires_at: ${{ steps.expiry.outputs.date }}
+          TF_VAR_deploy_runtime: "true"
+          TF_VAR_agent_image_tag: ${{ github.sha }}
+        run: ./.github/scripts/tf.sh apply agent
+
+      # ── Prove it ──────────────────────────────────────────────────────────
+
+      - name: run every tenant against the live estate
+        if: inputs.stage == 'full'
+        # A blocked tenant does not fail the deploy. `aegis` is *supposed* to block — its
+        # Scope 1 misses its own cross-check — and a workflow that went red on a correct
+        # refusal would teach everyone to ignore it.
+        run: |
+          set -uo pipefail
+          for tenant in helios aegis lumen; do
+            attestor run --tenant "$tenant" --run-id "${{ github.run_id }}" || true
+          done
+          attestor dashboard
+
+      - name: publish the results
+        if: inputs.stage == 'full'
+        run: |
+          set -euo pipefail
+          REPORTS=$(terraform -chdir=infra/foundation output -raw reports_bucket)
+          aws s3 sync out "s3://$REPORTS/${{ github.run_id }}/"
+          {
+            echo "### Run complete"
+            echo
+            python .github/scripts/summarise.py
+            echo
+            echo "Expires \`${{ steps.expiry.outputs.date }}\` — run **Destroy** before then."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.stage == 'full'
+        with:
+          name: reports-${{ github.run_id }}
+          path: out/
+          retention-days: 14

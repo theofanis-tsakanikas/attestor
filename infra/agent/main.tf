@@ -146,6 +146,9 @@ resource "aws_iam_role" "tools" {
 }
 
 resource "aws_iam_role_policy" "tools" {
+  #checkov:skip=CKV_AWS_355: Two actions require `*`. `glue:Get*` is scoped by Lake Formation
+  #rather than by ARN, and Athena's own workgroup constraint is the effective boundary on what
+  #can be read. Everything else in this document names a resource.
   name = "resolve-and-retrieve"
   role = aws_iam_role.tools.id
 
@@ -220,6 +223,13 @@ data "archive_file" "tools" {
 }
 
 resource "aws_lambda_function" "tools" {
+  #checkov:skip=CKV_AWS_116: A DLQ catches failed *async* invocations. Gateway calls this
+  #synchronously and surfaces the failure to the caller, which is where it belongs.
+  #checkov:skip=CKV_AWS_272: Code signing needs a signing profile whose lifecycle would
+  #outlive the estate it signs for.
+  #checkov:skip=CKV_AWS_173: The environment holds identifiers — a workgroup name, two
+  #knowledge-base ids, a guardrail version. No secret is passed this way; credentials come
+  #from the execution role and Secrets Manager.
   function_name    = "${var.project}-tools"
   role             = aws_iam_role.tools.arn
   runtime          = "python3.12"
@@ -228,6 +238,10 @@ resource "aws_lambda_function" "tools" {
   source_code_hash = data.archive_file.tools.output_base64sha256
   timeout          = 60
   memory_size      = 1024
+  # Bounded on purpose. A tool that can fan out without limit is a tool that can exhaust the
+  # Bedrock quota for every tenant at once, and a per-tenant platform where one tenant can do
+  # that has no isolation worth the name.
+  reserved_concurrent_executions = 20
 
   vpc_config {
     subnet_ids         = data.terraform_remote_state.foundation.outputs.private_subnet_ids
@@ -254,6 +268,9 @@ resource "aws_lambda_function" "tools" {
 # ── Observability ────────────────────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "agent" {
+  #checkov:skip=CKV_AWS_338: The estate lives for days. Retaining its logs for a year would
+  #keep records about an agent that no longer exists, and the run records in `gold.report_run`
+  #are the durable audit trail — not CloudWatch.
   name              = "/aws/${var.project}/agent"
   retention_in_days = var.log_retention_days
   kms_key_id        = data.terraform_remote_state.foundation.outputs.kms_key_arn
@@ -306,4 +323,313 @@ resource "aws_cloudwatch_metric_alarm" "denial_spike" {
   threshold           = var.denial_alarm_threshold
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.terraform_remote_state.foundation.outputs.alerts_topic_arn]
+}
+
+# ── AgentCore ────────────────────────────────────────────────────────────────
+#
+# The six components, and what each is actually for here.
+#
+# `Gateway` turns the tool handlers into MCP tools. That is the piece with the clearest
+# payback: six operations described by an OpenAPI document the code generates, fronted by a
+# managed MCP server with JWT auth. Hand-writing that plumbing is weeks, and the weeks buy
+# nothing an auditor cares about.
+#
+# `Policy Engine` runs the *same Cedar files* the offline authorizer parses. Not a
+# translation of them, not a re-expression — `file()` reads `policy/cedar/*.cedar` and hands
+# the statement to AWS. So `attestor policy verify` on a laptop and the deployed engine
+# cannot drift, and the cross-check in `tests/policy/` is a check on both.
+#
+# `Runtime` hosts the container. Session isolation between concurrent invocations is a real
+# property and a tedious one to build; buying it is sensible. It is *not* where the agent's
+# judgement lives — that is the resolver, and it is tested without an account.
+#
+# `Identity` (workload identity) gives the agent a principal of its own for outbound calls,
+# distinct from the human's session. `Memory` is per tenant by construction. `Observability`
+# is the log group and metric filters above, with `tenant_id` on every record.
+
+resource "awscc_bedrockagentcore_workload_identity" "agent" {
+  name = "${var.project}-agent"
+}
+
+# The Cedar policies, deployed from the same files the offline evaluator parses.
+resource "awscc_bedrockagentcore_policy_engine" "main" {
+  name        = "${var.project}-policy-engine"
+  description = "Cedar policies from policy/cedar/, evaluated before any tool executes."
+}
+
+resource "awscc_bedrockagentcore_policy" "cedar" {
+  for_each = fileset("${path.root}/../../policy/cedar", "*.cedar")
+
+  name             = replace(trimsuffix(each.value, ".cedar"), "_", "-")
+  policy_engine_id = awscc_bedrockagentcore_policy_engine.main.policy_engine_id
+  description      = "Deployed verbatim from policy/cedar/${each.value}"
+
+  # ACTIVE, not LOG_ONLY. A policy engine in log-only mode is a record of the decisions it
+  # would have made, and the whole argument for deciding authorization before execution is
+  # that the decision has effect.
+  enforcement_mode = "ACTIVE"
+  # A policy with a validation finding does not deploy. The alternative is a policy that is
+  # live and subtly not what it says, which is worse than no policy: it is a control people
+  # believe in.
+  validation_mode = "FAIL_ON_ANY_FINDINGS"
+
+  definition = {
+    cedar = {
+      statement = file("${path.root}/../../policy/cedar/${each.value}")
+    }
+  }
+}
+
+resource "awscc_bedrockagentcore_gateway" "main" {
+  name        = "${var.project}-gateway"
+  role_arn    = aws_iam_role.gateway.arn
+  description = "Attestor tools as MCP. Tenant and period come from the token, never the call."
+
+  # JWT from the tenants' own pools. `allowed_audience` is the per-tenant app client, so a
+  # token minted for one tenant is not a token this gateway accepts for another.
+  authorizer_type = "CUSTOM_JWT"
+  authorizer_configuration = {
+    custom_jwt_authorizer = {
+      discovery_url = "https://cognito-idp.${var.region}.amazonaws.com/${values(aws_cognito_user_pool.tenant)[0].id}/.well-known/openid-configuration"
+      allowed_clients = [
+        for client in aws_cognito_user_pool_client.tenant : client.id
+      ]
+    }
+  }
+
+  # `protocol_type` is omitted deliberately: the provider models it as a JSON-typed
+  # attribute, and `protocol_configuration.mcp` already declares the protocol. Setting both
+  # would be two statements of one fact.
+  protocol_configuration = {
+    mcp = {
+      # Semantic search over tool descriptions. The descriptions are first-class engineering
+      # here: a model that picks `search_evidence` when it needed `resolve_datapoint` will
+      # cite a document instead of stating a figure, and the provenance gate will stop it —
+      # loudly, at the end, rather than cheaply, at the start.
+      search_type        = "SEMANTIC"
+      supported_versions = ["2025-06-18"]
+      session_configuration = {
+        session_timeout_in_seconds = 900
+      }
+    }
+  }
+
+  policy_engine_configuration = {
+    arn  = awscc_bedrockagentcore_policy_engine.main.policy_engine_arn
+    mode = "ENFORCE"
+  }
+
+  kms_key_arn = data.terraform_remote_state.foundation.outputs.kms_key_arn
+
+  # `exception_level` is left unset. Its only permitted value is DEBUG, which returns
+  # internal detail to the caller — an excellent map of the system for whoever provoked the
+  # error. The default is the quiet one, and quiet is what we want.
+}
+
+# Per-tenant memory. Separate resources rather than one store with a tenant key: a shared
+# store makes isolation a property of every write path, and there are more write paths than
+# anybody remembers.
+resource "awscc_bedrockagentcore_memory" "tenant" {
+  for_each = toset(var.cognito_tenants)
+
+  name                  = "${var.project}_${each.value}"
+  description           = "Per-tenant agent memory for ${each.value}."
+  event_expiry_duration = var.memory_retention_days
+  encryption_key_arn    = data.terraform_remote_state.foundation.outputs.kms_key_arn
+}
+
+# ── Runtime ──────────────────────────────────────────────────────────────────
+
+resource "aws_ecr_repository" "agent" {
+  #checkov:skip=CKV_AWS_51: Tags are already immutable; this is the same setting read twice.
+  name                 = "${var.project}-agent"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = data.terraform_remote_state.foundation.outputs.kms_key_arn
+  }
+}
+
+resource "awscc_bedrockagentcore_runtime" "agent" {
+  count = var.deploy_runtime ? 1 : 0
+
+  agent_runtime_name = replace("${var.project}_agent", "-", "_")
+  description        = "Hosts the Attestor agent container. Judgement lives in the library."
+  role_arn           = aws_iam_role.runtime.arn
+
+  agent_runtime_artifact = {
+    container_configuration = {
+      container_uri = "${aws_ecr_repository.agent.repository_url}:${var.agent_image_tag}"
+    }
+  }
+
+  # The container reaches Athena, Bedrock and OpenSearch through the VPC endpoints in the
+  # foundation layer. PUBLIC would work and would put the agent's egress outside the audited
+  # path for no gain.
+  network_configuration = {
+    network_mode = "VPC"
+    network_mode_config = {
+      subnets         = data.terraform_remote_state.foundation.outputs.private_subnet_ids
+      security_groups = [data.terraform_remote_state.foundation.outputs.endpoint_security_group_id]
+    }
+  }
+
+  protocol_configuration = "HTTP"
+
+  authorizer_configuration = {
+    custom_jwt_authorizer = {
+      discovery_url = "https://cognito-idp.${var.region}.amazonaws.com/${values(aws_cognito_user_pool.tenant)[0].id}/.well-known/openid-configuration"
+      allowed_clients = [
+        for client in aws_cognito_user_pool_client.tenant : client.id
+      ]
+    }
+  }
+
+  environment_variables = {
+    ATTESTOR_ROOT          = "/app"
+    ATTESTOR_WORKGROUP     = var.project
+    ATTESTOR_DATABASE      = "${var.project}_gold"
+    ATTESTOR_ATHENA_OUTPUT = "s3://${data.terraform_remote_state.foundation.outputs.lake_bucket}/athena-results/"
+    ATTESTOR_EVIDENCE_KB   = data.terraform_remote_state.knowledge.outputs.evidence_kb_id
+    ATTESTOR_REGULATORY_KB = data.terraform_remote_state.knowledge.outputs.regulatory_kb_id
+    ATTESTOR_GUARDRAIL_ID  = data.terraform_remote_state.knowledge.outputs.guardrail_id
+    ATTESTOR_GUARDRAIL_VER = data.terraform_remote_state.knowledge.outputs.guardrail_version
+    OTEL_SERVICE_NAME      = "attestor-agent"
+  }
+
+  tags = {
+    "attestor:expires-at" = var.expires_at
+  }
+}
+
+resource "awscc_bedrockagentcore_runtime_endpoint" "live" {
+  count = var.deploy_runtime ? 1 : 0
+
+  name             = "live"
+  agent_runtime_id = awscc_bedrockagentcore_runtime.agent[0].agent_runtime_id
+  description      = "The alias callers address. Pointing at a version, never at latest."
+}
+
+# ── Roles ────────────────────────────────────────────────────────────────────
+
+data "aws_iam_policy_document" "agentcore_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["bedrock-agentcore.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_iam_role" "gateway" {
+  name               = "${var.project}-gateway"
+  assume_role_policy = data.aws_iam_policy_document.agentcore_assume.json
+}
+
+# The Gateway's only job is to reach the tool handlers. It cannot read the lake, invoke a
+# model or touch a knowledge base — everything it fronts already has its own role, and a
+# gateway that could do the work of its targets would be a way around them.
+resource "aws_iam_role_policy" "gateway" {
+  name = "invoke-tool-handlers"
+  role = aws_iam_role.gateway.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = aws_lambda_function.tools.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "runtime" {
+  name               = "${var.project}-runtime"
+  assume_role_policy = data.aws_iam_policy_document.agentcore_assume.json
+}
+
+resource "aws_iam_role_policy" "runtime" {
+  #checkov:skip=CKV_AWS_355: `ecr:GetAuthorizationToken` and `glue:Get*` have no resource form.
+  #The image pull is constrained by the repository ARN in the statement below it.
+  name = "run-the-agent"
+  role = aws_iam_role.runtime.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+        Resource = aws_ecr_repository.agent.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "arn:aws:bedrock:*::foundation-model/${var.reasoning_model}"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:ApplyGuardrail"]
+        Resource = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:guardrail/${data.terraform_remote_state.knowledge.outputs.guardrail_id}"
+      },
+      {
+        Effect = "Allow"
+        Action = ["bedrock:Retrieve"]
+        Resource = [
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${data.terraform_remote_state.knowledge.outputs.evidence_kb_id}",
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${data.terraform_remote_state.knowledge.outputs.regulatory_kb_id}",
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["athena:StartQueryExecution", "athena:GetQueryExecution", "athena:GetQueryResults"]
+        Resource = "arn:aws:athena:${var.region}:${data.aws_caller_identity.current.account_id}:workgroup/${var.project}"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["glue:GetTable", "glue:GetTables", "glue:GetDatabase", "glue:GetPartitions"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Resource = [
+          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.lake_bucket}",
+          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.lake_bucket}/*",
+          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.evidence_bucket}/*",
+          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.reports_bucket}/*",
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = data.terraform_remote_state.foundation.outputs.kms_key_arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:CreateLogGroup"]
+        Resource = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:*"
+      },
+    ]
+  })
 }
