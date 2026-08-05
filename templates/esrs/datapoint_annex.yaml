@@ -1,0 +1,24 @@
+id: esrs_datapoint_annex
+artefact: xlsx
+title: ESRS datapoint annex
+standard: ESRS
+subtitle: The workbook an auditor works from
+
+sections:
+  - title: Disclosed figures
+    reference: ESRS 1 §113
+    blocks:
+      - kind: table
+        table: datapoints
+
+  - title: Lineage
+    reference: CSRD Article 34a
+    blocks:
+      - kind: table
+        table: annex
+
+  - title: Limitations
+    reference: ESRS 1 §34-35
+    blocks:
+      - kind: table
+        table: limitations

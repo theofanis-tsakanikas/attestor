@@ -1,0 +1,32 @@
+id: esrs_board_deck
+artefact: pptx
+title: Climate disclosure — board review
+standard: ESRS
+subtitle: What we are about to file, and what we could not support
+
+sections:
+  - title: Where we landed
+    reference: ESRS E1-6
+    blocks:
+      - kind: bullets
+        items:
+          - "Total gross emissions: {{dp:ESRS_E1-6_total_ghg}}"
+          - "Intensity per net revenue: {{dp:ESRS_E1-6_ghg_intensity}}"
+          - "Scope 1: {{dp:ESRS_E1-6_gross_scope_1}} · Scope 2: {{dp:ESRS_E1-6_gross_scope_2_location}}"
+          - "Scope 3: {{dp:ESRS_E1-6_gross_scope_3}}"
+
+  - title: What we could not support
+    reference: ESRS 1 §34-35
+    blocks:
+      - kind: table
+        table: limitations
+
+  - title: What the auditor will ask for
+    reference: CSRD Article 34a
+    blocks:
+      - kind: bullets
+        items:
+          - Every figure traces to a resolver, a source table and a pinned snapshot.
+          - Re-running the statement against those snapshots reproduces the same figures.
+          - No figure on any slide was authored by a language model.
+          - Accepted defects carry named approvers and an expiry date.

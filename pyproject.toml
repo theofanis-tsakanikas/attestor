@@ -67,6 +67,10 @@ ignore = [
 # `_resolve_one` dispatches one branch per resolver kind and returns from each. Folding
 # them together would hide which kinds exist, which is the first thing a reader needs.
 "src/attestor/datapoints/resolver.py" = ["PLR0911"]
+# The render helpers thread the same five collaborators (results, contracts, context,
+# manifest, template) through every level. Bundling them into a context object would hide
+# which of them a given step is allowed to touch, and that visibility is the point.
+"src/attestor/documents/render.py" = ["PLR0917"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

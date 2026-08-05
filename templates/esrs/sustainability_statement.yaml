@@ -1,0 +1,89 @@
+id: esrs_sustainability_statement
+artefact: docx
+title: Sustainability Statement — Climate Change (ESRS E1)
+standard: ESRS
+subtitle: Prepared under Delegated Regulation (EU) 2023/2772
+
+sections:
+  - title: Basis of preparation
+    reference: ESRS 1
+    blocks:
+      - kind: paragraph
+        text: >-
+          This statement covers {{meta:tenant_name}} for the reporting period
+          {{meta:period_start}} to {{meta:period_end}}, and was prepared on
+          {{meta:report_date}} under {{meta:standard}}.
+      - kind: paragraph
+        text: >-
+          Every quantitative disclosure below is produced by a declared resolver over the
+          undertaking's own records. No figure in this document was authored by a language
+          model. Where a figure could not be supported, it is declared as not disclosed
+          rather than estimated, and the reason is recorded in the limitations register.
+
+  - title: Transition plan for climate change mitigation
+    reference: ESRS E1-1
+    blocks:
+      - kind: paragraph
+        text: "{{narrative:ESRS_E1-1_transition_plan}}"
+      - kind: note
+        text: >-
+          The paragraph above is drafted from retrieved evidence and reviewed by a named
+          approver before issue. It contains no figures by construction.
+
+  - title: Energy consumption
+    reference: ESRS E1-5
+    blocks:
+      - kind: paragraph
+        text: >-
+          Electricity purchased or otherwise acquired and consumed during the period was
+          {{dp:ESRS_E1-5_electricity_consumption}}, metered at the point of delivery.
+          Estimated invoice lines are excluded from this figure.
+
+  - title: Gross greenhouse gas emissions
+    reference: ESRS E1-6
+    blocks:
+      - kind: bullets
+        items:
+          - "Gross Scope 1: {{dp:ESRS_E1-6_gross_scope_1}}, operational control boundary."
+          - >-
+            Gross Scope 2, location-based: {{dp:ESRS_E1-6_gross_scope_2_location}}, computed
+            from metered electricity at a grid factor of {{dp:ESRS_E1_grid_factor_GR}}.
+          - "Gross Scope 3: {{dp:ESRS_E1-6_gross_scope_3}}, across screened significant categories."
+          - "Total gross emissions: {{dp:ESRS_E1-6_total_ghg}}."
+      - kind: paragraph
+        text: >-
+          Net revenue for the period, as reported in the financial statements, was
+          {{dp:ESRS_E1-6_net_revenue}}. Greenhouse gas intensity per net revenue was
+          therefore {{dp:ESRS_E1-6_ghg_intensity}}.
+      - kind: paragraph
+        text: >-
+          Both operands of the intensity ratio are disclosed above, so a reader can
+          recompute it from the face of this statement.
+
+  - title: Disclosed figures
+    reference: ESRS 1 §113
+    blocks:
+      - kind: table
+        table: datapoints
+
+  - title: Material limitations and omissions
+    reference: ESRS 1 §34-35
+    blocks:
+      - kind: paragraph
+        text: >-
+          The following disclosures were not made, or were made subject to a qualification.
+          Each entry states the reason, and where a defect was accepted, the approvers who
+          accepted it and the date the acceptance lapses.
+      - kind: table
+        table: limitations
+
+  - title: Assurance annex
+    reference: CSRD Article 34a
+    blocks:
+      - kind: paragraph
+        text: >-
+          Each figure below carries the resolver that produced it, the source tables it was
+          read from with their pinned snapshots, and a lineage identifier. Re-resolving
+          against the same snapshots reproduces the same identifiers.
+      - kind: table
+        table: annex
