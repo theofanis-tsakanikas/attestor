@@ -37,6 +37,7 @@ from pathlib import Path
 from attestor.agent.cache import CacheKey, CacheScopeError, TenantCache
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
+from attestor.contracts.model import Standard
 from attestor.datapoints.backends import RecordedBackend
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import ResolutionContext, Resolver
@@ -90,6 +91,11 @@ class Harness:
     contracts: ContractSet
     policies: PolicySet
     registry: TenantRegistry
+
+    @property
+    def esrs_contracts(self) -> ContractSet:
+        """Both probe tenants report under ESRS; a resolver takes one standard at a time."""
+        return self.contracts.for_standard(Standard.ESRS)
 
     def session(self, tenant: str = ATTACKER, roles: frozenset[str] | None = None) -> Session:
         return Session(
@@ -165,7 +171,7 @@ def _probe_5_evidence_index(harness: Harness) -> ProbeResult:
 
 def _probe_6_resolver_scope(harness: Harness) -> ProbeResult:
     resolver = Resolver(
-        contracts=harness.contracts,
+        contracts=harness.esrs_contracts,
         backend=RecordedBackend.from_directory(harness.root / "recordings"),
         evidence=EvidenceIndex.for_tenant(harness.root, ATTACKER),
         override_register=overrides.load_register(harness.root),
@@ -197,7 +203,7 @@ def _probe_7_query_parameters(harness: Harness) -> ProbeResult:
 
     backend = Recording(RecordedBackend.from_directory(harness.root / "recordings")._recordings)
     resolver = Resolver(
-        contracts=harness.contracts,
+        contracts=harness.esrs_contracts,
         backend=backend,
         evidence=EvidenceIndex.for_tenant(harness.root, ATTACKER),
         override_register=overrides.load_register(harness.root),

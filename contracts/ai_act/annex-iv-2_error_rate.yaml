@@ -1,0 +1,33 @@
+id: AIACT_ANNEX-IV-2_error_rate
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §2(g)
+title: Error rate on the held-out evaluation set
+description: >-
+  The complement of accuracy, disclosed explicitly because a reader assessing risk is
+  interested in the failures rather than in the successes.
+
+kind: quantitative
+unit: ratio
+precision: 4
+period: point_in_time
+boundary: not_applicable
+methodology: One minus the disclosed accuracy, over the same evaluation set.
+
+resolver:
+  kind: derived
+  expression: "1 - {AIACT_ANNEX-IV-2_evaluation_accuracy}"
+
+evidence:
+  required: false
+  inherited: true
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act]

@@ -1,0 +1,40 @@
+id: AIACT_ANNEX-IV-2_evaluation_set_size
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §2(d)
+title: Size of the held-out evaluation set
+description: >-
+  Number of examples in the held-out evaluation set on which the reported accuracy was
+  measured.
+
+kind: quantitative
+unit: count
+precision: 0
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Count of distinct examples in the evaluation split, excluding any example that also appears
+  in training. An accuracy figure without the size of the set it was measured on is not a
+  measurement, and the two are disclosed together for that reason.
+
+resolver:
+  kind: sql
+  query: ai_act/evaluation_set_size.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - data_sheet
+  min_documents: 1
+  must_cover_period: false
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, core]

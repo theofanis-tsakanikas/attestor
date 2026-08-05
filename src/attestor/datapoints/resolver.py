@@ -185,6 +185,14 @@ class Resolver:
                 f"resolver is scoped to tenant {self._evidence.tenant!r} "
                 f"but was asked to resolve {context.tenant!r}"
             )
+        standards = {contract.standard for contract in self._contracts}
+        if len(standards) > 1:
+            raise ValueError(
+                "a resolver was given contracts from more than one standard "
+                f"({', '.join(sorted(s.value for s in standards))}). A tenant reports under "
+                "one standard, and resolving another's datapoints produces refusals to "
+                "questions it was never asked. Filter with ContractSet.for_standard first."
+            )
         results: dict[str, Resolution] = {}
         ledger = LineageLedger()
         for datapoint_id in self._contracts.resolution_order():

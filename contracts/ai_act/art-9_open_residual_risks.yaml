@@ -1,0 +1,40 @@
+id: AIACT_ART-9_open_residual_risks
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Article 9"
+reference: Article 9(5)
+title: Residual risks judged acceptable and still open
+description: >-
+  Number of identified risks for which mitigation is complete and a residual risk remains,
+  judged acceptable and communicated to the deployer.
+
+kind: quantitative
+unit: count
+precision: 0
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Count of entries in the risk register whose mitigation status is complete and whose
+  residual rating is above negligible. Risks still under mitigation are excluded and counted
+  separately; conflating them would understate what a deployer is being asked to accept.
+
+resolver:
+  kind: sql
+  query: ai_act/open_residual_risks.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - risk_register_extract
+  min_documents: 1
+  must_cover_period: true
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, risk]

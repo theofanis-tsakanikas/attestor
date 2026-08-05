@@ -3,10 +3,17 @@
 
 # Contract register
 
-9 regulated datapoint(s), rendered from `contracts/`.
+16 regulated datapoint(s), rendered from `contracts/`.
 
 | datapoint | reference | kind | unit | resolver | evidence | lawful omissions |
 |---|---|---|---|---|---|---|
+| `AIACT_ANNEX-IV-1_intended_purpose` | Annex IV §1(a) | narrative | — | narrative | 1× {model_card, system_documentation} | — |
+| `AIACT_ANNEX-IV-2_error_rate` | Annex IV §2(g) | quantitative | ratio | derived | inherited | — |
+| `AIACT_ANNEX-IV-2_evaluation_accuracy` | Annex IV §2(g) | quantitative | ratio | sql | 2× {data_sheet, evaluation_report} | — |
+| `AIACT_ANNEX-IV-2_evaluation_set_size` | Annex IV §2(d) | quantitative | count | sql | 1× {data_sheet} | — |
+| `AIACT_ANNEX-IV-3_human_oversight` | Annex IV §3, Article 14 | narrative | — | narrative | 1× {oversight_procedure} | — |
+| `AIACT_ANNEX-IV-8_serious_incidents` | Annex IV §8 | quantitative | count | sql | 1× {incident_log} | E_NOT_APPLICABLE |
+| `AIACT_ART-9_open_residual_risks` | Article 9(5) | quantitative | count | sql | 1× {risk_register_extract} | — |
 | `ESRS_E1-1_transition_plan` | ESRS E1-1 §14-16 | narrative | — | narrative | 1× {board_approved_transition_plan, capex_plan} | E_NOT_MATERIAL |
 | `ESRS_E1-5_electricity_consumption` | ESRS E1-5 §37(a) | quantitative | MWh | sql | 12× {meter_reading_export, utility_invoice} | — |
 | `ESRS_E1-6_ghg_intensity` | ESRS E1-6 §53 | quantitative | tCO2e/MEUR | derived | inherited | E_PHASE_IN, E_NOT_MATERIAL |
@@ -23,6 +30,8 @@
 |---|---|
 | `MEUR` | money |
 | `MWh` | energy |
+| `count` | dimensionless |
+| `ratio` | dimensionless |
 | `tCO2e` | mass_co2e |
 | `tCO2e/MEUR` | mass_co2e / money |
 | `tCO2e/MWh` | mass_co2e / energy |

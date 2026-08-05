@@ -1,0 +1,76 @@
+id: ai_act_technical_documentation
+artefact: docx
+title: Technical documentation — Annex IV
+standard: EU_AI_ACT
+subtitle: Prepared under Regulation (EU) 2024/1689
+
+sections:
+  - title: General description of the AI system
+    reference: Annex IV §1
+    blocks:
+      - kind: paragraph
+        text: >-
+          This technical file covers the AI system documented by {{meta:tenant_name}} for the
+          period {{meta:period_start}} to {{meta:period_end}}, prepared on {{meta:report_date}}
+          under {{meta:standard}}.
+      - kind: paragraph
+        text: "{{narrative:AIACT_ANNEX-IV-1_intended_purpose}}"
+
+  - title: Development, data and performance
+    reference: Annex IV §2
+    blocks:
+      - kind: paragraph
+        text: >-
+          Accuracy on the held-out evaluation set was
+          {{dp:AIACT_ANNEX-IV-2_evaluation_accuracy}}, measured over
+          {{dp:AIACT_ANNEX-IV-2_evaluation_set_size}} distinct examples. The corresponding
+          error rate is {{dp:AIACT_ANNEX-IV-2_error_rate}}.
+      - kind: note
+        text: >-
+          Both figures are recomputed from the evaluation run's own predictions and
+          cross-checked against the confusion matrix. Neither is read from a summary document.
+
+  - title: Human oversight
+    reference: Annex IV §3 · Article 14
+    blocks:
+      - kind: paragraph
+        text: "{{narrative:AIACT_ANNEX-IV-3_human_oversight}}"
+
+  - title: Risk management
+    reference: Article 9
+    blocks:
+      - kind: paragraph
+        text: >-
+          {{dp:AIACT_ART-9_open_residual_risks}} identified risk(s) have completed mitigation
+          and retain a residual rating above negligible. Each has been judged acceptable and
+          communicated to the deployer.
+
+  - title: Post-market monitoring
+    reference: Annex IV §8 · Article 73
+    blocks:
+      - kind: paragraph
+        text: >-
+          {{dp:AIACT_ANNEX-IV-8_serious_incidents}} serious incident(s) were recorded during
+          the monitoring period, including any still under classification.
+
+  - title: Disclosed figures
+    reference: Annex IV
+    blocks:
+      - kind: table
+        table: datapoints
+
+  - title: Limitations and omissions
+    reference: Annex IV
+    blocks:
+      - kind: table
+        table: limitations
+
+  - title: Assurance annex
+    reference: Annex IV
+    blocks:
+      - kind: paragraph
+        text: >-
+          Each figure carries the resolver that produced it, the source tables it was read
+          from with their pinned snapshots, and a lineage identifier.
+      - kind: table
+        table: annex

@@ -15,6 +15,7 @@ import pytest
 
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
+from attestor.contracts.model import Standard
 from attestor.contracts.overrides import Outcome
 from attestor.datapoints import resolver as resolver_module
 from attestor.datapoints.backends import RecordedBackend, StaleRecording
@@ -46,7 +47,8 @@ def _context(tenant: str, as_of: dt.date = REPORT_DATE) -> ResolutionContext:
 
 def _resolver(repo_root: Path, contract_set: ContractSet, tenant: str, **kwargs) -> Resolver:
     defaults = {
-        "contracts": contract_set,
+        # A resolver takes one standard at a time; both fixture tenants report ESRS.
+        "contracts": contract_set.for_standard(Standard.ESRS),
         "backend": RecordedBackend.from_directory(repo_root / "recordings"),
         "evidence": EvidenceIndex.for_tenant(repo_root, tenant),
         "override_register": overrides.load_register(repo_root),

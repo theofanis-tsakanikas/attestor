@@ -30,6 +30,7 @@ import yaml
 
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
+from attestor.contracts.model import Standard
 from attestor.datapoints.backends import RecordedBackend
 from attestor.datapoints.evidence import EvidenceDocument, EvidenceIndex
 from attestor.datapoints.resolver import (
@@ -39,6 +40,7 @@ from attestor.datapoints.resolver import (
     Resolved,
     Resolver,
 )
+from attestor.policy.tenants import TenantRegistry
 
 PERIOD_START = dt.date(2026, 1, 1)
 PERIOD_END = dt.date(2027, 1, 1)
@@ -189,8 +191,9 @@ def _narrative(_contract, _context) -> NarrativeDraft:
 
 def evaluate(scenario: Scenario, *, root: Path, contracts: ContractSet) -> ScenarioResult:
     result = ScenarioResult(scenario=scenario)
+    registry = TenantRegistry.load(root)
     resolver = Resolver(
-        contracts=contracts,
+        contracts=contracts.for_standard(Standard(registry[scenario.tenant].standard)),
         backend=RecordedBackend.from_directory(root / "recordings"),
         evidence=_corpus(root, scenario),
         override_register=overrides.load_register(root),

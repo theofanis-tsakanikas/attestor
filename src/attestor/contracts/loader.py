@@ -77,8 +77,25 @@ class ContractSet:
     def get(self, datapoint_id: str) -> DatapointContract | None:
         return self.contracts.get(datapoint_id)
 
-    def for_standard(self, standard: Standard) -> tuple[DatapointContract, ...]:
-        return tuple(c for c in self.contracts.values() if c.standard is standard)
+    def for_standard(self, standard: Standard) -> ContractSet:
+        """The subset a tenant reporting under one standard actually owes.
+
+        Returning a `ContractSet` rather than a tuple is the point. An earlier version handed
+        every tenant the whole repository, so `lumen` — which reports under the AI Act — was
+        asked for ESRS Scope 1 emissions, had no evidence for them, and blocked on nine
+        datapoints it was never required to disclose. The refusals were individually correct
+        and the question was nonsense.
+        """
+        selected = {
+            key: contract
+            for key, contract in self.contracts.items()
+            if contract.standard is standard
+        }
+        return ContractSet(
+            contracts=selected,
+            sources={key: self.sources[key] for key in selected},
+            root=self.root,
+        )
 
     @property
     def dimensions(self) -> dict[str, Dimension]:

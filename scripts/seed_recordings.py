@@ -76,6 +76,41 @@ SCENARIOS: dict[str, dict[str, dict[str, Any]]] = {
             "snapshot_ids": {"gold.financial_statement_extract": "7284419023871123007"},
         },
     },
+    # The AI Act tenant. Its documented system is Attestor itself, so these figures stand in
+    # for this repository's own evaluation run until the estate captures a real one.
+    "lumen": {
+        "ai_act/evaluation_accuracy.sql": {
+            "value": "0.9412",
+            "tables": ["gold.model_evaluation_prediction"],
+            "snapshot_ids": {"gold.model_evaluation_prediction": "3319419023871123001"},
+            "row_counts": {"gold.model_evaluation_prediction": 4820},
+        },
+        "ai_act/evaluation_accuracy_crosscheck_confusion.sql": {
+            # The same number at a different level of aggregation. It has to agree.
+            "value": "0.9412",
+            "tables": ["gold.model_evaluation_confusion"],
+            "snapshot_ids": {"gold.model_evaluation_confusion": "3319419023871123002"},
+        },
+        "ai_act/evaluation_set_size.sql": {
+            "value": "4820",
+            "tables": ["gold.model_evaluation_prediction"],
+            "snapshot_ids": {"gold.model_evaluation_prediction": "3319419023871123001"},
+        },
+        "ai_act/open_residual_risks.sql": {
+            "value": "3",
+            "tables": ["gold.risk_register"],
+            "snapshot_ids": {"gold.risk_register": "3319419023871123003"},
+        },
+        "ai_act/serious_incidents.sql": {
+            # Zero is an answer here, not an absence: COUNT over no rows is 0, and the
+            # monitoring period genuinely contains no serious incident. An empty SUM would
+            # have been a different thing entirely, which is why the resolver distinguishes
+            # a NULL result from a zero one.
+            "value": "0",
+            "tables": ["gold.incident_log"],
+            "snapshot_ids": {"gold.incident_log": "3319419023871123004"},
+        },
+    },
     "aegis": {
         "esrs/e1_6_gross_scope_1.sql": {
             "value": "9130.0",

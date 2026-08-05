@@ -1,0 +1,52 @@
+# The datapoint an AI Act technical file lives or dies on, and the one most likely to be
+# quoted from a slide rather than from a test run.
+#
+# Two independent computations must agree to four decimal places: the evaluation report's
+# headline figure, and the same figure recomputed from the confusion matrix. They are the
+# same number, and a real difference means somebody reported a different run.
+id: AIACT_ANNEX-IV-2_evaluation_accuracy
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §2(g)
+title: Accuracy of the AI system on the held-out evaluation set
+description: >-
+  Accuracy measured on the held-out evaluation set described in the data sheet, reported as a
+  ratio, together with the metric definition used.
+
+kind: quantitative
+unit: ratio
+precision: 4
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Proportion of correct predictions over the held-out evaluation set, computed from the
+  recorded evaluation run. The figure is not taken from a summary document: it is recomputed
+  from the run's own outputs, and cross-checked against the confusion matrix.
+
+resolver:
+  kind: sql
+  query: ai_act/evaluation_accuracy.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - evaluation_report
+    - data_sheet
+  min_documents: 2
+  must_cover_period: false
+
+tolerance:
+  relative: 0.0001
+  cross_check:
+    - ai_act/evaluation_accuracy_crosscheck_confusion.sql
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, core]

@@ -1,0 +1,43 @@
+id: AIACT_ANNEX-IV-1_intended_purpose
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §1(a)
+title: Intended purpose of the AI system
+description: >-
+  General description of the AI system: its intended purpose, the provider, the version, and
+  how the system interacts with hardware or software it is not itself part of.
+
+kind: narrative
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Drafted from the provider's model card and system documentation. Intended purpose is a
+  legal characterisation with consequences for classification, so the narrative states what
+  the documentation says and identifies where it is silent.
+
+resolver:
+  kind: narrative
+  prompt_id: ai_act_intended_purpose
+  max_words: 350
+  grounding:
+    min_citations: 2
+    corpus: both
+    threshold: 0.8
+
+evidence:
+  required: true
+  classes:
+    - model_card
+    - system_documentation
+  min_documents: 1
+  must_cover_period: false
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, narrative]

@@ -19,6 +19,7 @@ import typer
 from rich.console import Console
 
 from attestor.contracts import loader, overrides
+from attestor.contracts.model import Standard
 from attestor.datapoints.backends import RecordedBackend
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import NarrativeDraft, ResolutionContext, Resolver
@@ -87,9 +88,19 @@ def _narrative(_contract, _context) -> NarrativeDraft:
     )
 
 
+def _contracts_for(tenant: str, root: Path):
+    """Only the standard this tenant reports under.
+
+    Handing a tenant the whole repository is how `lumen` ended up blocking on nine ESRS
+    datapoints it was never required to disclose.
+    """
+    registry = TenantRegistry.load(root)
+    return loader.load(root).for_standard(Standard(registry[tenant].standard))
+
+
 def _resolver(tenant: str, root: Path) -> Resolver:
     return Resolver(
-        contracts=loader.load(root),
+        contracts=_contracts_for(tenant, root),
         backend=RecordedBackend.from_directory(root / "recordings"),
         evidence=EvidenceIndex.for_tenant(root, tenant),
         override_register=overrides.load_register(root),
@@ -180,9 +191,14 @@ def _render(tenant: str, root: Path, out: Path):
         period_end=PERIOD_END,
         report_date=REPORT_DATE,
     )
-    contracts = loader.load(root)
+    contracts = _contracts_for(tenant, root)
     produced = []
     for template in Template.load_all(root / "templates"):
+        # A tenant's templates are the ones for its standard. Rendering an ESRS statement for
+        # an AI Act engagement would fail on the first placeholder, and failing later is
+        # always worse than not starting.
+        if template.standard != registry[tenant].standard:
+            continue
         document = render_module.render(
             template, results=results, contracts=contracts, context=context
         )

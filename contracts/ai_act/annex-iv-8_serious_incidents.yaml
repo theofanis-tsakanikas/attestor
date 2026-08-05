@@ -1,0 +1,48 @@
+# The one AI Act datapoint in this set that may lawfully go undisclosed — and only in one
+# specific way. A system that has not yet been placed on the market has no post-market
+# monitoring data, which is a fact about its lifecycle rather than a gap in its evidence.
+#
+# Note what is still absent: no internal failure is listed. "We could not read the incident
+# log" is not the same statement as "there is no incident log yet", and the vocabulary keeps
+# them apart.
+id: AIACT_ANNEX-IV-8_serious_incidents
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §8
+title: Serious incidents recorded under post-market monitoring
+description: >-
+  Number of serious incidents reported under Article 73 during the monitoring period, as
+  recorded in the provider's incident log.
+
+kind: quantitative
+unit: count
+precision: 0
+period: fiscal_year
+boundary: not_applicable
+methodology: >-
+  Count of incidents classified as serious under Article 3(49), within the monitoring period.
+  Incidents under investigation are included and flagged; excluding them until classification
+  completes would let a serious incident go unreported for as long as the review takes.
+
+resolver:
+  kind: sql
+  query: ai_act/serious_incidents.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - incident_log
+  min_documents: 1
+  must_cover_period: true
+
+abstention:
+  allowed_reasons:
+    - E_NOT_APPLICABLE
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, post-market]

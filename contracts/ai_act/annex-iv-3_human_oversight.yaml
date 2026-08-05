@@ -1,0 +1,43 @@
+id: AIACT_ANNEX-IV-3_human_oversight
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §3, Article 14
+title: Human oversight measures
+description: >-
+  Description of the human oversight measures built into the system, including the technical
+  measures that make interpretation of outputs possible and the conditions under which a
+  natural person may disregard, override or reverse an output.
+
+kind: narrative
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Drafted from the documented oversight procedure. Where the procedure describes an ability
+  to override, the narrative states who holds it and what is recorded — an oversight measure
+  nobody can exercise is not an oversight measure.
+
+resolver:
+  kind: narrative
+  prompt_id: ai_act_human_oversight
+  max_words: 400
+  grounding:
+    min_citations: 2
+    corpus: both
+    threshold: 0.8
+
+evidence:
+  required: true
+  classes:
+    - oversight_procedure
+  min_documents: 1
+  must_cover_period: false
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, narrative]

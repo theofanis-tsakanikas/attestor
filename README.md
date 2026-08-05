@@ -63,11 +63,11 @@ of a command in this repository, not a summary of one.
 |---|---|
 | **claim 1** · indirect prompt injection | **15/15** poisoned documents flagged, each for the rule it was written for · **0/10** benign wrongly flagged |
 | **claim 2** · tenant isolation | **12/12** routes closed |
-| **claim 3** · no number from an LLM | **3/3** artefacts clean · 386 numerals checked across 261 runs |
-| **claim 4** · reproducibility | **9/9** lineage ids identical across runs |
+| **claim 3** · no number from an LLM | **4/4** artefacts clean across two regulatory regimes · 477 numerals checked |
+| **claim 4** · reproducibility | **9/9** (ESRS) and **7/7** (AI Act) lineage ids identical across runs |
 | **claim 5** · disciplined abstention | **24/24** expected refusals · **0** fabrications · nothing undamaged refused |
 | `make gate-proof` | **10 refused, 0 accepted, 0 stale** |
-| test suite | **223 passing**, offline, credential-free |
+| test suite | **231 passing**, offline, credential-free |
 
 The last two rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks each control on purpose and requires the *named* gate to refuse it,
@@ -172,8 +172,21 @@ Requires Python 3.12+. No AWS account, no credentials, no network.
 | `aegis` — Aegis Foods | CSRD / ESRS | **Isolation** — two peers in one vertical is what makes the leakage suite mean something |
 | `lumen` — Lumen Advisory | EU AI Act (Annex IV) | **Generalization** — different corpus, different templates, identical code path |
 
-`lumen`'s first engagement is Attestor itself: the platform produces its own Annex IV
-technical documentation, with this repository as the evidence corpus.
+`lumen` issues. Its Annex IV technical file renders from seven datapoints — a narrative
+intended-purpose section, an accuracy figure recomputed from the evaluation run and
+cross-checked against the confusion matrix, a derived error rate, a residual-risk count, a
+serious-incident count — through the **same code path** the CSRD statement uses. Different
+standard, different clause numbering, different evidence classes, different identity
+provider; no branch in `src/`, and
+[a test that fails if one appears](tests/contracts/test_verticals.py).
+
+The system it documents is Attestor itself. That is not a joke about recursion: a platform
+that produces conformity documentation for other people's AI systems and cannot produce its
+own is making a claim it has not tested. The evidence corpus is currently synthetic
+stand-ins for repository artefacts that exist — the evaluation report corresponds to
+`evals/`, the oversight procedure to ADR-0001 and the override register — and replacing them
+with generated exports is the next increment rather than something pretended to have
+happened.
 
 ---
 

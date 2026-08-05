@@ -1,0 +1,64 @@
+tenant: lumen
+period: '2026'
+provenance: synthetic
+note: Shaped by hand to exercise the resolver's branches. Re-captured against the
+  live estate by `python scripts/seed_recordings.py --capture`, which stamps provenance
+  with the run id.
+results:
+- query: ai_act/evaluation_accuracy.sql
+  query_digest: 7bc068d0cb86657c39852ba820ab35fc23307295b33a4685356677bb69d1ba7d
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '0.9412'
+  tables:
+  - gold.model_evaluation_prediction
+  snapshot_ids:
+    gold.model_evaluation_prediction: '3319419023871123001'
+  row_counts:
+    gold.model_evaluation_prediction: 4820
+- query: ai_act/evaluation_accuracy_crosscheck_confusion.sql
+  query_digest: 40165860877ddbda18b7cca264fd59b635eade3e3fc4de04b825457344c18479
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '0.9412'
+  tables:
+  - gold.model_evaluation_confusion
+  snapshot_ids:
+    gold.model_evaluation_confusion: '3319419023871123002'
+- query: ai_act/evaluation_set_size.sql
+  query_digest: 007be0a4341667948b681f808e4099539952868d19933d53f27157bfaf2f084d
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '4820'
+  tables:
+  - gold.model_evaluation_prediction
+  snapshot_ids:
+    gold.model_evaluation_prediction: '3319419023871123001'
+- query: ai_act/open_residual_risks.sql
+  query_digest: 652342e846b13833697988b1120517685861dc00b5be6e89f4829fe4e4f210c5
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '3'
+  tables:
+  - gold.risk_register
+  snapshot_ids:
+    gold.risk_register: '3319419023871123003'
+- query: ai_act/serious_incidents.sql
+  query_digest: 0b03b3d69eb779a3badd4026ac79609cbd450b839d444241db88f583c900275b
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '0'
+  tables:
+  - gold.incident_log
+  snapshot_ids:
+    gold.incident_log: '3319419023871123004'

@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
+from attestor.contracts.model import Standard
 from attestor.datapoints.backends import RecordedBackend
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import NarrativeDraft, ResolutionContext, Resolver
@@ -54,7 +55,7 @@ def _narrative(_contract, _context) -> NarrativeDraft:
 @pytest.fixture
 def resolved(repo_root: Path, contract_set: ContractSet):
     resolver = Resolver(
-        contracts=contract_set,
+        contracts=contract_set.for_standard(Standard.ESRS),
         backend=RecordedBackend.from_directory(repo_root / "recordings"),
         evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
         override_register=overrides.load_register(repo_root),
@@ -159,7 +160,10 @@ def test_precision_comes_from_the_contract_not_the_value(contract_set: ContractS
 
 def test_the_statement_renders(statement: Template, resolved, contract_set, context) -> None:
     document = render_module.render(
-        statement, results=resolved, contracts=contract_set, context=context
+        statement,
+        results=resolved,
+        contracts=contract_set.for_standard(Standard.ESRS),
+        context=context,
     )
     assert document.manifest.figures
     assert document.manifest.of_kind(RunKind.NARRATIVE)
@@ -170,7 +174,7 @@ def test_a_blocked_report_produces_no_artefact(
 ) -> None:
     """Not a draft, not a watermark. Nothing."""
     resolver = Resolver(
-        contracts=contract_set,
+        contracts=contract_set.for_standard(Standard.ESRS),
         backend=RecordedBackend.from_directory(repo_root / "recordings"),
         evidence=EvidenceIndex.for_tenant(repo_root, "aegis"),
         override_register=overrides.load_register(repo_root),
@@ -187,14 +191,22 @@ def test_a_blocked_report_produces_no_artefact(
         )
     )
     with pytest.raises(ReportBlocked, match="no document was written"):
-        render_module.render(statement, results=blocked, contracts=contract_set, context=context)
+        render_module.render(
+            statement,
+            results=blocked,
+            contracts=contract_set.for_standard(Standard.ESRS),
+            context=context,
+        )
 
 
 def test_every_figure_run_carries_a_lineage_id(
     statement: Template, resolved, contract_set, context
 ) -> None:
     document = render_module.render(
-        statement, results=resolved, contracts=contract_set, context=context
+        statement,
+        results=resolved,
+        contracts=contract_set.for_standard(Standard.ESRS),
+        context=context,
     )
     for run in document.manifest.figures:
         assert run.lineage_id, run.datapoint_id
@@ -228,7 +240,7 @@ def test_a_model_that_writes_a_number_fails_the_render(
         )
 
     resolver = Resolver(
-        contracts=contract_set,
+        contracts=contract_set.for_standard(Standard.ESRS),
         backend=RecordedBackend.from_directory(repo_root / "recordings"),
         evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
         override_register=overrides.load_register(repo_root),
@@ -245,7 +257,12 @@ def test_a_model_that_writes_a_number_fails_the_render(
         )
     )
     with pytest.raises(NumeralInNarrative):
-        render_module.render(statement, results=results, contracts=contract_set, context=context)
+        render_module.render(
+            statement,
+            results=results,
+            contracts=contract_set.for_standard(Standard.ESRS),
+            context=context,
+        )
 
 
 # ── The gate, against real files ─────────────────────────────────────────────
@@ -255,8 +272,15 @@ def test_a_model_that_writes_a_number_fails_the_render(
 def artefacts(tmp_path: Path, repo_root: Path, resolved, contract_set, context):
     written = []
     for template in Template.load_all(repo_root / "templates"):
+        # `resolved` is an ESRS resolution; an AI Act template placed against it would fail
+        # on its first placeholder. Templates belong to a standard, and so do tenants.
+        if template.standard != "ESRS":
+            continue
         document = render_module.render(
-            template, results=resolved, contracts=contract_set, context=context
+            template,
+            results=resolved,
+            contracts=contract_set.for_standard(Standard.ESRS),
+            context=context,
         )
         path = tmp_path / f"{template.id}.{template.artefact}"
         writers.write(document, path)
