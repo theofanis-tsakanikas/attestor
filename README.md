@@ -8,9 +8,9 @@
 
 ---
 
-> **Status: ready to deploy, not deployed.** `make preflight` runs 22 checks — every claim
+> **Status: ready to deploy, not deployed.** `make preflight` runs 23 checks — every claim
 > below, every consistency invariant, `terraform validate` against real provider schemas, and
-> checkov at zero findings. All 22 pass. Nothing has been created in AWS.
+> checkov at zero findings. All 23 pass. Nothing has been created in AWS.
 >
 > The sections marked *pending live capture* will carry screenshots from a real, gated run
 > that is then destroyed. Claims here are only made about what is actually in the repository;
@@ -72,7 +72,7 @@ of a command in this repository, not a summary of one.
 | `terraform validate` | **5/5 layers** against real provider schemas |
 | `checkov` | **0 findings**, 40 deliberate exceptions each carrying a written reason |
 | seed ↔ recordings | every generated total reproduces its recording **exactly** |
-| test suite | **285 passing**, offline, credential-free |
+| test suite | **293 passing**, offline, credential-free |
 
 The last two rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks each control on purpose and requires the *named* gate to refuse it,

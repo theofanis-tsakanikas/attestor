@@ -197,6 +197,13 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "dbt project parses",
+        [PYTHON, "-m", "pytest", "-q", "tests/pipelines/test_dbt_project.py"],
+        "A dangling `ref` or an undeclared package fails `dbt build` at parse time — after "
+        "the infrastructure is already up, which is the expensive place to find out.",
+    ),
+    Check(
+        "deployability",
         "container build context",
         [sys.executable, "scripts/check_docker_context.py"],
         "Every path the Dockerfile copies exists. A COPY of a missing directory fails the "

@@ -1,0 +1,22 @@
+version: 2
+
+seeds:
+  - name: dim_tenant
+    description: >-
+      The tenant dimension the staging relationship tests point at. A row here is the
+      authority on which tenant identifiers are real, so a typo in an ingested `tenant_id`
+      becomes a quarantined row rather than a silently orphaned one that no query ever finds.
+    columns:
+      - name: tenant_id
+        tests: [not_null, unique]
+
+  - name: ref_fuel_emission_factor
+    description: >-
+      Conversion factors as reference data, not as constants in a query. Every factor carries
+      its source and its published year, and a fuel type with no factor fails the staging
+      relationship test rather than contributing nothing to a total.
+    columns:
+      - name: fuel_type
+        tests: [not_null, unique]
+      - name: kg_co2e_per_litre
+        tests: [not_null]

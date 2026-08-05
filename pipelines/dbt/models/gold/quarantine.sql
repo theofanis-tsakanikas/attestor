@@ -17,7 +17,7 @@ SELECT
     f.row_key,
     f.payload,
     CURRENT_TIMESTAMP AS quarantined_at
-FROM {{ target.schema }}_quarantine.all_failures AS f
+FROM {{ target.schema }}.all_failures AS f
 
 {% if is_incremental() %}
     WHERE f.detected_at > (SELECT COALESCE(MAX(quarantined_at), TIMESTAMP '1970-01-01') FROM {{ this }})

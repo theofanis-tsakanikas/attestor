@@ -184,8 +184,13 @@ jobs:
         # A blocked tenant does not fail the deploy. `aegis` is *supposed* to block — its
         # Scope 1 misses its own cross-check — and a workflow that went red on a correct
         # refusal would teach everyone to ignore it.
+        env:
+          # Without this the run replays `recordings/` and prints PASS without touching
+          # Athena — a deploy that appears to succeed while proving nothing.
+          ATTESTOR_BACKEND: athena
         run: |
           set -uo pipefail
+          export ATTESTOR_ATHENA_OUTPUT="s3://$(terraform -chdir=infra/foundation output -raw lake_bucket)/athena-results/"
           for tenant in helios aegis lumen; do
             attestor run --tenant "$tenant" --run-id "${{ github.run_id }}" || true
           done

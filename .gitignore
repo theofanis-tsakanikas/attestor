@@ -11,7 +11,8 @@ htmlcov/
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
+# `.terraform.lock.hcl` IS committed. Provider versions that resolve differently between
+# a validation run and a deploy make "validated" mean nothing.
 *.tfstate
 *.tfstate.*
 *.tfplan

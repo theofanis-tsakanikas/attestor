@@ -15,6 +15,7 @@ config-version: 2
 profile: attestor
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 
@@ -30,8 +31,18 @@ models:
       +materialized: incremental
       +incremental_strategy: merge
 
+seeds:
+  attestor:
+    +schema: ref
+
 tests:
   attestor:
     # Every rejected row is kept. This is the whole quarantine mechanism.
     +store_failures: true
     +schema: quarantine
+
+# `store_failures` writes one table per test. The quarantine model needs them as one relation,
+# and dbt has no built-in union of "every table in a schema" — so the hook below builds the
+# view after every run, from the tests that actually ran.
+on-run-end:
+  - "{{ attestor.build_quarantine_view(results) }}"

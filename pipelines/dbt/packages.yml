@@ -1,0 +1,6 @@
+# `dbt_utils` is used by the range and relationship tests in `models/staging/schema.yml`.
+# Without this file `dbt build` fails at parse time with "macro not found" — after the
+# infrastructure is already up, which is the expensive place to discover a missing dependency.
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.3.0", "<2.0.0"]

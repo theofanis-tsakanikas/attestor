@@ -1,0 +1,4 @@
+fuel_type,kg_co2e_per_litre,source,published_year
+diesel,2.6870,DEFRA GHG conversion factors,2026
+petrol,2.3160,DEFRA GHG conversion factors,2026
+lpg,1.5570,DEFRA GHG conversion factors,2026

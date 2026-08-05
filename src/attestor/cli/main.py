@@ -12,6 +12,7 @@ commands are deliberately absent — deploying is a gated workflow, not a laptop
 from __future__ import annotations
 
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from rich.console import Console
 
 from attestor.contracts import loader, overrides
 from attestor.contracts.model import Standard
-from attestor.datapoints.backends import RecordedBackend
+from attestor.datapoints.backends import AthenaBackend, QueryBackend, RecordedBackend
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import NarrativeDraft, ResolutionContext, Resolver
 from attestor.documents import render as render_module
@@ -90,6 +91,41 @@ def _narrative(_contract, _context) -> NarrativeDraft:
     )
 
 
+def _backend(root: Path) -> QueryBackend:
+    """Recorded by default; Athena when the estate is up.
+
+    The default is not a convenience. Every gate and eval in this repository replays
+    recordings, and a command that silently reached for a live account would make an offline
+    run depend on credentials nobody has.
+
+    But the inverse was a real defect: the deploy workflow's "run against the live estate"
+    step used to replay the recordings too, so it printed PASS without touching Athena. A
+    deploy that appears to succeed while proving nothing is worse than one that fails —
+    `ATTESTOR_BACKEND=athena` is what the workflow now sets, and the environment it needs is
+    asserted here rather than defaulted.
+    """
+    if os.environ.get("ATTESTOR_BACKEND", "recorded").lower() != "athena":
+        return RecordedBackend.from_directory(root / "recordings")
+
+    missing = [
+        name
+        for name in ("ATTESTOR_WORKGROUP", "ATTESTOR_DATABASE", "ATTESTOR_ATHENA_OUTPUT")
+        if not os.environ.get(name)
+    ]
+    if missing:
+        _fail(
+            "ATTESTOR_BACKEND=athena but " + ", ".join(missing) + " are unset. Falling back to "
+            "recordings here would produce a green run that queried nothing."
+        )
+    return AthenaBackend(
+        workgroup=os.environ["ATTESTOR_WORKGROUP"],
+        catalog=os.environ.get("ATTESTOR_CATALOG", "AwsDataCatalog"),
+        database=os.environ["ATTESTOR_DATABASE"],
+        output_location=os.environ["ATTESTOR_ATHENA_OUTPUT"],
+        region=os.environ.get("AWS_REGION", "eu-central-1"),
+    )
+
+
 def _contracts_for(tenant: str, root: Path):
     """Only the standard this tenant reports under.
 
@@ -103,7 +139,7 @@ def _contracts_for(tenant: str, root: Path):
 def _resolver(tenant: str, root: Path) -> Resolver:
     return Resolver(
         contracts=_contracts_for(tenant, root),
-        backend=RecordedBackend.from_directory(root / "recordings"),
+        backend=_backend(root),
         evidence=EvidenceIndex.for_tenant(root, tenant),
         override_register=overrides.load_register(root),
         root=root,
