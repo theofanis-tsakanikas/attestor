@@ -91,6 +91,10 @@ ignore = [
 "scripts/tf_validate.py" = ["S607"]
 "scripts/check_docker_context.py" = ["S607"]
 "tests/retrieval/test_chunking_and_bakeoff.py" = ["RUF001"]
+# The confusable characters *are* the test. A Cyrillic `З` where a `3` belongs is the
+# canonical OCR misread, and substituting the Latin digit would assert that the parser
+# handles a string it will never be given.
+"tests/datapoints/test_extraction.py" = ["RUF001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

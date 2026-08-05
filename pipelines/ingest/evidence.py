@@ -38,7 +38,15 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from attestor.contracts import loader
-from attestor.datapoints.evidence import EvidenceIndex
+from attestor.datapoints import extraction
+from attestor.datapoints.evidence import EvidenceDocument, EvidenceIndex
+from attestor.datapoints.extraction import (
+    Extraction,
+    ExtractionError,
+    ExtractionUnavailable,
+    Extractor,
+)
+from attestor.observability.cost import CostMeter
 from attestor.policy.tenants import TenantRegistry
 from attestor.security import injection
 
@@ -52,6 +60,9 @@ class IngestReport:
     flagged: list[str] = field(default_factory=list)
     rejected: list[str] = field(default_factory=list)
     uploaded: list[str] = field(default_factory=list)
+    #: Documents read through the extractor, and the pages that cost money to read.
+    extracted: int = 0
+    pages: int = 0
 
     @property
     def ok(self) -> bool:
@@ -60,7 +71,8 @@ class IngestReport:
     def summary(self) -> str:
         return (
             f"{self.tenant}: {len(self.planned)} document(s), {len(self.flagged)} flagged, "
-            f"{len(self.rejected)} rejected, {len(self.uploaded)} uploaded"
+            f"{len(self.rejected)} rejected, {len(self.uploaded)} uploaded, "
+            f"{self.extracted} extracted over {self.pages} page(s)"
         )
 
 
@@ -91,17 +103,74 @@ def plan(root: Path, tenant: str) -> IngestReport:
     return report
 
 
-# ── Live path ────────────────────────────────────────────────────────────────
+# ── Extraction ───────────────────────────────────────────────────────────────
 
 
-def extract(client: Any, *, bucket: str, key: str, project_arn: str) -> dict[str, Any]:
-    """Bedrock Data Automation: a document in, fields and text out."""
-    response = client.invoke_data_automation_async(
-        inputConfiguration={"s3Uri": f"s3://{bucket}/{key}"},
-        outputConfiguration={"s3Uri": f"s3://{bucket}/_extracted/{key}"},
-        dataAutomationConfiguration={"dataAutomationProjectArn": project_arn},
-    )
-    return {"invocation_arn": response.get("invocationArn"), "key": key}
+def extract(document: EvidenceDocument, *, extractor: Extractor) -> Extraction:
+    """Read one document into fields.
+
+    This used to fire `invoke_data_automation_async` and return the invocation ARN. Nothing
+    waited for the job, nothing read its output, and nothing parsed a field — so a tenant
+    whose evidence was paper abstained on datapoints it demonstrably had evidence for, and
+    the scanned half of the corpus was decorative.
+
+    The extractor is injected rather than constructed, because which one is in use is the
+    single most important fact about a run: recorded everywhere by default, live only behind
+    an explicit opt-in. See `datapoints/extraction.py`.
+    """
+    return extractor.extract(document)
+
+
+def extract_all(
+    root: Path,
+    tenant: str,
+    *,
+    extractor: Extractor,
+    report: IngestReport | None = None,
+) -> dict[str, Extraction]:
+    """Every document this tenant has, read.
+
+    Two absences, deliberately not the same thing:
+
+    **No capture exists** — the ordinary case. Most of a corpus is already structured: a
+    telematics export and a general-ledger extract are files, not paper, and there is nothing
+    for an extractor to read. That is not a rejection, and treating it as one would make the
+    ingest fail on a corpus that is entirely healthy.
+
+    **The capture does not match the document** — a rejection. The bytes changed under a
+    reading somebody reviewed, and replaying it would describe paper nobody is holding. So
+    would a malformed output or a field that does not parse.
+
+    Either way the ingest continues. One unreadable scan must not hold the corpus hostage,
+    and the datapoint behind an unread document abstains on its own for lack of evidence,
+    which is the honest outcome anyway.
+    """
+    report = report if report is not None else IngestReport(tenant=tenant)
+    extractions: dict[str, Extraction] = {}
+
+    for document in EvidenceIndex.for_tenant(root, tenant):
+        try:
+            read = extract(document, extractor=extractor)
+        except ExtractionUnavailable:
+            continue
+        except ExtractionError as exc:
+            report.rejected.append(f"{document.document_id}: {exc}")
+            continue
+
+        # The scan runs on what the extractor read, before any of it reaches an index. A
+        # scanned attestation that a supplier filled with instructions is still evidence —
+        # its metadata is ours — but the flag has to be attached at the moment the text
+        # first exists, not recomputed on every retrieval afterwards.
+        flagged, rules = scan_extracted(read.text, document_id=document.document_id)
+        already = any(note.startswith(document.document_id) for note in report.flagged)
+        if flagged and not already:
+            # The manifest may already carry the flag from a previous ingest. Recording it
+            # twice would make a count of flagged documents wrong in the direction that
+            # looks like a worsening corpus.
+            report.flagged.append(f"{document.document_id} ({', '.join(rules)})")
+        extractions[document.document_id] = read
+
+    return extractions
 
 
 def scan_extracted(text: str, *, document_id: str) -> tuple[bool, list[str]]:
@@ -147,10 +216,27 @@ def main() -> int:
     )
     parser.add_argument("--bucket")
     parser.add_argument("--project-arn")
+    parser.add_argument(
+        "--extract",
+        action="store_true",
+        help="Read every document through the extractor. Recorded unless ATTESTOR_EXTRACTOR=bda.",
+    )
     args = parser.parse_args()
 
     tenants = [args.tenant] if args.tenant else [t.id for t in TenantRegistry.load(args.root)]
     reports = [plan(args.root, tenant) for tenant in tenants]
+
+    if args.extract:
+        # Metered per page, per tenant. `Meter.DOCUMENT_PARSE` was defined and charged by
+        # nothing, which on a platform that calls per-tenant cost a first-class metric meant
+        # the one line item that scales with paper was invisible.
+        meter = CostMeter()
+        extractor = extraction.build(args.root, meter=meter)
+        for report in reports:
+            found = extract_all(args.root, report.tenant, extractor=extractor, report=report)
+            report.extracted = len(found)
+            report.pages = sum(e.pages for e in found.values())
+        print(meter.report())
 
     if args.apply:
         if not (args.bucket and args.project_arn):
