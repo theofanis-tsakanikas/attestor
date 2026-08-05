@@ -74,6 +74,21 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      - name: ensure an AWS CLI that knows AgentCore
+        # `bedrock-agentcore-control` is a recent service and the runner image's bundled CLI
+        # may predate it. Checking here costs seconds; discovering it inside the agent apply
+        # costs the whole run, because the expensive layers are already standing by then.
+        run: |
+          set -euo pipefail
+          if ! aws bedrock-agentcore-control help >/dev/null 2>&1; then
+            echo "runner CLI ($(aws --version 2>&1)) predates bedrock-agentcore-control; upgrading"
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+            unzip -q /tmp/awscli.zip -d /tmp
+            sudo /tmp/aws/install --update
+          fi
+          aws --version
+          aws bedrock-agentcore-control help >/dev/null
+
       - name: compute expiry
         id: expiry
         # `days` reaches the shell as an environment variable, never as `${{ }}` inside the

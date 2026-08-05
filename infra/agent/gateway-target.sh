@@ -18,6 +18,19 @@
 # when it is already there, because a provisioner runs again whenever its trigger changes.
 set -euo pipefail
 
+# Dependencies, checked before anything is attempted. `bedrock-agentcore-control` is a recent
+# service: an AWS CLI too old to know it fails with "Invalid choice", which reads as a broken
+# script rather than a stale toolchain — and it fails *after* the expensive layers are already
+# standing. Better to say so in one line.
+for binary in aws jq; do
+  command -v "$binary" >/dev/null || { echo "$binary is not installed" >&2; exit 2; }
+done
+aws bedrock-agentcore-control help >/dev/null 2>&1 || {
+  echo "this AWS CLI does not know 'bedrock-agentcore-control' (aws --version: $(aws --version 2>&1))." >&2
+  echo "Upgrade to a build that includes it; the gateway target cannot be attached without it." >&2
+  exit 2
+}
+
 action="${1:?attach|detach}"
 gateway_id="${2:?gateway identifier}"
 region="${3:?region}"
