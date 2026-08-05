@@ -8,7 +8,27 @@
 -- :tenant_id · :period_start · :period_end · :snapshot_id
 
 SELECT
-    SUM(e.kwh) / 1000.0 AS value
+    SUM(e.kwh) / 1000.0 AS value,
+    -- Claim 4, on the live path. `FOR VERSION AS OF NULL` reads current, and "current" is
+    -- not something an auditor can re-read a year later — so the run reports which snapshot
+    -- current actually was, and the lineage records it. Without this column the Athena
+    -- backend had nothing to record and reproducibility held only in replay.
+    (
+        SELECT CAST(MAX(s.snapshot_id) AS VARCHAR)
+        FROM "gold"."electricity_consumption$snapshots" AS s
+    ) AS resolved_snapshot_id,
+    -- Rows that failed their data contract over the same predicate. The figure above excludes
+    -- them; this is how the resolver learns they existed and refuses with
+    -- E_UPSTREAM_QUARANTINE rather than publishing a total computed over incomplete data.
+    (
+        SELECT COUNT(*)
+        FROM gold.electricity_consumption AS q
+        WHERE
+            q.tenant_id = :tenant_id
+            AND q.reading_date >= :period_start
+            AND q.reading_date < :period_end
+            AND q.dq_status <> 'clean'
+    ) AS quarantined_rows
 FROM gold.electricity_consumption AS e
 WHERE
     e.tenant_id = :tenant_id

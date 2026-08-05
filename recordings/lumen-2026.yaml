@@ -6,7 +6,7 @@ note: Shaped by hand to exercise the resolver's branches. Re-captured against th
   with the run id.
 results:
 - query: ai_act/evaluation_accuracy.sql
-  query_digest: 7bc068d0cb86657c39852ba820ab35fc23307295b33a4685356677bb69d1ba7d
+  query_digest: fcd5db2e11af133cbdac2002595852c09816cbef6719b440a4dc412a1e9bc856
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -30,7 +30,7 @@ results:
   snapshot_ids:
     gold.model_evaluation_confusion: '3319419023871123002'
 - query: ai_act/evaluation_set_size.sql
-  query_digest: 007be0a4341667948b681f808e4099539952868d19933d53f27157bfaf2f084d
+  query_digest: acb7de19310b50361097ede63bb8cced62a338c4ba865908df7eda9c52a96ccf
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -41,7 +41,7 @@ results:
   snapshot_ids:
     gold.model_evaluation_prediction: '3319419023871123001'
 - query: ai_act/open_residual_risks.sql
-  query_digest: 652342e846b13833697988b1120517685861dc00b5be6e89f4829fe4e4f210c5
+  query_digest: f61bdc5f3dcdda0d275a259c7276849b93e7ec302ac0e4509959f2f79e5257a2
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -52,7 +52,7 @@ results:
   snapshot_ids:
     gold.risk_register: '3319419023871123003'
 - query: ai_act/serious_incidents.sql
-  query_digest: 0b03b3d69eb779a3badd4026ac79609cbd450b839d444241db88f583c900275b
+  query_digest: 92dd261eb056b4904a73cc66fcf11238310f77d386bddd38239909c1fe7500d0
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'

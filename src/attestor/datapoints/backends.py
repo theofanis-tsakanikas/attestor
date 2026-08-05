@@ -18,6 +18,7 @@ logic under test is the logic that runs.
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,6 +27,16 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import yaml
+
+#: Reserved result columns. A query may return either alongside its figure; both are
+#: optional, and a query that omits them behaves as before.
+#:
+#: `resolved_snapshot_id` is how a run pinned to "current" records what current *was* — the
+#: single fact claim 4 needs and could not previously obtain from a live query.
+#: `quarantined_rows` is how the lakehouse tells the resolver that the figure is computable
+#: but not from clean data.
+SNAPSHOT_COLUMN = "resolved_snapshot_id"
+QUARANTINE_COLUMN = "quarantined_rows"
 
 
 class QueryError(RuntimeError):
@@ -215,32 +226,49 @@ class AthenaBackend:
         sql: str,
         snapshot_id: str | None,
     ) -> QueryResult:
-        page = self._athena().get_query_results(QueryExecutionId=execution_id, MaxResults=2)
+        # Three, not two. The header occupies the first row, so `MaxResults=2` returns at most
+        # one data row — which made the multi-row guard below unreachable and let a query
+        # whose GROUP BY had escaped publish whichever group Athena happened to return first.
+        # Asking for one more row than a scalar may have is what makes the guard able to fire.
+        page = self._athena().get_query_results(QueryExecutionId=execution_id, MaxResults=3)
         rows = page.get("ResultSet", {}).get("Rows", [])
-        # Row 0 is the header. A scalar query returning more than one data row is a query
-        # whose GROUP BY escaped, and silently taking the first row would publish one group.
+        header = [cell.get("VarCharValue") for cell in rows[0].get("Data", [])] if rows else []
         data = rows[1:]
         if len(data) > 1:
             raise QueryError(
                 f"athena query {execution_id} returned {len(data)} rows where one was "
                 "expected; a scalar resolver cannot choose between them"
             )
-        raw = None
-        if data:
-            cells = data[0].get("Data", [])
-            raw = cells[0].get("VarCharValue") if cells else None
+        columns = _columns(header, data[0]) if data else {}
+        # The figure is the first column that is not one of the reserved diagnostics. Taking
+        # `columns[0]` positionally would publish a snapshot id the day someone reorders a
+        # SELECT list, and a reordered SELECT list is not supposed to be a restatement.
+        raw = next(
+            (v for k, v in columns.items() if k not in {SNAPSHOT_COLUMN, QUARANTINE_COLUMN}),
+            None,
+        )
 
         # Athena does not report which tables it read, so they are parsed from the statement
         # the resolver just sent. That is not a guess: the query text is the authority on what
         # it touched, and it is the same text whose digest goes into the lineage hash.
         tables = tables_in(sql)
         statistics = execution.get("Statistics", {})
+
+        # A query may return its quarantine count and the snapshot it actually read alongside
+        # the figure, in the reserved columns below. Both used to be hardcoded here — which
+        # meant `E_UPSTREAM_QUARANTINE` could not occur against a real lakehouse however many
+        # rows had failed their data contract, and a run pinned to "current" recorded no
+        # snapshot at all, so claim 4 held offline and was unachievable live.
+        resolved_snapshot = columns.get(SNAPSHOT_COLUMN) or snapshot_id
+        quarantined = columns.get(QUARANTINE_COLUMN)
         return QueryResult(
             value=None if raw in (None, "") else Decimal(raw),
             tables=tables,
-            snapshot_ids={table: snapshot_id for table in tables} if snapshot_id else {},
+            snapshot_ids=(
+                {table: str(resolved_snapshot) for table in tables} if resolved_snapshot else {}
+            ),
             row_counts={},
-            quarantined_rows=0,
+            quarantined_rows=int(quarantined) if quarantined not in (None, "") else 0,
             scanned_bytes=int(statistics.get("DataScannedInBytes", 0)),
         )
 
@@ -248,9 +276,18 @@ class AthenaBackend:
 #: `FROM`/`JOIN` followed by a qualified table name. Deliberately narrow: every query in
 #: `queries/` is a reviewed statement in this shape, and a parser that accepted more would be
 #: guessing about statements this repository does not contain.
-_TABLE = __import__("re").compile(
-    r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", __import__("re").IGNORECASE
-)
+_TABLE = re.compile(r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", re.IGNORECASE)
+
+#: Iceberg snapshot ids are integers. This is the only value in the system that reaches a SQL
+#: statement by substitution rather than by binding — Athena will not take a table-version pin
+#: as a parameter — so the shape is asserted here instead of trusted.
+_SNAPSHOT_ID = re.compile(r"^[0-9]{1,20}$")
+
+
+def _columns(header: list[str | None], row: dict[str, Any]) -> dict[str, str | None]:
+    """Zip a result row against its header, tolerating a short row."""
+    cells = [cell.get("VarCharValue") for cell in row.get("Data", [])]
+    return {str(name): value for name, value in zip(header, cells, strict=False) if name}
 
 
 def tables_in(sql: str) -> tuple[str, ...]:
@@ -268,14 +305,23 @@ def _bind(
 
     `:snapshot_id` is special: Athena will not accept a table-version pin as a bound
     parameter, so an unset snapshot is rewritten to `NULL` in the statement and the query's
-    own `COALESCE` falls back to the current snapshot. What that resolved to is recorded in
-    the lineage, so "current" is never what an auditor has to re-read.
-    """
-    import re  # noqa: PLC0415 — local to keep the module's import surface honest
+    own `COALESCE` falls back to the current snapshot. What that resolved to is reported back
+    in the query's `resolved_snapshot_id` column, so "current" is never what an auditor has
+    to re-read.
 
+    Because it is substituted rather than bound, its shape is checked first. Every other
+    value in this system reaches SQL as a parameter; this one cannot, so it earns the one
+    validation the others do not need.
+    """
     if snapshot_id is None:
         sql = sql.replace(":snapshot_id", "NULL")
     else:
+        if not _SNAPSHOT_ID.match(str(snapshot_id)):
+            raise QueryError(
+                f"snapshot id {snapshot_id!r} is not an Iceberg snapshot id. It is the one "
+                "value substituted into a statement rather than bound to it, so it is "
+                "refused rather than escaped."
+            )
         sql = sql.replace(":snapshot_id", f"'{snapshot_id}'")
 
     ordered: list[str] = []

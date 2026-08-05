@@ -6,7 +6,7 @@ note: Shaped by hand to exercise the resolver's branches. Re-captured against th
   with the run id.
 results:
 - query: esrs/e1_6_gross_scope_1.sql
-  query_digest: ea2684e13ebaabe35ce52b5c9963b6b19638342f2d2b708e8d939941cd37b183
+  query_digest: 791eac18dd6b1a0100c68210cffae75f646594019a4fb1733af9eae37976fb13
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -27,7 +27,7 @@ results:
   - gold.procurement_fuel_spend
   - ref.fuel_price_period
 - query: esrs/e1_5_electricity_consumption.sql
-  query_digest: 13a89bd2b535d285f2d593197a2c5b4708f7e46c9052e68135eff854b63a367c
+  query_digest: 118009df56e7833d692ee80c8ac531720c194310884d7786d115921185719fec
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -47,7 +47,7 @@ results:
   tables:
   - gold.meter_interval_reading
 - query: esrs/e1_6_gross_scope_3.sql
-  query_digest: cb87bb14d581a7e3a9a32c4f52693d2c9ccbb42cec877b60eacd7b20dff4fe24
+  query_digest: 9f3035cbbb710f6500434eec4b4ee17d553c19c5c090baec75221678a579bbda
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -57,7 +57,7 @@ results:
   - gold.ghg_scope_3_activity
   quarantined_rows: 1284
 - query: esrs/e1_6_net_revenue.sql
-  query_digest: c091b5fc5ac25d8975a51e49d750a535e821edacccddaa2810b4f1f4201ffe8a
+  query_digest: 67a96165ca360f589a32dd46dbbc369c39a0e550f61a306b03be47f9d81f69ac
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
