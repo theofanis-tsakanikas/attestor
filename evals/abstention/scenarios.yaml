@@ -1,0 +1,119 @@
+# Claim 5: the system abstains exactly, and never fabricates.
+#
+# Each scenario removes something specific from a tenant's corpus and declares precisely what
+# must happen to every affected datapoint — including the ones that must *keep working*. That
+# second half is what makes this an eval rather than a smoke test: a system that abstains on
+# everything scores a perfect block rate and is useless.
+#
+# `expect` names the reason code and the outcome. `must_still_resolve` names the datapoints
+# that have to survive the gap untouched. Anything not listed is expected to be unaffected,
+# and the harness checks that too.
+
+scenarios:
+  - id: AB-01
+    name: no fuel evidence at all
+    tenant: helios
+    withhold_classes: [fuel_invoice, fleet_telematics_export, refrigerant_service_record]
+    expect:
+      ESRS_E1-6_gross_scope_1: {reason: E_NO_EVIDENCE, outcome: blocked}
+      # Propagation: an aggregate cannot be published when a component was refused.
+      ESRS_E1-6_total_ghg: {reason: E_NO_EVIDENCE, outcome: blocked}
+      ESRS_E1-6_ghg_intensity: {reason: E_NO_EVIDENCE, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-5_electricity_consumption
+      - ESRS_E1-6_gross_scope_2_location
+      - ESRS_E1-6_gross_scope_3
+      - ESRS_E1-6_net_revenue
+
+  - id: AB-02
+    name: partial electricity coverage
+    tenant: helios
+    # The contract demands twelve monthly invoices. Eight is not a smaller number; it is a
+    # different figure, covering a different part of the year.
+    keep_at_most: {utility_invoice: 8}
+    expect:
+      ESRS_E1-5_electricity_consumption: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+      ESRS_E1-6_gross_scope_2_location: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+      ESRS_E1-6_total_ghg: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+      ESRS_E1-6_ghg_intensity: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-6_gross_scope_1
+      - ESRS_E1-6_gross_scope_3
+      - ESRS_E1-6_net_revenue
+
+  - id: AB-03
+    name: value-chain gap covered by a live override
+    tenant: helios
+    withhold_classes: [logistics_manifest]
+    expect:
+      # The committed override for helios/2026 turns this block into a declared limitation.
+      # The reason code does not change — that is the point of the override design.
+      ESRS_E1-6_gross_scope_3:
+        {reason: E_PARTIAL_BOUNDARY, outcome: omitted_with_material_limitation}
+      ESRS_E1-6_total_ghg:
+        {reason: E_PARTIAL_BOUNDARY, outcome: omitted_with_material_limitation}
+      ESRS_E1-6_ghg_intensity:
+        {reason: E_PARTIAL_BOUNDARY, outcome: omitted_with_material_limitation}
+    must_still_resolve:
+      - ESRS_E1-6_gross_scope_1
+      - ESRS_E1-6_gross_scope_2_location
+
+  - id: AB-04
+    name: the same gap after the override has lapsed
+    tenant: helios
+    withhold_classes: [logistics_manifest]
+    as_of: 2027-01-05
+    expect:
+      ESRS_E1-6_gross_scope_3: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+      ESRS_E1-6_total_ghg: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+      ESRS_E1-6_ghg_intensity: {reason: E_PARTIAL_BOUNDARY, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-6_gross_scope_1
+
+  - id: AB-05
+    name: evidence exists but covers the wrong period
+    tenant: helios
+    shift_classes: {financial_statement: -730, general_ledger_export: -730}
+    expect:
+      ESRS_E1-6_net_revenue: {reason: E_EVIDENCE_OUT_OF_PERIOD, outcome: blocked}
+      ESRS_E1-6_ghg_intensity: {reason: E_EVIDENCE_OUT_OF_PERIOD, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-6_gross_scope_1
+      - ESRS_E1-6_total_ghg
+
+  - id: AB-06
+    name: no methodology source for the grid factor
+    tenant: helios
+    withhold_classes: [published_factor_source]
+    expect:
+      ESRS_E1_grid_factor_GR: {reason: E_NO_EVIDENCE, outcome: blocked}
+      ESRS_E1-6_gross_scope_2_location: {reason: E_NO_EVIDENCE, outcome: blocked}
+      ESRS_E1-6_total_ghg: {reason: E_NO_EVIDENCE, outcome: blocked}
+      ESRS_E1-6_ghg_intensity: {reason: E_NO_EVIDENCE, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-5_electricity_consumption
+      - ESRS_E1-6_gross_scope_1
+
+  - id: AB-07
+    name: no transition plan on file
+    tenant: helios
+    withhold_classes: [board_approved_transition_plan, capex_plan]
+    expect:
+      ESRS_E1-1_transition_plan: {reason: E_NO_EVIDENCE, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-6_gross_scope_1
+      - ESRS_E1-6_total_ghg
+      - ESRS_E1-6_ghg_intensity
+
+  - id: AB-08
+    name: quarantined source rows
+    tenant: aegis
+    expect:
+      ESRS_E1-6_gross_scope_3: {reason: E_UPSTREAM_QUARANTINE, outcome: blocked}
+      ESRS_E1-6_gross_scope_1: {reason: E_OUT_OF_TOLERANCE, outcome: blocked}
+      ESRS_E1-6_total_ghg: {reason: E_OUT_OF_TOLERANCE, outcome: blocked}
+      ESRS_E1-6_ghg_intensity: {reason: E_OUT_OF_TOLERANCE, outcome: blocked}
+    must_still_resolve:
+      - ESRS_E1-5_electricity_consumption
+      - ESRS_E1-6_gross_scope_2_location
+      - ESRS_E1-6_net_revenue

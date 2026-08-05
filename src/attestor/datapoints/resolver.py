@@ -307,19 +307,25 @@ class Resolver:
         expression = contract.resolver.expression
         operands = sorted(derivation.referenced_datapoints(expression))
 
-        # An operand that was not published propagates. A blocked operand blocks; a lawfully
-        # omitted one omits, carrying the same reason code — which the loader has already
-        # guaranteed this contract is allowed to state.
+        # An operand that was not published propagates, and it propagates *whole*: the same
+        # reason code and the same outcome, including the override that accepted it.
+        #
+        # Re-deciding here instead would mean a signed override on Scope 3 left the total
+        # blocked, and someone would have to sign a second override for the total, and a
+        # third for the intensity — bureaucracy that people route around rather than follow.
+        # An aggregate inherits its components' acceptance; it does not need its own.
         for operand_id in operands:
             operand = so_far.get(operand_id)
-            if operand is None or isinstance(operand, Abstained):
-                reason = operand.reason_code if operand else "E_RESOLVER_ERROR"
-                detail = (
-                    f"operand {operand_id} was not published"
-                    if operand
-                    else f"operand {operand_id} was never resolved"
+            if operand is None:
+                raise _Abstain("E_RESOLVER_ERROR", f"operand {operand_id} was never resolved")
+            if isinstance(operand, Abstained):
+                return Abstained(
+                    contract.id,
+                    operand.reason_code,
+                    operand.outcome,
+                    f"inherited from {operand_id}: {operand.detail}",
+                    override=operand.override,
                 )
-                raise _Abstain(reason, detail)
 
         canonical: dict[str, Fraction] = {}
         for operand_id in operands:
