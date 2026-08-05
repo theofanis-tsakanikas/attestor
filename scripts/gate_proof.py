@@ -212,6 +212,35 @@ def _replay_a_stale_narrative(root: Path) -> bool:
     )
 
 
+def _let_paper_become_a_figure(root: Path) -> bool:
+    """Admit extracted rows into a datapoint nothing reconciles them against.
+
+    The plausible version of this mistake is not malice, it is a widening: somebody adds a
+    row spec for a datapoint that has no `tolerance.cross_check`, the pipeline happily writes
+    the rows, and a misread digit becomes a published figure with nothing in the path able to
+    notice. Dropping the cross-check requirement is the same change, stated in one line.
+    """
+    return _replace(
+        root / "src/attestor/datapoints/admissibility.py",
+        "    if not tolerance.cross_check:",
+        "    if False:",
+    )
+
+
+def _let_paper_back_the_primary(root: Path) -> bool:
+    """Let extracted rows sit on the primary side of their own cross-check.
+
+    Subtler and more likely than the above, because it still *looks* reconciled: the figure
+    has a cross-check, the cross-check passes, and both sides came off the same scan. It
+    proves the reader is consistent with itself.
+    """
+    return _replace(
+        root / "src/attestor/datapoints/admissibility.py",
+        "    if dataset in primary:",
+        "    if False:",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -308,6 +337,24 @@ MUTATIONS: tuple[Mutation, ...] = (
         "isolation",
         _drop_the_issuer_binding,
         "Removes the only thing making a caller-supplied tenant id safe.",
+    ),
+    Mutation(
+        "let an extracted value reach a figure nothing reconciles it against",
+        "extraction admissibility",
+        ["pytest", "-q", "tests/datapoints/test_admissibility.py", "-x"],
+        "no cross-check",
+        _let_paper_become_a_figure,
+        "A row spec added for a datapoint with no cross-check. The pipeline writes it, and "
+        "a misread digit becomes a published figure with nothing able to notice.",
+    ),
+    Mutation(
+        "let extracted rows back the primary side of their own cross-check",
+        "extraction admissibility",
+        ["pytest", "-q", "tests/datapoints/test_admissibility.py", "-x"],
+        "cross-check side",
+        _let_paper_back_the_primary,
+        "Still looks reconciled — the figure has a cross-check and it passes. Both sides "
+        "came off the same scan.",
     ),
     Mutation(
         "replay a narrative captured against an older prompt",

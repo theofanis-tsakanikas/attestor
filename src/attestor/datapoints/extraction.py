@@ -324,6 +324,96 @@ def parse_output(payload: dict[str, Any], document: EvidenceDocument) -> Extract
     )
 
 
+# ── Fields to rows ───────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class RowSpec:
+    """How one document class becomes rows in one dataset.
+
+    Declared rather than inferred. A mapper that guessed which field is an amount would be
+    right until the day a supplier renamed a column on their invoice template, and the
+    failure would be a figure rather than an error.
+    """
+
+    dataset: str
+    document_class: str
+    #: Target column → extracted field name.
+    columns: dict[str, str]
+    #: Columns that must parse as an exact decimal. A misparse quarantines the row.
+    numeric: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class RowSet:
+    """Rows built from one document, clean and quarantined kept together.
+
+    Together on purpose. A builder that returned only the clean rows would be dropping the
+    evidence that something was wrong, and the resolver would compute a smaller figure over
+    what survived and publish it — which is precisely the failure `E_UPSTREAM_QUARANTINE`
+    exists to prevent.
+    """
+
+    dataset: str
+    rows: tuple[dict[str, Any], ...]
+
+    @property
+    def clean(self) -> tuple[dict[str, Any], ...]:
+        return tuple(row for row in self.rows if row["dq_status"] == "clean")
+
+    @property
+    def quarantined(self) -> tuple[dict[str, Any], ...]:
+        return tuple(row for row in self.rows if row["dq_status"] != "clean")
+
+    @property
+    def quarantined_rows(self) -> int:
+        """The count the resolver reads. Not a diagnostic — an input to a refusal."""
+        return len(self.quarantined)
+
+
+def to_rows(extraction: Extraction, document: EvidenceDocument, spec: RowSpec) -> RowSet:
+    """Turn one document's fields into rows, quarantining rather than dropping.
+
+    Every row carries `source_document_id`, so a figure computed over extracted data can be
+    walked back to the page it was read from. Every row carries `dq_status`, in the same
+    vocabulary the seeded lake uses, so nothing downstream needs to know these rows came from
+    paper — which is the whole point.
+    """
+    if document.document_class != spec.document_class:
+        raise ExtractionError(
+            f"{document.document_id} is a {document.document_class}, and {spec.dataset} is "
+            f"built from {spec.document_class}"
+        )
+
+    row: dict[str, Any] = {
+        "tenant_id": document.tenant,
+        "source_document_id": document.document_id,
+        "dq_status": "clean",
+        "dq_rule": "",
+    }
+
+    for column, field_name in sorted(spec.columns.items()):
+        found = extraction.field(field_name)
+        if found is None:
+            row["dq_status"] = "quarantined"
+            row["dq_rule"] = f"missing_field:{field_name}"
+            row[column] = None
+            continue
+        if column in spec.numeric:
+            try:
+                row[column] = str(found.as_decimal())
+            except ExtractionError:
+                # The misread that this whole path is built to survive. The row is kept and
+                # marked, so the figure over it refuses rather than shrinking quietly.
+                row["dq_status"] = "quarantined"
+                row["dq_rule"] = f"unparseable:{field_name}"
+                row[column] = None
+        else:
+            row[column] = found.value
+
+    return RowSet(dataset=spec.dataset, rows=(row,))
+
+
 # ── Metering ─────────────────────────────────────────────────────────────────
 
 

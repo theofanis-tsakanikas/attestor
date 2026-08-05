@@ -39,12 +39,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from attestor.contracts import loader
 from attestor.datapoints import extraction
+from attestor.datapoints.admissibility import require_admissible
 from attestor.datapoints.evidence import EvidenceDocument, EvidenceIndex
 from attestor.datapoints.extraction import (
     Extraction,
     ExtractionError,
     ExtractionUnavailable,
     Extractor,
+    RowSet,
+    RowSpec,
+    to_rows,
 )
 from attestor.observability.cost import CostMeter
 from attestor.policy.tenants import TenantRegistry
@@ -171,6 +175,67 @@ def extract_all(
         extractions[document.document_id] = read
 
     return extractions
+
+
+# ── Fields to rows ───────────────────────────────────────────────────────────
+#
+# One spec per document class that becomes data. Everything else is read for its text and
+# its evidence coverage and stops there.
+#
+# Note which datasets these name. `procurement_fuel_spend` backs the *cross-check* for Scope
+# 1, not the primary — the primary reads telematics. That direction is the control:
+# reconciling a reading of the paper against the same reading proves the reader is
+# consistent, not that the figure is right. `admissibility.judge` enforces it, and refuses
+# the reverse.
+ROW_SPECS: tuple[RowSpec, ...] = (
+    RowSpec(
+        dataset="gold.procurement_fuel_spend",
+        document_class="fuel_invoice",
+        columns={
+            "invoice_date": "invoice_date",
+            "fuel_type": "fuel_type",
+            "net_amount_eur": "net_amount_eur",
+        },
+        numeric=frozenset({"net_amount_eur"}),
+    ),
+    RowSpec(
+        dataset="gold.meter_interval_reading",
+        document_class="utility_invoice",
+        columns={"interval_end": "period_end", "kwh": "kwh"},
+        numeric=frozenset({"kwh"}),
+    ),
+)
+
+
+def rows_for(
+    root: Path,
+    tenant: str,
+    extractions: dict[str, Extraction],
+    *,
+    contracts: Any = None,
+) -> dict[str, RowSet]:
+    """Build the rows every extraction contributes, refusing an inadmissible dataset first.
+
+    `require_admissible` runs *before* a row is built, not after. Writing extracted values
+    into a dataset a published figure reads and trusting the cross-check to catch a misread
+    afterwards is the same mistake as publishing and trusting review — the check has to be
+    the reason the write is allowed, not a hope about what happens next.
+    """
+    contracts = contracts if contracts is not None else loader.load(root)
+    by_id = {d.document_id: d for d in EvidenceIndex.for_tenant(root, tenant)}
+    built: dict[str, RowSet] = {}
+
+    for spec in ROW_SPECS:
+        require_admissible(spec.dataset, contracts)
+        rows: list[dict[str, Any]] = []
+        for document_id, read in sorted(extractions.items()):
+            document = by_id.get(document_id)
+            if document is None or document.document_class != spec.document_class:
+                continue
+            rows.extend(to_rows(read, document, spec).rows)
+        if rows:
+            built[spec.dataset] = RowSet(dataset=spec.dataset, rows=tuple(rows))
+    return built
 
 
 def scan_extracted(text: str, *, document_id: str) -> tuple[bool, list[str]]:
