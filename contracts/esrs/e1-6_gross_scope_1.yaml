@@ -1,0 +1,52 @@
+id: ESRS_E1-6_gross_scope_1
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-6 §44(a)
+title: Gross Scope 1 greenhouse gas emissions
+description: >-
+  Direct greenhouse gas emissions from sources owned or controlled by the undertaking,
+  in metric tonnes of CO2 equivalent, before any deduction for removals, carbon credits
+  or contractual instruments.
+
+kind: quantitative
+unit: tCO2e
+precision: 0
+period: fiscal_year
+boundary: operational_control
+methodology: >-
+  GHG Protocol Corporate Accounting and Reporting Standard (revised edition), operational
+  control approach. Global warming potentials from IPCC AR6 (100-year).
+
+resolver:
+  kind: sql
+  query: esrs/e1_6_gross_scope_1.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - fuel_invoice
+    - fleet_telematics_export
+    - refrigerant_service_record
+  min_documents: 3
+  must_cover_period: true
+
+tolerance:
+  relative: 0.005
+  cross_check:
+    - esrs/e1_6_gross_scope_1_crosscheck_fuel_spend.sql
+
+# Scope 1 is a core disclosure. Nothing about this undertaking's activities makes it
+# immaterial or inapplicable, so no lawful omission is pre-authorized: if the figure
+# cannot be produced, the report does not ship.
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - core

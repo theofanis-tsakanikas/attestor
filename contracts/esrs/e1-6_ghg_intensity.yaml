@@ -1,0 +1,43 @@
+id: ESRS_E1-6_ghg_intensity
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-6 §53
+title: Greenhouse gas intensity per net revenue
+description: >-
+  Total gross greenhouse gas emissions divided by net revenue, expressed in tonnes of CO2
+  equivalent per million euro.
+
+kind: quantitative
+unit: tCO2e/MEUR
+precision: 1
+period: fiscal_year
+boundary: value_chain
+methodology: >-
+  Total gross emissions (Scope 1 + location-based Scope 2 + Scope 3) over net revenue as
+  reported in the financial statements. Both operands are disclosed in their own right, so
+  the ratio is recomputable by a reader from the face of the statement.
+
+resolver:
+  kind: derived
+  expression: "{ESRS_E1-6_total_ghg} / {ESRS_E1-6_net_revenue}"
+
+evidence:
+  required: false
+  inherited: true
+
+
+tolerance:
+  relative: 0.001
+
+abstention:
+  allowed_reasons:
+    - E_PHASE_IN
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - intensity

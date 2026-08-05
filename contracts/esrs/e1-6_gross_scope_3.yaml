@@ -1,0 +1,54 @@
+# The one datapoint in this set that may lawfully go undisclosed.
+#
+# ESRS 1 Appendix C phases in the value-chain disclosures for undertakings below certain
+# thresholds. So E_PHASE_IN is pre-authorized here and nowhere else — and note what is still
+# absent: no internal failure is listed, because a phase-in provision does not cover a
+# resolver that crashed.
+id: ESRS_E1-6_gross_scope_3
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-6 §44(c)
+title: Gross Scope 3 greenhouse gas emissions
+description: >-
+  Indirect greenhouse gas emissions occurring in the undertaking's upstream and downstream
+  value chain, aggregated across the significant categories identified in the screening.
+
+kind: quantitative
+unit: tCO2e
+precision: 0
+period: fiscal_year
+boundary: value_chain
+methodology: >-
+  GHG Protocol Corporate Value Chain (Scope 3) Standard. Categories screened for
+  significance; insignificant categories are disclosed as excluded rather than assumed zero.
+
+resolver:
+  kind: sql
+  query: esrs/e1_6_gross_scope_3.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - supplier_attestation
+    - procurement_ledger_export
+    - logistics_manifest
+  min_documents: 5
+  must_cover_period: true
+
+tolerance:
+  relative: 0.05
+
+abstention:
+  allowed_reasons:
+    - E_PHASE_IN
+    - E_NOT_MATERIAL
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - value-chain

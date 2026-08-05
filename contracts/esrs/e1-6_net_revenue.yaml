@@ -1,0 +1,53 @@
+# Tied to the financial statements on purpose.
+#
+# ESRS E1-6 §55 requires the net revenue used for GHG intensity to be the same figure
+# reported in the financial statements. That reconciliation is the cross-check below: if
+# the sustainability statement and the annual accounts disagree by more than a rounding
+# difference, the report does not ship.
+id: ESRS_E1-6_net_revenue
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-6 §55
+title: Net revenue used to compute GHG intensity
+description: >-
+  Net revenue for the reporting period, as reported in the undertaking's financial
+  statements, used as the denominator of the greenhouse gas intensity ratio.
+
+kind: quantitative
+unit: MEUR
+precision: 2
+period: fiscal_year
+boundary: financial_control
+methodology: >-
+  Net revenue as defined by the applicable financial reporting framework, taken from the
+  audited financial statements for the same period without adjustment.
+
+resolver:
+  kind: sql
+  query: esrs/e1_6_net_revenue.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - financial_statement
+    - general_ledger_export
+  min_documents: 1
+  must_cover_period: true
+
+tolerance:
+  relative: 0.0001
+  cross_check:
+    - esrs/e1_6_net_revenue_crosscheck_ledger.sql
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - financial-link

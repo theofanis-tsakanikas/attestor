@@ -1,0 +1,49 @@
+id: ESRS_E1-6_total_ghg
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-6 §44(d)
+title: Total gross greenhouse gas emissions
+description: >-
+  The sum of gross Scope 1, gross location-based Scope 2 and gross Scope 3 emissions,
+  before any deduction for removals or carbon credits.
+
+kind: quantitative
+unit: tCO2e
+precision: 0
+period: fiscal_year
+boundary: value_chain
+methodology: >-
+  Arithmetic sum of the three gross figures as disclosed. No netting, no rebasing, no
+  reconciliation adjustment is applied at this level.
+
+resolver:
+  kind: derived
+  expression: >-
+    {ESRS_E1-6_gross_scope_1}
+    + {ESRS_E1-6_gross_scope_2_location}
+    + {ESRS_E1-6_gross_scope_3}
+
+# No evidence of its own: an evidence gap in any of the three components propagates here.
+evidence:
+  required: false
+  inherited: true
+
+
+tolerance:
+  relative: 0.001
+
+# Inherited, not independent: if Scope 3 is lawfully phased in, the total is too. Declaring
+# it here keeps the omissions register consistent between a component and its aggregate.
+abstention:
+  allowed_reasons:
+    - E_PHASE_IN
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - core
+  - aggregate

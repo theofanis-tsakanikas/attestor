@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+
+# Secrets — never
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+.bootstrap_outputs.json
+
+# Build output — reports are generated, never committed
+out/
+build/
+dist/
+
+# Evidence corpora are synthetic but bulky; only the manifests are committed
+evals/**/corpus/**/*.pdf
+evals/**/corpus/**/*.bin
+
+# macOS
+.DS_Store

@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "attestor"
+version = "0.1.0"
+description = "Multi-tenant regulated report factory — every number carries its proof"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Theofanis Tsakanikas" }]
+keywords = ["responsible-ai", "rag", "bedrock", "agentcore", "csrd", "esrs", "eu-ai-act"]
+
+dependencies = [
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "jsonschema>=4.23",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "openpyxl>=3.1",
+    "typer>=0.12",
+    "rich>=13.9",
+]
+
+[project.optional-dependencies]
+# Cloud clients are NOT a hard dependency: the whole test suite, every eval and every gate
+# run without them. Installing this extra is only needed to talk to a live estate.
+cloud = [
+    "boto3>=1.35",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "ruff>=0.7",
+    "moto[s3,sts]>=5.0",
+    "hypothesis>=6.112",
+]
+
+[project.scripts]
+attestor = "attestor.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/attestor"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "PL", "S"]
+ignore = [
+    "PLR0913", # a resolver legitimately takes many explicit inputs
+    "S101",    # assert is how tests assert
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004", "S105", "S106"]
+"evals/**" = ["PLR2004"]
+# The expression walkers are exhaustive `match` statements over a whitelisted AST. Each arm
+# returns; collapsing them into fewer returns would hide which node types are handled, which
+# is the one thing a reader of a safe-evaluation whitelist needs to see at a glance.
+"src/attestor/contracts/derivation.py" = ["PLR0911"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "gate: exercises a CI-enforced acceptance gate",
+    "eval: scores a labelled corpus (credential-free)",
+    "slow: takes more than a second",
+]
+
+[tool.coverage.run]
+source = ["src/attestor"]
+branch = true

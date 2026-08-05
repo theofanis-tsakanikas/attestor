@@ -1,0 +1,55 @@
+# The only ESRS datapoint in this repository a language model writes.
+#
+# It is narrative, it declares a narrative resolver, and `model.py` refuses the combination
+# of a narrative resolver with any other kind. That refusal is the boundary between the
+# model and the numbers, expressed as a type error rather than a code review convention.
+#
+# Note `max_words`. A transition-plan narrative that runs long is a narrative that started
+# reasoning about figures — and figures are not its job.
+id: ESRS_E1-1_transition_plan
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-1 §14-16
+title: Transition plan for climate change mitigation
+description: >-
+  Narrative description of the undertaking's transition plan: its decarbonisation levers,
+  the alignment of its targets with limiting warming to 1.5 °C, and the extent to which the
+  plan is embedded in the general strategy.
+
+kind: narrative
+period: fiscal_year
+boundary: not_applicable
+methodology: >-
+  Drafted from the undertaking's board-approved transition plan and the ESRS E1-1 application
+  requirements. Every assertion must cite retrieved evidence; the draft is reviewed and
+  approved by a named human before the report is issued.
+
+resolver:
+  kind: narrative
+  prompt_id: esrs_e1_1_transition_plan
+  max_words: 400
+  grounding:
+    min_citations: 3
+    corpus: both
+    threshold: 0.8
+
+evidence:
+  required: true
+  classes:
+    - board_approved_transition_plan
+    - capex_plan
+  min_documents: 1
+  must_cover_period: true
+
+abstention:
+  allowed_reasons:
+    - E_NOT_MATERIAL
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - narrative

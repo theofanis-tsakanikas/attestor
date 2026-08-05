@@ -1,0 +1,49 @@
+# Derived, and dimensionally checked: MWh × tCO2e/MWh must produce tCO2e.
+#
+# This is the cheapest real bug this repository prevents. Multiply megawatt-hours by a
+# factor quoted in gCO2e/kWh without converting and you publish a number a thousand times
+# too small; it looks plausible, and prose cannot check arithmetic. The contract set refuses
+# to load if the declared unit and the expression's dimension disagree.
+id: ESRS_E1-6_gross_scope_2_location
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-6 §44(b)
+title: Gross location-based Scope 2 greenhouse gas emissions
+description: >-
+  Indirect greenhouse gas emissions from purchased electricity, computed with the
+  location-based method using the published grid average emission factor.
+
+kind: quantitative
+unit: tCO2e
+precision: 0
+period: fiscal_year
+boundary: operational_control
+methodology: >-
+  GHG Protocol Scope 2 Guidance, location-based method. Metered electricity consumption
+  multiplied by the published national grid emission factor for the reporting year.
+
+resolver:
+  kind: derived
+  expression: "{ESRS_E1-5_electricity_consumption} * {ESRS_E1_grid_factor_GR}"
+
+# Derived: the utility invoices belong to the electricity datapoint and the published source
+# belongs to the grid factor. Restating them here would double-count the obligation and let
+# one of the two go missing without anyone noticing.
+evidence:
+  required: false
+  inherited: true
+
+tolerance:
+  relative: 0.005
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - core

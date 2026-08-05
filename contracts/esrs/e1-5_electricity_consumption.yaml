@@ -1,0 +1,48 @@
+id: ESRS_E1-5_electricity_consumption
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1-5 §37(a)
+title: Total electricity consumption from purchased or acquired sources
+description: >-
+  Electricity purchased or otherwise acquired from third parties and consumed by the
+  undertaking during the reporting period, metered at the point of delivery.
+
+kind: quantitative
+unit: MWh
+precision: 1
+period: fiscal_year
+boundary: operational_control
+methodology: >-
+  Sum of metered consumption across all sites in the consolidation boundary, taken from
+  supplier invoices. Estimated readings are flagged upstream and quarantined; an
+  estimate never reaches this figure.
+
+resolver:
+  kind: sql
+  query: esrs/e1_5_electricity_consumption.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - utility_invoice
+    - meter_reading_export
+  min_documents: 12
+  must_cover_period: true
+
+tolerance:
+  relative: 0.01
+  cross_check:
+    - esrs/e1_5_electricity_consumption_crosscheck_meter.sql
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - energy

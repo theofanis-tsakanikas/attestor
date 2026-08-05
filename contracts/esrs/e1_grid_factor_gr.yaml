@@ -1,0 +1,50 @@
+# A magic number with a citation and a human's name on it.
+#
+# Every emission factor in a sustainability statement is a constant somebody chose. Left in
+# a query it is unreviewable; declared here it has a source, an approver and a date, and it
+# appears in the auditor annex like any other figure.
+id: ESRS_E1_grid_factor_GR
+version: 1
+standard: ESRS
+standard_version: "2023-12 (Delegated Regulation (EU) 2023/2772)"
+reference: ESRS E1 AR 46 (disclosure of conversion factors)
+title: Location-based grid emission factor, Greece
+description: >-
+  Residual-mix-free location-based emission factor for electricity consumed on the Greek
+  interconnected grid, applied to location-based Scope 2 accounting for the reporting period.
+
+kind: quantitative
+unit: tCO2e/MWh
+precision: 4
+period: fiscal_year
+boundary: not_applicable
+methodology: >-
+  Location-based method per the GHG Protocol Scope 2 Guidance. The factor is the published
+  national grid average for the reporting year; it is not interpolated and not forecast.
+
+resolver:
+  kind: constant
+  value: 0.3128
+  source: >-
+    European Environment Agency, Greenhouse gas emission intensity of electricity generation
+    in Europe, indicator EN-38, value published for Greece for the reporting year.
+  approved_by: DPO / Head of Sustainability Reporting
+  approved_on: 2026-02-17
+
+evidence:
+  required: true
+  classes:
+    - published_factor_source
+  min_documents: 1
+  must_cover_period: true
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags:
+  - climate
+  - reference-data
