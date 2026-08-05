@@ -542,3 +542,45 @@ resource "aws_lambda_permission" "reaper" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.reaper.arn
 }
+
+# ── What this layer offers its neighbours ────────────────────────────────────
+#
+# Published as SSM parameters, not read out of this layer's state file.
+#
+# `terraform_remote_state` was the previous mechanism and it is the wrong one for a reason
+# the repository's own rules already state: it hands the reading layer the *entire* state —
+# every resource, every attribute, and anything sensitive that happens to be in there — and
+# it couples two layers to a storage format instead of to a contract. It also requires every
+# consumer to hold read access to the state bucket, which is the blast radius of a bug in the
+# smallest layer becoming the blast radius of the largest.
+#
+# What a layer offers its neighbours should be a short, deliberate, enumerable list. This is
+# that list; adding to it is a visible change.
+locals {
+  published = {
+    vpc_id                     = aws_vpc.main.id
+    private_subnet_ids         = join(",", aws_subnet.private[*].id)
+    endpoint_security_group_id = aws_security_group.endpoints.id
+    kms_key_arn                = aws_kms_key.data.arn
+    lake_bucket                = aws_s3_bucket.lake.id
+    evidence_bucket            = aws_s3_bucket.evidence.id
+    reports_bucket             = aws_s3_bucket.reports.id
+    alerts_topic_arn           = aws_sns_topic.alerts.arn
+  }
+}
+
+resource "aws_ssm_parameter" "published" {
+  #checkov:skip=CKV2_AWS_34: These are identifiers — a VPC id, three bucket names, two ARNs.
+  #None is a secret, and a SecureString would add a KMS grant to every consuming role in
+  #exchange for encrypting facts that are already visible in the console to anyone who can
+  #read them here.
+  #checkov:skip=CKV_AWS_337: Same reason. Secrets live in Secrets Manager; this is a
+  #cross-layer reference table.
+  for_each = local.published
+
+  name        = "/${var.project}/foundation/${each.key}"
+  description = "Cross-layer reference published by infra/foundation."
+  type        = "String"
+  value       = each.value
+  tier        = "Standard"
+}

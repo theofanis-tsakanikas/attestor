@@ -12,7 +12,7 @@ output "log_group" {
 }
 
 output "gateway_url" {
-  value       = awscc_bedrockagentcore_gateway.main.gateway_url
+  value       = { for k, g in awscc_bedrockagentcore_gateway.tenant : k => g.gateway_url }
   description = "The MCP endpoint an agent connects to."
 }
 
@@ -35,4 +35,9 @@ output "ecr_repository_url" {
 
 output "runtime_endpoint_arn" {
   value = try(awscc_bedrockagentcore_runtime_endpoint.live[0].agent_runtime_endpoint_arn, null)
+}
+
+output "reasoning_model" {
+  value       = var.reasoning_model
+  description = "The model the narrative provider drafts with. Read by the deploy workflow so the live run cannot silently fall back to a recorded draft."
 }

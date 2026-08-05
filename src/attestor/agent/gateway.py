@@ -76,6 +76,44 @@ def render(**kwargs: Any) -> str:
     return json.dumps(specification(**kwargs), indent=2, sort_keys=True) + "\n"
 
 
+# ── The MCP tool schema AgentCore Gateway is configured with ─────────────────
+#
+# The OpenAPI document above describes the tools for a reader. This is the shape the Gateway
+# target actually takes, and it is the one that decides whether the agent has any tools at
+# all — a gateway with no target is a valid gateway serving an empty toolset, which fails
+# silently and looks like a working deployment.
+#
+# Both come from `SPECS`, so the description a model reads, the schema the Gateway enforces
+# and the signature the handler exposes are one statement rendered three ways.
+
+
+def tool_schema() -> dict[str, Any]:
+    return {
+        "tools": [
+            {
+                "name": spec.name,
+                "description": spec.summary,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        name: {"type": "string", "description": description}
+                        for name, description in spec.parameters.items()
+                    },
+                    "required": list(spec.required),
+                    # No scope-shaped property can be added by a caller, and none exists to
+                    # begin with — `scope_leaks()` asserts the second half.
+                    "additionalProperties": False,
+                },
+            }
+            for spec in SPECS
+        ]
+    }
+
+
+def render_tool_schema() -> str:
+    return json.dumps(tool_schema(), indent=2, sort_keys=True) + "\n"
+
+
 def scope_leaks() -> tuple[str, ...]:
     """Any parameter that would let a caller name its own scope. Must always be empty."""
     return tuple(

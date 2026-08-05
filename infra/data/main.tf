@@ -29,18 +29,32 @@ provider "aws" {
   }
 }
 
-data "terraform_remote_state" "foundation" {
-  backend = "s3"
-  config = {
-    bucket = var.state_bucket
-    key    = "foundation/terraform.tfstate"
-    region = var.region
-  }
+# Cross-layer references. Read as named SSM parameters the producing layer publishes —
+# never as that layer's state file. A `terraform_remote_state` data source needs read access
+# to the whole state bucket and exposes every attribute of every resource in it; a parameter
+# path exposes exactly what its owner chose to offer.
+data "aws_ssm_parameter" "foundation" {
+  for_each = toset([
+    "vpc_id",
+    "private_subnet_ids",
+    "endpoint_security_group_id",
+    "kms_key_arn",
+    "lake_bucket",
+    "evidence_bucket",
+    "reports_bucket",
+    "alerts_topic_arn",
+  ])
+
+  name = "/${var.project}/foundation/${each.value}"
 }
 
 locals {
-  lake = data.terraform_remote_state.foundation.outputs.lake_bucket
-  kms  = data.terraform_remote_state.foundation.outputs.kms_key_arn
+  foundation = { for key, param in data.aws_ssm_parameter.foundation : key => param.value }
+}
+
+locals {
+  lake = local.foundation.lake_bucket
+  kms  = local.foundation.kms_key_arn
 }
 
 resource "aws_glue_catalog_database" "gold" {

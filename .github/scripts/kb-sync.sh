@@ -32,8 +32,19 @@ sync_one() {
 }
 
 for kb in "$kb_evidence" "$kb_regulatory"; do
-  for ds in $(aws bedrock-agent list-data-sources --knowledge-base-id "$kb" \
-      --query 'dataSourceSummaries[].dataSourceId' --output text); do
+  sources=$(aws bedrock-agent list-data-sources --knowledge-base-id "$kb" \
+    --query 'dataSourceSummaries[].dataSourceId' --output text)
+
+  # A knowledge base with no data source used to pass through this loop in silence. That is
+  # how the regulatory corpus came to be permanently empty while every step of the deploy
+  # reported success — there was nothing to sync, so nothing failed. An empty list is now the
+  # loudest thing this script can say.
+  if [ -z "$sources" ]; then
+    echo "knowledge base $kb has no data source; it would answer every query with nothing" >&2
+    exit 1
+  fi
+
+  for ds in $sources; do
     echo "── syncing $kb / $ds"
     sync_one "$kb" "$ds"
   done

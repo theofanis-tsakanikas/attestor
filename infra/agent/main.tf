@@ -39,24 +39,6 @@ provider "awscc" {
 
 data "aws_caller_identity" "current" {}
 
-data "terraform_remote_state" "foundation" {
-  backend = "s3"
-  config = {
-    bucket = var.state_bucket
-    key    = "foundation/terraform.tfstate"
-    region = var.region
-  }
-}
-
-data "terraform_remote_state" "knowledge" {
-  backend = "s3"
-  config = {
-    bucket = var.state_bucket
-    key    = "knowledge/terraform.tfstate"
-    region = var.region
-  }
-}
-
 # ── Identity: one user pool per tenant ───────────────────────────────────────
 #
 # Per tenant rather than one pool with a tenant attribute. A shared pool makes tenant
@@ -66,6 +48,50 @@ data "terraform_remote_state" "knowledge" {
 #
 # `lumen` is not here: it authenticates against an external OIDC provider, which is the point
 # of having it. See tenants/lumen.yaml.
+#
+# The consequence of one pool per tenant is that there is one *issuer* per tenant, and a JWT
+# authorizer validates against one issuer's keys. So there is one authorizer per tenant too —
+# see `awscc_bedrockagentcore_gateway` below. Pointing a single authorizer at one pool while
+# listing every pool's app client in `allowed_clients` reads as multi-tenant and is not:
+# `allowed_clients` is checked *after* the signature, and tokens from the other pools are
+# signed by keys that authorizer has never seen. Two of the three tenants simply cannot log
+# in, and the failure looks like a broken IdP rather than a misconfigured gateway.
+
+# Cross-layer references. Read as named SSM parameters the producing layer publishes —
+# never as that layer's state file. A `terraform_remote_state` data source needs read access
+# to the whole state bucket and exposes every attribute of every resource in it; a parameter
+# path exposes exactly what its owner chose to offer.
+data "aws_ssm_parameter" "foundation" {
+  for_each = toset([
+    "vpc_id",
+    "private_subnet_ids",
+    "endpoint_security_group_id",
+    "kms_key_arn",
+    "lake_bucket",
+    "evidence_bucket",
+    "reports_bucket",
+    "alerts_topic_arn",
+  ])
+
+  name = "/${var.project}/foundation/${each.value}"
+}
+
+data "aws_ssm_parameter" "knowledge" {
+  for_each = toset([
+    "collection_arn",
+    "evidence_kb_id",
+    "regulatory_kb_id",
+    "guardrail_id",
+    "guardrail_version",
+  ])
+
+  name = "/${var.project}/knowledge/${each.value}"
+}
+
+locals {
+  foundation = { for key, param in data.aws_ssm_parameter.foundation : key => param.value }
+  knowledge  = { for key, param in data.aws_ssm_parameter.knowledge : key => param.value }
+}
 
 resource "aws_cognito_user_pool" "tenant" {
   for_each = toset(var.cognito_tenants)
@@ -171,8 +197,8 @@ resource "aws_iam_role_policy" "tools" {
         Effect = "Allow"
         Action = ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"]
         Resource = [
-          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${data.terraform_remote_state.knowledge.outputs.evidence_kb_id}",
-          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${data.terraform_remote_state.knowledge.outputs.regulatory_kb_id}",
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.evidence_kb_id}",
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.regulatory_kb_id}",
         ]
       },
       {
@@ -183,21 +209,21 @@ resource "aws_iam_role_policy" "tools" {
       {
         Effect   = "Allow"
         Action   = ["bedrock:ApplyGuardrail"]
-        Resource = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:guardrail/${data.terraform_remote_state.knowledge.outputs.guardrail_id}"
+        Resource = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:guardrail/${local.knowledge.guardrail_id}"
       },
       {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject"]
         Resource = [
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.evidence_bucket}/*",
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.reports_bucket}/*",
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.lake_bucket}/*",
+          "arn:aws:s3:::${local.foundation.evidence_bucket}/*",
+          "arn:aws:s3:::${local.foundation.reports_bucket}/*",
+          "arn:aws:s3:::${local.foundation.lake_bucket}/*",
         ]
       },
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
-        Resource = data.terraform_remote_state.foundation.outputs.kms_key_arn
+        Resource = local.foundation.kms_key_arn
       },
       {
         Effect   = "Allow"
@@ -244,19 +270,27 @@ resource "aws_lambda_function" "tools" {
   reserved_concurrent_executions = 20
 
   vpc_config {
-    subnet_ids         = data.terraform_remote_state.foundation.outputs.private_subnet_ids
-    security_group_ids = [data.terraform_remote_state.foundation.outputs.endpoint_security_group_id]
+    subnet_ids         = split(",", local.foundation.private_subnet_ids)
+    security_group_ids = [local.foundation.endpoint_security_group_id]
   }
 
   environment {
     variables = {
-      ATTESTOR_WORKGROUP      = var.project
-      ATTESTOR_EVIDENCE_KB    = data.terraform_remote_state.knowledge.outputs.evidence_kb_id
-      ATTESTOR_REGULATORY_KB  = data.terraform_remote_state.knowledge.outputs.regulatory_kb_id
-      ATTESTOR_GUARDRAIL_ID   = data.terraform_remote_state.knowledge.outputs.guardrail_id
-      ATTESTOR_GUARDRAIL_VER  = data.terraform_remote_state.knowledge.outputs.guardrail_version
-      ATTESTOR_REPORTS_BUCKET = data.terraform_remote_state.foundation.outputs.reports_bucket
-      OTEL_SERVICE_NAME       = "attestor-tools"
+      ATTESTOR_WORKGROUP = var.project
+      ATTESTOR_DATABASE  = "${var.project}_gold"
+      # The handler resolves through Athena and needs somewhere to put its results. It was
+      # missing, and `os.environ["ATTESTOR_ATHENA_OUTPUT"]` in `build_toolbox` is not
+      # optional — every tool call would have raised a KeyError and returned a 500.
+      ATTESTOR_ATHENA_OUTPUT = "s3://${local.foundation.lake_bucket}/athena-results/"
+      ATTESTOR_EVIDENCE_KB   = local.knowledge.evidence_kb_id
+      ATTESTOR_REGULATORY_KB = local.knowledge.regulatory_kb_id
+      ATTESTOR_GUARDRAIL_ID  = local.knowledge.guardrail_id
+      ATTESTOR_GUARDRAIL_VER = local.knowledge.guardrail_version
+      # Which model drafts a narrative. Without it the narrative provider refuses to build,
+      # every narrative datapoint abstains, and the report blocks.
+      ATTESTOR_REASONING_MODEL = var.reasoning_model
+      ATTESTOR_REPORTS_BUCKET  = local.foundation.reports_bucket
+      OTEL_SERVICE_NAME        = "attestor-tools"
     }
   }
 
@@ -273,7 +307,7 @@ resource "aws_cloudwatch_log_group" "agent" {
   #are the durable audit trail — not CloudWatch.
   name              = "/aws/${var.project}/agent"
   retention_in_days = var.log_retention_days
-  kms_key_id        = data.terraform_remote_state.foundation.outputs.kms_key_arn
+  kms_key_id        = local.foundation.kms_key_arn
 }
 
 # Every span carries tenant_id and session_id. Without them a latency graph is one line for
@@ -322,7 +356,7 @@ resource "aws_cloudwatch_metric_alarm" "denial_spike" {
   statistic           = "Sum"
   threshold           = var.denial_alarm_threshold
   treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.terraform_remote_state.foundation.outputs.alerts_topic_arn]
+  alarm_actions       = [local.foundation.alerts_topic_arn]
 }
 
 # ── AgentCore ────────────────────────────────────────────────────────────────
@@ -380,20 +414,25 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
   }
 }
 
-resource "awscc_bedrockagentcore_gateway" "main" {
-  name        = "${var.project}-gateway"
-  role_arn    = aws_iam_role.gateway.arn
-  description = "Attestor tools as MCP. Tenant and period come from the token, never the call."
+# One gateway per tenant, because a JWT authorizer validates against one issuer, and one
+# pool per tenant means one issuer per tenant. This is not duplication for its own sake: it
+# is the same statement the Cognito pools make, carried through to the edge. A token minted
+# for helios reaches the helios gateway or it reaches nothing.
+resource "awscc_bedrockagentcore_gateway" "tenant" {
+  for_each = aws_cognito_user_pool.tenant
 
-  # JWT from the tenants' own pools. `allowed_audience` is the per-tenant app client, so a
-  # token minted for one tenant is not a token this gateway accepts for another.
+  name        = "${var.project}-gateway-${each.key}"
+  role_arn    = aws_iam_role.gateway.arn
+  description = "Attestor tools as MCP for ${each.key}. Tenant comes from the token."
+
   authorizer_type = "CUSTOM_JWT"
   authorizer_configuration = {
     custom_jwt_authorizer = {
-      discovery_url = "https://cognito-idp.${var.region}.amazonaws.com/${values(aws_cognito_user_pool.tenant)[0].id}/.well-known/openid-configuration"
-      allowed_clients = [
-        for client in aws_cognito_user_pool_client.tenant : client.id
-      ]
+      discovery_url = "https://cognito-idp.${var.region}.amazonaws.com/${each.value.id}/.well-known/openid-configuration"
+      # Exactly one client: this tenant's. Listing every tenant's app client against one
+      # issuer's keys is what made the previous configuration look multi-tenant while
+      # admitting one tenant and locking out the rest.
+      allowed_clients = [aws_cognito_user_pool_client.tenant[each.key].id]
     }
   }
 
@@ -419,11 +458,72 @@ resource "awscc_bedrockagentcore_gateway" "main" {
     mode = "ENFORCE"
   }
 
-  kms_key_arn = data.terraform_remote_state.foundation.outputs.kms_key_arn
+  kms_key_arn = local.foundation.kms_key_arn
 
   # `exception_level` is left unset. Its only permitted value is DEBUG, which returns
   # internal detail to the caller — an excellent map of the system for whoever provoked the
   # error. The default is the quiet one, and quiet is what we want.
+}
+
+# ── The target: what the gateway actually fronts ─────────────────────────────
+#
+# Without this the estate stands up perfectly and the agent has *no tools*. A gateway with no
+# target is a valid gateway; `terraform apply` succeeds, `gateway_url` is populated, and every
+# MCP session lists an empty toolset. That is the worst shape a deployment bug can take — no
+# error anywhere, and a system that appears to be running.
+#
+# It is a provisioner rather than a resource because neither `hashicorp/awscc` (1.95.0, the
+# latest published version) nor `hashicorp/aws` (5.x) ships a gateway-target resource. The
+# control-plane API exists; the Terraform coverage does not.
+#
+# Two things keep this from becoming the exception that swallows the rule. It stays inside
+# `terraform apply` and inside the dependency graph, so a destroy removes it rather than
+# orphaning it on a deleted gateway. And `scripts/check_gateway_target.py` fails CI the day a
+# provider ships the resource — so this is removed by a red build, not by somebody
+# remembering that it was meant to be temporary.
+resource "null_resource" "gateway_target" {
+  for_each = awscc_bedrockagentcore_gateway.tenant
+
+  triggers = {
+    gateway_id = each.value.gateway_identifier
+    lambda_arn = aws_lambda_function.tools.arn
+    region     = var.agent_region
+    # The generated tool schema. A tool added to `SPECS` changes this digest, which re-runs
+    # the attach — otherwise the Gateway would keep describing the previous toolset.
+    schema = filesha256("${path.module}/tools.openapi.json")
+    script = filesha256("${path.module}/gateway-target.sh")
+  }
+
+  provisioner "local-exec" {
+    command = join(" ", [
+      "bash ${path.module}/gateway-target.sh attach",
+      self.triggers.gateway_id,
+      self.triggers.region,
+      self.triggers.lambda_arn,
+      "${path.module}/tools.openapi.json",
+    ])
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "bash ${path.module}/gateway-target.sh detach ${self.triggers.gateway_id} ${self.triggers.region}"
+  }
+
+  depends_on = [aws_lambda_permission.gateway]
+}
+
+# The gateway invokes the handler; the handler's own resource policy has to say so. An
+# identity policy on the gateway role is not sufficient for a cross-service invoke, and the
+# failure mode — every tool call returning an access error at run time, after a green apply —
+# is exactly the kind this layer is supposed to make impossible.
+resource "aws_lambda_permission" "gateway" {
+  for_each = awscc_bedrockagentcore_gateway.tenant
+
+  statement_id  = "AllowInvokeFromGateway-${each.key}"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.tools.function_name
+  principal     = "bedrock-agentcore.amazonaws.com"
+  source_arn    = each.value.gateway_arn
 }
 
 # Per-tenant memory. Separate resources rather than one store with a tenant key: a shared
@@ -435,7 +535,7 @@ resource "awscc_bedrockagentcore_memory" "tenant" {
   name                  = "${var.project}_${each.value}"
   description           = "Per-tenant agent memory for ${each.value}."
   event_expiry_duration = var.memory_retention_days
-  encryption_key_arn    = data.terraform_remote_state.foundation.outputs.kms_key_arn
+  encryption_key_arn    = local.foundation.kms_key_arn
 }
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
@@ -452,7 +552,7 @@ resource "aws_ecr_repository" "agent" {
 
   encryption_configuration {
     encryption_type = "KMS"
-    kms_key         = data.terraform_remote_state.foundation.outputs.kms_key_arn
+    kms_key         = local.foundation.kms_key_arn
   }
 }
 
@@ -475,8 +575,8 @@ resource "awscc_bedrockagentcore_runtime" "agent" {
   network_configuration = {
     network_mode = "VPC"
     network_mode_config = {
-      subnets         = data.terraform_remote_state.foundation.outputs.private_subnet_ids
-      security_groups = [data.terraform_remote_state.foundation.outputs.endpoint_security_group_id]
+      subnets         = split(",", local.foundation.private_subnet_ids)
+      security_groups = [local.foundation.endpoint_security_group_id]
     }
   }
 
@@ -492,15 +592,16 @@ resource "awscc_bedrockagentcore_runtime" "agent" {
   }
 
   environment_variables = {
-    ATTESTOR_ROOT          = "/app"
-    ATTESTOR_WORKGROUP     = var.project
-    ATTESTOR_DATABASE      = "${var.project}_gold"
-    ATTESTOR_ATHENA_OUTPUT = "s3://${data.terraform_remote_state.foundation.outputs.lake_bucket}/athena-results/"
-    ATTESTOR_EVIDENCE_KB   = data.terraform_remote_state.knowledge.outputs.evidence_kb_id
-    ATTESTOR_REGULATORY_KB = data.terraform_remote_state.knowledge.outputs.regulatory_kb_id
-    ATTESTOR_GUARDRAIL_ID  = data.terraform_remote_state.knowledge.outputs.guardrail_id
-    ATTESTOR_GUARDRAIL_VER = data.terraform_remote_state.knowledge.outputs.guardrail_version
-    OTEL_SERVICE_NAME      = "attestor-agent"
+    ATTESTOR_ROOT            = "/app"
+    ATTESTOR_WORKGROUP       = var.project
+    ATTESTOR_DATABASE        = "${var.project}_gold"
+    ATTESTOR_ATHENA_OUTPUT   = "s3://${local.foundation.lake_bucket}/athena-results/"
+    ATTESTOR_EVIDENCE_KB     = local.knowledge.evidence_kb_id
+    ATTESTOR_REGULATORY_KB   = local.knowledge.regulatory_kb_id
+    ATTESTOR_GUARDRAIL_ID    = local.knowledge.guardrail_id
+    ATTESTOR_GUARDRAIL_VER   = local.knowledge.guardrail_version
+    ATTESTOR_REASONING_MODEL = var.reasoning_model
+    OTEL_SERVICE_NAME        = "attestor-agent"
   }
 
   tags = {
@@ -590,14 +691,14 @@ resource "aws_iam_role_policy" "runtime" {
       {
         Effect   = "Allow"
         Action   = ["bedrock:ApplyGuardrail"]
-        Resource = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:guardrail/${data.terraform_remote_state.knowledge.outputs.guardrail_id}"
+        Resource = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:guardrail/${local.knowledge.guardrail_id}"
       },
       {
         Effect = "Allow"
         Action = ["bedrock:Retrieve"]
         Resource = [
-          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${data.terraform_remote_state.knowledge.outputs.evidence_kb_id}",
-          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${data.terraform_remote_state.knowledge.outputs.regulatory_kb_id}",
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.evidence_kb_id}",
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.regulatory_kb_id}",
         ]
       },
       {
@@ -614,16 +715,16 @@ resource "aws_iam_role_policy" "runtime" {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
         Resource = [
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.lake_bucket}",
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.lake_bucket}/*",
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.evidence_bucket}/*",
-          "arn:aws:s3:::${data.terraform_remote_state.foundation.outputs.reports_bucket}/*",
+          "arn:aws:s3:::${local.foundation.lake_bucket}",
+          "arn:aws:s3:::${local.foundation.lake_bucket}/*",
+          "arn:aws:s3:::${local.foundation.evidence_bucket}/*",
+          "arn:aws:s3:::${local.foundation.reports_bucket}/*",
         ]
       },
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
-        Resource = data.terraform_remote_state.foundation.outputs.kms_key_arn
+        Resource = local.foundation.kms_key_arn
       },
       {
         Effect   = "Allow"

@@ -31,17 +31,31 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
-data "terraform_remote_state" "foundation" {
-  backend = "s3"
-  config = {
-    bucket = var.state_bucket
-    key    = "foundation/terraform.tfstate"
-    region = var.region
-  }
+# Cross-layer references. Read as named SSM parameters the producing layer publishes —
+# never as that layer's state file. A `terraform_remote_state` data source needs read access
+# to the whole state bucket and exposes every attribute of every resource in it; a parameter
+# path exposes exactly what its owner chose to offer.
+data "aws_ssm_parameter" "foundation" {
+  for_each = toset([
+    "vpc_id",
+    "private_subnet_ids",
+    "endpoint_security_group_id",
+    "kms_key_arn",
+    "lake_bucket",
+    "evidence_bucket",
+    "reports_bucket",
+    "alerts_topic_arn",
+  ])
+
+  name = "/${var.project}/foundation/${each.value}"
 }
 
 locals {
-  evidence_bucket = data.terraform_remote_state.foundation.outputs.evidence_bucket
+  foundation = { for key, param in data.aws_ssm_parameter.foundation : key => param.value }
+}
+
+locals {
+  evidence_bucket = local.foundation.evidence_bucket
   collection      = "${var.project}-vectors"
 }
 
@@ -60,9 +74,9 @@ resource "aws_opensearchserverless_security_policy" "encryption" {
 # means a leaked credential is not by itself enough to read a tenant's corpus from a laptop.
 resource "aws_opensearchserverless_vpc_endpoint" "main" {
   name               = "${var.project}-aoss"
-  vpc_id             = data.terraform_remote_state.foundation.outputs.vpc_id
-  subnet_ids         = data.terraform_remote_state.foundation.outputs.private_subnet_ids
-  security_group_ids = [data.terraform_remote_state.foundation.outputs.endpoint_security_group_id]
+  vpc_id             = local.foundation.vpc_id
+  subnet_ids         = split(",", local.foundation.private_subnet_ids)
+  security_group_ids = [local.foundation.endpoint_security_group_id]
 }
 
 resource "aws_opensearchserverless_security_policy" "network" {
@@ -251,6 +265,46 @@ resource "aws_bedrockagent_data_source" "tenant" {
   }
 }
 
+# The regulatory corpus. Shared across tenants, so it carries no tenant metadata and lives
+# under a prefix no tenant can be allocated — a tenant id must start with a letter, and this
+# one starts with an underscore.
+#
+# It is here because it was not: the regulatory knowledge base was created with no data
+# source at all. Terraform applied cleanly, `kb-sync.sh` iterated an empty data-source list
+# and returned success, and `search_regulation` answered every query with nothing. Every
+# layer reported healthy and one of the two corpora did not exist.
+resource "aws_bedrockagent_data_source" "regulatory" {
+  knowledge_base_id    = aws_bedrockagent_knowledge_base.regulatory.id
+  name                 = "${var.project}-regulatory"
+  data_deletion_policy = "DELETE"
+
+  data_source_configuration {
+    type = "S3"
+    s3_configuration {
+      bucket_arn         = "arn:aws:s3:::${local.evidence_bucket}"
+      inclusion_prefixes = ["_shared/regulatory/"]
+    }
+  }
+
+  # Hierarchical, like the evidence corpus, and for a sharper reason: a clause reference such
+  # as "§44(a)" is meaningless without "ESRS E1-6" above it, so the parent level has to travel
+  # with the chunk or retrieval matches the wrong article with high confidence.
+  vector_ingestion_configuration {
+    chunking_configuration {
+      chunking_strategy = "HIERARCHICAL"
+      hierarchical_chunking_configuration {
+        overlap_tokens = 60
+        level_configuration {
+          max_tokens = 1500
+        }
+        level_configuration {
+          max_tokens = 300
+        }
+      }
+    }
+  }
+}
+
 # ── Guardrail ────────────────────────────────────────────────────────────────
 
 # The guardrail is defence in depth, not the boundary. Nothing here decides whether a figure
@@ -316,4 +370,31 @@ resource "aws_bedrock_guardrail" "main" {
 resource "aws_bedrock_guardrail_version" "pinned" {
   guardrail_arn = aws_bedrock_guardrail.main.guardrail_arn
   description   = "Pinned. An agent must never point at DRAFT: a draft changes without review."
+}
+
+# ── What this layer offers the agent layer ───────────────────────────────────
+#
+# Same mechanism as `infra/foundation`, and for the same reason: a neighbour should read a
+# named contract, not this layer's whole state file. See the note there.
+locals {
+  published = {
+    collection_arn    = aws_opensearchserverless_collection.main.arn
+    evidence_kb_id    = aws_bedrockagent_knowledge_base.evidence.id
+    regulatory_kb_id  = aws_bedrockagent_knowledge_base.regulatory.id
+    guardrail_id      = aws_bedrock_guardrail.main.guardrail_id
+    guardrail_version = aws_bedrock_guardrail_version.pinned.version
+  }
+}
+
+resource "aws_ssm_parameter" "published" {
+  #checkov:skip=CKV2_AWS_34: Identifiers, not secrets — two knowledge-base ids, a guardrail
+  #id and its pinned version. See the equivalent note in infra/foundation.
+  #checkov:skip=CKV_AWS_337: Same reason.
+  for_each = local.published
+
+  name        = "/${var.project}/knowledge/${each.key}"
+  description = "Cross-layer reference published by infra/knowledge."
+  type        = "String"
+  value       = each.value
+  tier        = "Standard"
 }
