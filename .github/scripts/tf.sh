@@ -17,7 +17,25 @@ terraform -chdir="infra/${layer}" init \
 
 export TF_VAR_state_bucket="${TF_STATE_BUCKET}"
 export TF_VAR_region="${AWS_REGION}"
-export TF_VAR_deploy_role_arn="${AWS_DEPLOY_ROLE_ARN:-}"
+
+# Resolved here, not passed in. It used to default to the empty string when a workflow forgot
+# to export it — and every workflow did. `infra/knowledge` puts this ARN in an OpenSearch data
+# access policy, so an empty value became `Principal[1]: ""`, which AOSS rejected by printing
+# all six ARN patterns it *would* have accepted. The knowledge base then failed with a 401
+# about "storage configuration", three errors away from the cause.
+#
+# `infra/bootstrap` publishes the ARN precisely so it can be read; a default of "" turned a
+# missing input into a malformed one, which is the worse of the two failures.
+if [ -z "${AWS_DEPLOY_ROLE_ARN:-}" ]; then
+  AWS_DEPLOY_ROLE_ARN=$(aws ssm get-parameter \
+    --name "/${PROJECT:-attestor}/bootstrap/deploy_role_arn" \
+    --query 'Parameter.Value' --output text)
+fi
+if [ -z "${AWS_DEPLOY_ROLE_ARN}" ] || [ "${AWS_DEPLOY_ROLE_ARN}" = "None" ]; then
+  echo "deploy role ARN is empty; /${PROJECT:-attestor}/bootstrap/deploy_role_arn is missing" >&2
+  exit 1
+fi
+export TF_VAR_deploy_role_arn="${AWS_DEPLOY_ROLE_ARN}"
 
 case "$action" in
   apply)   terraform -chdir="infra/${layer}" apply -auto-approve -input=false ;;
