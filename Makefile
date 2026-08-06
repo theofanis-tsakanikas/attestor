@@ -1,7 +1,18 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
-PY := .venv/bin/python
-PIP := .venv/bin/pip
+
+# The venv when there is one, the ambient interpreter when there is not.
+#
+# `.venv/bin/pip` was hard-coded, which is true on a laptop and false on a CI runner, where
+# the package is installed into the runner's own Python. `make package` therefore worked
+# everywhere it was tried and failed in the one place it mattered — inside a deploy, four
+# minutes in, on `No such file or directory`. A path that only exists on the machine that
+# wrote it is the same defect as a git-ignored file in a build context.
+VENV := .venv
+PY   := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
+PIP  := $(if $(wildcard $(VENV)/bin/pip),$(VENV)/bin/pip,python3 -m pip)
+RUFF := $(if $(wildcard $(VENV)/bin/ruff),$(VENV)/bin/ruff,ruff)
+CHECKOV := $(if $(wildcard $(VENV)/bin/checkov),$(VENV)/bin/checkov,checkov)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Everything above the "cloud" section runs with NO AWS account and NO
@@ -28,13 +39,13 @@ test: ## Full test suite — offline, no credentials
 
 .PHONY: lint
 lint: ## ruff check + format check (the exact command CI runs)
-	.venv/bin/ruff check src tests scripts pipelines
-	.venv/bin/ruff format --check src tests scripts pipelines
+	$(RUFF) check src tests scripts pipelines
+	$(RUFF) format --check src tests scripts pipelines
 
 .PHONY: fmt
 fmt: ## Apply ruff formatting
-	.venv/bin/ruff format src tests scripts pipelines
-	.venv/bin/ruff check --fix src tests scripts pipelines
+	$(RUFF) format src tests scripts pipelines
+	$(RUFF) check --fix src tests scripts pipelines
 
 # ── The five claims ──────────────────────────────────────────────────────────
 
@@ -142,7 +153,7 @@ tf-validate: ## terraform validate per layer, offline (no backend, no provider c
 
 .PHONY: iac-scan
 iac-scan: ## checkov over the Terraform layers
-	.venv/bin/checkov -d infra --quiet --compact
+	$(CHECKOV) -d infra --quiet --compact
 
 .PHONY: package
 package: ## Vendor the library into the Lambda source dir so terraform can zip it

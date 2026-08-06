@@ -33,9 +33,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = str(ROOT / ".venv" / "bin" / "python")
-RUFF = str(ROOT / ".venv" / "bin" / "ruff")
-CHECKOV = str(ROOT / ".venv" / "bin" / "checkov")
+
+
+def _tool(name: str, fallback: str | None = None) -> str:
+    """The venv's copy when there is a venv, whatever is on PATH when there is not.
+
+    Hard-coding `.venv/bin/…` makes preflight a check that only runs where it was written.
+    That is exactly how `make package` reached a deploy untested: it was green on every
+    laptop and had never once executed on a runner.
+    """
+    candidate = ROOT / ".venv" / "bin" / name
+    return str(candidate) if candidate.exists() else (fallback or name)
+
+
+PYTHON = _tool("python", sys.executable)
+RUFF = _tool("ruff")
+CHECKOV = _tool("checkov")
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
