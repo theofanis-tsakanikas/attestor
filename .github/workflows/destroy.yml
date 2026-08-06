@@ -19,6 +19,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  PROJECT: attestor
+  AWS_REGION: ${{ vars.AWS_REGION }}
+
 jobs:
   confirm:
     runs-on: ubuntu-latest
@@ -45,8 +49,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/attestor-github-deploy
           aws-region: ${{ vars.AWS_REGION }}
+
+      - name: resolve the backend from the account
+        # Everything except the account id is a consequence of names `infra/bootstrap`
+        # already chose, so it is read from that layer rather than transcribed into
+        # repository configuration. A value copied by hand looks like an independent
+        # setting; a renamed bucket then becomes a deploy that fails on a backend nobody
+        # can find, and the fix is in a settings page rather than in a diff.
+        run: |
+          set -euo pipefail
+          read_param() {
+            aws ssm get-parameter --name "/$PROJECT/bootstrap/$1" \
+              --query 'Parameter.Value' --output text
+          }
+          {
+            echo "TF_STATE_BUCKET=$(read_param state_bucket)"
+            echo "TF_LOCK_TABLE=$(read_param lock_table)"
+          } >> "$GITHUB_ENV"
+          echo "backend resolved from /$PROJECT/bootstrap/*"
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
@@ -71,16 +94,12 @@ jobs:
         # Versioned buckets refuse to delete while they hold objects, and `force_destroy`
         # covers current versions only. A teardown that stops here leaves the lake — the
         # thing actually holding a tenant's data — standing.
-        env:
-          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-          TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -uo pipefail
           terraform -chdir=infra/foundation init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}" \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="dynamodb_table=$TF_LOCK_TABLE" \
             -backend-config="encrypt=true" >/dev/null
           for output in lake_bucket evidence_bucket reports_bucket; do
             bucket=$(terraform -chdir=infra/foundation output -raw "$output" 2>/dev/null) || continue
@@ -96,10 +115,6 @@ jobs:
       - name: destroy in reverse order
         env:
           TF_VAR_expires_at: "1970-01-01"
-          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-          TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           TF_VAR_deploy_runtime: "true"
         run: |
           set -euo pipefail

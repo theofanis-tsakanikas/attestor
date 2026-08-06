@@ -42,10 +42,9 @@ permissions:
   contents: read
 
 env:
+  PROJECT: attestor
   TF_INPUT: "false"
   TF_IN_AUTOMATION: "true"
-  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
-  TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
   AWS_REGION: ${{ vars.AWS_REGION }}
   ATTESTOR_WORKGROUP: attestor
   ATTESTOR_DATABASE: attestor_gold
@@ -71,8 +70,27 @@ jobs:
           terraform_version: 1.9.8
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/attestor-github-deploy
           aws-region: ${{ vars.AWS_REGION }}
+
+      - name: resolve the backend from the account
+        # Everything except the account id is a consequence of names `infra/bootstrap`
+        # already chose, so it is read from that layer rather than transcribed into
+        # repository configuration. A value copied by hand looks like an independent
+        # setting; a renamed bucket then becomes a deploy that fails on a backend nobody
+        # can find, and the fix is in a settings page rather than in a diff.
+        run: |
+          set -euo pipefail
+          read_param() {
+            aws ssm get-parameter --name "/$PROJECT/bootstrap/$1" \
+              --query 'Parameter.Value' --output text
+          }
+          {
+            echo "TF_STATE_BUCKET=$(read_param state_bucket)"
+            echo "TF_LOCK_TABLE=$(read_param lock_table)"
+          } >> "$GITHUB_ENV"
+          echo "backend resolved from /$PROJECT/bootstrap/*"
+
 
       - name: ensure an AWS CLI that knows AgentCore
         # `bedrock-agentcore-control` is a recent service and the runner image's bundled CLI

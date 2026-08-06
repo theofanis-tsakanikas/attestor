@@ -12,8 +12,27 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision | minutes | ☐ |
 | 5 | **Bootstrap apply** — `terraform -chdir=infra/bootstrap apply`, once, from a laptop with SSO | CI authenticates by assuming a role that has to exist first | minutes | ☐ |
 | 6 | **GitHub Environments** `deploy` and `destroy`, with required reviewers | The OIDC trust is scoped to these; without them nothing can assume the role | minutes | ☐ |
-| 7 | **Repository variables and secrets** — `AWS_DEPLOY_ROLE_ARN`, `AWS_REGION`, `TF_STATE_BUCKET`, `TF_LOCK_TABLE` | Outputs of step 5 | minutes | ☐ |
+| 7 | **Two repository variables** — `AWS_ACCOUNT_ID` and `AWS_REGION`. No secret | CI must know which account to talk to before it can ask that account anything; everything else it reads from there | minutes | ☐ |
 | 8 | **Budget alert address** confirmed (SNS subscription accepted) | An unconfirmed subscription silently drops every alert | minutes | ☐ |
+
+## Why CI carries two values and not five
+
+Four things used to be transcribed from `terraform output` into repository settings: a state
+bucket, a lock table, a role ARN and a region. Three of them were not facts. They were
+consequences of names `infra/bootstrap` had already chosen —
+`attestor-tfstate-<account>`, `attestor-tfstate-locks`,
+`arn:aws:iam::<account>:role/attestor-github-deploy` — and copying a derived value into a
+settings page makes it look like an independent knob. Rename the bucket and the deploy fails
+on a backend nobody can find, with the fix living in a web form rather than in a diff.
+
+So bootstrap publishes them to `/attestor/bootstrap/*` and the workflows read them once
+credentials exist. The role ARN is derived from the account id in the `role-to-assume` line
+itself, which is why there is no longer a repository *secret* at all.
+
+What cannot be published is the account id: CI has to know **which** account before it can
+ask that account anything. That is the irreducible one, and it is a variable rather than a
+secret because an AWS account id is not one — the boundary is the OIDC trust policy, scoped
+to a single repository and a single environment.
 
 ## What the deploy workflow does that you should know about
 
