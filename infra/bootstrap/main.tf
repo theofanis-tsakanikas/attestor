@@ -38,6 +38,18 @@ data "aws_caller_identity" "current" {}
 
 locals {
   state_bucket = "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
+
+  github_oidc_url  = "https://token.actions.githubusercontent.com"
+  github_oidc_host = "token.actions.githubusercontent.com"
+
+  # Derived, never transcribed. An OIDC provider's ARN is a function of the account and the
+  # issuer host, so adopting one that already exists needs no value copied out of a console
+  # into a variable — which is the step that later goes stale without anyone noticing.
+  github_oidc_provider_arn = (
+    var.create_github_oidc_provider
+    ? aws_iam_openid_connect_provider.github[0].arn
+    : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${local.github_oidc_host}"
+  )
 }
 
 # ── State ────────────────────────────────────────────────────────────────────
@@ -118,8 +130,16 @@ resource "aws_dynamodb_table" "locks" {
 
 # ── The identity CI assumes ──────────────────────────────────────────────────
 
+# An account holds at most one provider per issuer, and the GitHub issuer is shared by every
+# repository that federates into this account. So this layer adopts an existing provider
+# rather than competing for it: with `create_github_oidc_provider = false` the deploy role
+# binds to the one already standing, and destroying this layer takes down nothing another
+# repository's CI depends on. Creating a provider we do not own is the easier mistake to make
+# and the harder one to notice — it only surfaces the day someone runs `destroy`.
 resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
+  count = var.create_github_oidc_provider ? 1 : 0
+
+  url             = local.github_oidc_url
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = var.github_oidc_thumbprints
 }
@@ -131,7 +151,7 @@ data "aws_iam_policy_document" "assume_from_github" {
 
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [local.github_oidc_provider_arn]
     }
 
     condition {
@@ -143,12 +163,19 @@ data "aws_iam_policy_document" "assume_from_github" {
     # Scoped to this repository *and* to the environments that gate deployment. A wildcard
     # on `sub` would let any workflow in any repository this provider trusts assume the role,
     # which is the single most common way an OIDC setup ends up worse than a static key.
+    #
+    # Written out rather than generated from a list. The two names are not a setting: they
+    # have to equal the `environment:` lines in `deploy.yml` and `destroy.yml` exactly, so a
+    # variable here would be a knob that silently breaks federation when turned. Spelling
+    # them out also keeps CKV_AWS_358 able to read this policy — a `for` expression leaves
+    # the claim unresolved, and the check that catches a wildcard `sub` is one worth keeping
+    # able to see its own subject.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        for environment in var.deploy_environments :
-        "repo:${var.github_repository}:environment:${environment}"
+        "repo:${var.github_repository}:environment:deploy",
+        "repo:${var.github_repository}:environment:destroy",
       ]
     }
   }
@@ -203,8 +230,8 @@ resource "aws_iam_role_policy" "deploy_iam" {
 resource "aws_budgets_budget" "estate" {
   name         = "${var.project}-estate"
   budget_type  = "COST"
-  limit_amount = var.budget_eur
-  limit_unit   = "EUR"
+  limit_amount = var.budget_usd
+  limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
   notification {
