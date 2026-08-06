@@ -1,14 +1,14 @@
 # Day one
 
-Everything in this repository is Terraform except the items below, and these are here because
-they have no API — not because somebody preferred a console. Each one is recorded, dated and
-initialled when it is done, so "who turned this on" has an answer a year from now.
+Everything in this repository is Terraform except the items below. Most are here because they
+have no API; one is here for a better reason, stated in its own row. Each is recorded, dated
+and initialled when it is done, so "who turned this on" has an answer a year from now.
 
-| # | Task | Why it cannot be code | Lead time | Done |
+| # | Task | Why it is not code | Lead time | Done |
 |---|---|---|---:|:--:|
-| 1 | **Bedrock model access** — enable Anthropic Claude and Amazon Titan Embeddings in the account, per region | Enabling a model family is a console action; Anthropic additionally requires a one-time use-case submission | hours to days | ☐ |
+| 1 | **Bedrock model access for Anthropic** — submit the use-case form, then enable the reasoning model | There *is* an API (`put-use-case-for-model-access`, `create-foundation-model-agreement`), and it is deliberately not used — see below | hours to days | ☐ |
 | 2 | **Service quotas** — raise Bedrock on-demand TPM/RPM for the reasoning model | Quota increases are ticketed and reviewed | days | ☐ |
-| 3 | **Confirm AgentCore region availability** | Availability changes; it is not something to discover mid-demo | minutes | ☐ |
+| ~~3~~ | ~~Confirm AgentCore region availability~~ | **Done.** Verified available in `eu-central-1`, so the data plane and the agent plane stay in the same region and there is no residency split to document | — | ☑ |
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision | minutes | ☐ |
 | 5 | **Bootstrap apply** — `terraform -chdir=infra/bootstrap apply`, once, from a laptop with SSO | CI authenticates by assuming a role that has to exist first | minutes | ☐ |
 | 6 | **GitHub Environments** `deploy` and `destroy`, with required reviewers | The OIDC trust is scoped to these; without them nothing can assume the role | minutes | ☐ |
@@ -31,16 +31,42 @@ drifts from `recordings/`.
 misses its own cross-check by 4.3%. A workflow that went red on a correct refusal would teach
 everyone to ignore it.
 
-## Why step 1 is first
+## Why step 1 is first, and why it is not automated
 
 It is the only item with a lead time measured in days, and everything downstream is blocked
-on it. Discovering on deploy day that a streaming Anthropic model returns
-`AccessDeniedException` because a form was never submitted is a lost day, and it is a
-well-known lost day.
+on it. Discovering on deploy day that an Anthropic model returns `AccessDeniedException`
+because a form was never submitted is a lost day, and it is a well-known lost day.
 
 Note the shape of the failure: model access is per account **and** per region, and the
 console shows one region at a time. A run that works in `eu-central-1` and fails in
 `us-east-1` is almost always this.
+
+**It could be scripted, and it will not be.** `aws bedrock put-use-case-for-model-access`
+submits the form and `aws bedrock create-foundation-model-agreement` accepts the offer, so
+this is not a gap in the API. What that second call accepts is a *commercial agreement* —
+the offer carries a rate card — and accepting pricing terms on an organisation's behalf is
+the kind of act that needs a named human behind it. This repository already takes that
+position where it matters most: no model, no agent and no service principal may request or
+approve an override ([ADR-0001](adr/0001-fail-closed-with-a-recorded-key.md)). A signature on
+a supplier agreement is not a weaker case than a signature on an omission.
+
+So the row above says "not code" rather than "no API", because the first is true and the
+second was not.
+
+## Verified state of this account
+
+Checked read-only against `<account>` / `eu-central-1`. Re-check rather than trust this
+table if time has passed — it is a snapshot, not a control.
+
+| What | State |
+|---|---|
+| `amazon.titan-embed-text-v2:0` | **Ready.** Entitled, and Amazon's own models need no marketplace agreement |
+| `anthropic.claude-haiku-4-5-...` | **Not enabled.** An unaccepted agreement offer is outstanding |
+| Anthropic use-case form | **Not submitted** — `GetUseCaseForModelAccess` returns `ResourceNotFoundException` |
+| AgentCore control plane | **Available** in `eu-central-1` |
+| `attestor:managed` resources | **0** — nothing left over from a previous run |
+
+The one that blocks a deploy is the Anthropic pair. Titan needs nothing.
 
 ## Step 3, and the decision behind it
 
