@@ -255,11 +255,10 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
-        "Cedar split",
-        [sys.executable, "scripts/check_cedar_split.py"],
-        "AgentCore takes one Cedar policy per resource, so `infra/agent` splits the files "
-        "with a second parser. A policy it fails to extract is a `forbid` that passes claim 2 "
-        "offline and is simply absent from the deployed engine, with nothing going red.",
+        "AgentCore policies",
+        [sys.executable, "scripts/check_agentcore_policies.py"],
+        "The deployed policy set still holds the rule it exists for — no override through the "
+        "agent — and asserts nothing about token claims this repository has not verified.",
     ),
     Check(
         "deployability",

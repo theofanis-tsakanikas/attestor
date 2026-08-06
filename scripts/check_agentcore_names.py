@@ -88,19 +88,20 @@ def _from_variable(for_each: str) -> list[str] | None:
     return re.findall(r'"([^"]+)"', default.group(1)) if default else []
 
 
-def _from_cedar_local(for_each: str) -> list[str] | None:
-    """`local.cedar_policies` — the map the layer builds from the `.cedar` files.
+def _from_agentcore_policies(for_each: str) -> list[str] | None:
+    """`local.agentcore_policies` — one policy per template, per gateway.
 
-    Its keys are the AgentCore policy names. Taken from `check_cedar_split`, which already
-    derives them from the layer's own regex; deriving them a second time here would be exactly
-    the duplication that file exists to catch.
+    The keys are `<template>_<tenant>`, and they are the AgentCore policy names. Built from the
+    same two inputs the layer uses: the files in `policy/agentcore/` and `cognito_tenants`,
+    which is what the gateways iterate — `lumen` has no pool and therefore no gateway.
     """
-    if for_each.strip() != "local.cedar_policies":
+    if for_each.strip() != "local.agentcore_policies":
         return None
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from check_cedar_split import extract  # noqa: PLC0415 - after sys.path is arranged
-
-    return sorted(extract()[0])
+    templates = sorted(
+        path.stem.replace("-", "_") for path in (ROOT / "policy" / "agentcore").glob("*.cedar")
+    )
+    tenants = _from_variable("toset(var.cognito_tenants)") or []
+    return [f"{template}_{tenant}" for tenant in tenants for template in templates]
 
 
 def _from_resource(for_each: str, text: str, depth: int) -> list[str] | None:
@@ -136,7 +137,7 @@ def iteration_values(for_each: str | None, text: str, depth: int = 0) -> list[st
     if not for_each:
         return [""]
     for resolver in (
-        lambda: _from_cedar_local(for_each),
+        lambda: _from_agentcore_policies(for_each),
         lambda: _from_fileset(for_each),
         lambda: _from_variable(for_each),
         lambda: _from_resource(for_each, text, depth),
