@@ -160,6 +160,10 @@ jobs:
         run: checkov -d infra --compact --quiet
       - name: the container build context is complete
         run: python scripts/check_docker_context.py
+      - name: Terraform, dbt and the queries agree on the lakehouse
+        # `dbt parse` resolves sources against schema.yml, not against a catalogue, so seven
+        # invented table names compiled cleanly for as long as nobody ran them.
+        run: python scripts/check_lakehouse_wiring.py
       - name: the AgentCore policy set still holds its one rule
         # The engine is in the estate to keep `request_override` uncallable through the
         # gateway. A policy set that lost that forbid is a policy engine with nothing to say.

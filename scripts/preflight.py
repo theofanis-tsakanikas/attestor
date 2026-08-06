@@ -255,6 +255,14 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "lakehouse wiring",
+        [sys.executable, "scripts/check_lakehouse_wiring.py"],
+        "Terraform, dbt and the queries describe one lakehouse three times. When they drift, "
+        "`dbt parse` still passes and the first live build fails on a table that never "
+        "existed — or worse, a resolver reads an empty table and calls it zero.",
+    ),
+    Check(
+        "deployability",
         "AgentCore policies",
         [sys.executable, "scripts/check_agentcore_policies.py"],
         "The deployed policy set still holds the rule it exists for — no override through the "
