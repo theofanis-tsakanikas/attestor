@@ -427,45 +427,51 @@ resource "awscc_bedrockagentcore_policy_engine" "main" {
   description = "Cedar policies from policy/cedar/, evaluated before any tool executes."
 }
 
-# One AgentCore policy per Cedar policy, not per file.
+# `policy/agentcore/`, not `policy/cedar/`. They are different policy languages wearing the
+# same name, and the deploy is what established it.
 #
-# `CreatePolicy` takes a single policy statement. Handing it a whole file failed on
-# `unexpected token forbid` — the parser read the first `permit`, reached the end of it, and
-# found another policy where it expected end-of-input. The two files here group by concern
-# (`roles`, `tenant_isolation`) and that grouping is worth keeping in the repository, so the
-# split happens on the way out rather than by scattering seven files across the directory.
+# AgentCore's engine authorizes one question: may this OAuth principal invoke this tool at this
+# gateway? Its entities are fixed — `AgentCore::OAuthUser`, `AgentCore::Action::"<target>___<tool>"`,
+# `AgentCore::Gateway::"<arn>"` — the resource scope must be constrained to a gateway, and the
+# only facts available are tags lifted off the token and the tool's own arguments.
 #
-# The `@id` annotation is the seam. It already names each policy for
-# `src/attestor/policy/cedar.py`, it is the thing AgentCore's parser refuses to accept, and it
-# marks exactly where one policy begins — so it becomes the AgentCore policy's name and is
-# removed from the statement in the same step. `scripts/check_cedar_split.py` fails the build
-# if this ever extracts a different set of policies than the offline evaluator loads.
+# `policy/cedar/` answers a different question, about domain objects: may this role read this
+# datapoint, for this tenant, in this period. Its resources carry a `tenant` attribute.
+# AgentCore has no such entity, and it rejected every one of those policies for exactly that
+# reason: "a wildcard resource was detected".
+#
+# Transplanting them would mean re-deriving the tenant from `principal.getTag(...)`, and this
+# repository has not verified how Cognito's claims arrive as tags. Asserting that mapping in an
+# authorization policy is the one place where nearly right and wrong are the same thing, so the
+# deployed set is small, native, and certainly true: the gateway is the grant, and the override
+# door stays shut. `policy/cedar/` keeps enforcing the rest, in the tool handler, where the
+# whole isolation suite already exercises it.
 locals {
-  cedar_dir = "${path.root}/../../policy/cedar"
+  agentcore_policy_dir = "${path.root}/../../policy/agentcore"
+  gateway_target_name  = "attestor-tools"
 
-  cedar_policies = merge([
-    for filename in fileset(local.cedar_dir, "*.cedar") : {
-      # `(?s)` so `.` spans lines; the terminator is `)` or `}` followed by `;` at the start
-      # of a line, which is how a Cedar policy ends and is not how a semicolon appears in the
-      # prose comments above them.
-      for policy in regexall(
-        "(?s)@id\\(\"([^\"]+)\"\\)\\s*(.*?\n[)}];)",
-        file("${local.cedar_dir}/${filename}")
-      ) : replace(policy[0], "-", "_") => trimspace(policy[1])
+  # One copy per gateway, because a policy names the gateway it applies to.
+  agentcore_policies = merge([
+    for tenant, gateway in awscc_bedrockagentcore_gateway.tenant : {
+      for filename in fileset(local.agentcore_policy_dir, "*.cedar") :
+      "${replace(trimsuffix(filename, ".cedar"), "-", "_")}_${tenant}" => templatefile(
+        "${local.agentcore_policy_dir}/${filename}",
+        {
+          gateway_arn = gateway.gateway_arn
+          target      = local.gateway_target_name
+        }
+      )
     }
   ]...)
 }
 
 resource "awscc_bedrockagentcore_policy" "cedar" {
-  for_each = local.cedar_policies
+  for_each = local.agentcore_policies
 
-  # The `@id` from the file, with hyphens turned into underscores because AgentCore policy
-  # names take `^[A-Za-z][A-Za-z0-9_]*$`. That annotation was already this policy's name in
-  # `src/attestor/policy/cedar.py`, which reports decisions against it — so the deployed
-  # policy and the offline one answer to the same name, spelled for two different validators.
+  # `<file>_<tenant>`, underscores because this resource takes `^[A-Za-z][A-Za-z0-9_]*$`.
   name             = each.key
   policy_engine_id = awscc_bedrockagentcore_policy_engine.main.policy_engine_id
-  description      = "From policy/cedar/, one Cedar policy per AgentCore policy"
+  description      = "From policy/agentcore/, one policy per gateway"
 
   # ACTIVE, not LOG_ONLY. A policy engine in log-only mode is a record of the decisions it
   # would have made, and the whole argument for deciding authorization before execution is
