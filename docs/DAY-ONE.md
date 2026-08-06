@@ -7,6 +7,7 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 | # | Task | Why it is not code | Lead time | Done |
 |---|---|---|---:|:--:|
 | ~~1~~ | ~~Bedrock model access for Anthropic~~ | **Done.** Use-case form submitted and `eu.anthropic.claude-haiku-4-5-20251001-v1:0` verified to respond from the CLI, in `eu-central-1` | — | ☑ |
+| 0 | **Push the repository to GitHub** — create the remote, push `main` | Everything below depends on it: the OIDC trust is scoped to `repo:<owner>/<repo>`, the environments live on that repository, and the workflows run from it | minutes | ☐ |
 | 2 | **Service quotas** — raise Bedrock on-demand TPM/RPM for the reasoning model | Quota increases are ticketed and reviewed | days | ☐ |
 | ~~3~~ | ~~Confirm AgentCore region availability~~ | **Done.** Verified available in `eu-central-1`, so the data plane and the agent plane stay in the same region and there is no residency split to document | — | ☑ |
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision | minutes | ☐ |
@@ -14,6 +15,22 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 | 6 | **GitHub Environments** `deploy` and `destroy`, with required reviewers | The OIDC trust is scoped to these; without them nothing can assume the role | minutes | ☐ |
 | 7 | **Two repository variables** — `AWS_ACCOUNT_ID` and `AWS_REGION`. No secret | CI must know which account to talk to before it can ask that account anything; everything else it reads from there | minutes | ☐ |
 | 8 | **Budget alert address** confirmed (SNS subscription accepted) | An unconfirmed subscription silently drops every alert | minutes | ☐ |
+
+## Step 0 is not a formality
+
+`infra/bootstrap` takes `github_repository` as a required variable with no default, and it
+is the single most consequential string in the layer: the OIDC trust condition is
+
+    repo:<owner>/<repo>:environment:deploy
+
+A wrong value there does not fail loudly. It creates a role whose trust policy names a
+repository that is not yours — so every workflow run fails at `configure-aws-credentials`
+with an error about assuming a role, and the cause is three layers away from the symptom. It
+also means that if the named repository ever exists and its owner adds a `deploy`
+environment, they can assume the role.
+
+So the repository has to exist, and its owner/name has to be known, before this layer is
+applied. That ordering was implicit and is now written down.
 
 ## Why CI carries two values and not five
 
