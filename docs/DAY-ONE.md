@@ -113,8 +113,19 @@ The obvious remedy is a `backend "s3"` block pointing at the bucket bootstrap cr
 is deliberately not there: a layer whose backend is the bucket it has not created yet cannot
 bootstrap a fresh account without someone commenting the block out first. The chicken-and-egg
 is real, and the choice is between a layer that is awkward to recover and one that is awkward
-to start. Back the file up out of band and the first problem goes away; nothing makes the
-second one go away.
+to start.
+
+So the file is copied out of band instead, to
+`s3://attestor-tfstate-387229419515/bootstrap/terraform.tfstate.backup`, SSE-KMS under the
+same key, in the versioned bucket. A copy is not a backend — nothing locks it and nothing
+keeps it current — so **re-upload it after any bootstrap apply**:
+
+    aws s3 cp infra/bootstrap/terraform.tfstate \
+      s3://attestor-tfstate-387229419515/bootstrap/terraform.tfstate.backup \
+      --sse aws:kms --sse-kms-key-id "$(terraform -chdir=infra/bootstrap output -raw kms_key_arn)"
+
+A stale copy is still worth more than no copy: four resources to import by hand becomes a
+diff to reconcile.
 
 ## What the deploy workflow does that you should know about
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from tests.conftest import claims_for
 
 from attestor.agent.cache import CacheKey, CacheScopeError, TenantCache
 from attestor.policy import cedar
@@ -192,7 +191,9 @@ def test_tenants_do_not_all_share_one_identity_provider(registry: TenantRegistry
     assert len({tenant.identity.groups_claim for tenant in registry}) > 1
 
 
-def test_a_role_arrives_from_claims_not_from_a_conversation(registry: TenantRegistry) -> None:
+def test_a_role_arrives_from_claims_not_from_a_conversation(
+    registry: TenantRegistry, claims_for
+) -> None:
     session = Session.from_claims(
         claims_for("helios", "helios-preparers"),
         tenant=registry["helios"],
@@ -202,7 +203,7 @@ def test_a_role_arrives_from_claims_not_from_a_conversation(registry: TenantRegi
     assert session.roles == frozenset({"role:preparer"})
 
 
-def test_an_unmapped_group_does_not_become_a_role(registry: TenantRegistry) -> None:
+def test_an_unmapped_group_does_not_become_a_role(registry: TenantRegistry, claims_for) -> None:
     with pytest.raises(UnknownRole):
         Session.from_claims(
             claims_for("helios", "some-other-group"),
