@@ -13,6 +13,14 @@
 
 github_repository = "theofanis-tsakanikas/attestor"
 
+# The ids behind those names. GitHub's subject claim carries both, because a name can be
+# released and re-registered by somebody else and an id cannot:
+#
+#   gh api users/theofanis-tsakanikas --jq .id
+#   gh api repos/theofanis-tsakanikas/attestor --jq .id
+github_owner_id      = "218610429"
+github_repository_id = "1324675810"
+
 # `dbx-github-deploy` federated into this account first, on 2026-07-04, and an account holds
 # one provider per issuer. Adopt it. See the reasoning in variables.tf.
 create_github_oidc_provider = false

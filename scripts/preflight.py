@@ -240,6 +240,14 @@ CHECKS: list[Check] = [
         "Every path the Dockerfile copies exists. A COPY of a missing directory fails the "
         "build after the image layers are pushed.",
     ),
+    Check(
+        "deployability",
+        "OIDC subjects",
+        [sys.executable, "scripts/check_oidc_subjects.py"],
+        "Every subject the deploy role trusts names this repository and one environment, "
+        "with no wildcard. CKV_AWS_358 cannot parse GitHub's immutable subject and reads "
+        "only the first value, so this is the check that actually covers the trust.",
+    ),
 ]
 
 
