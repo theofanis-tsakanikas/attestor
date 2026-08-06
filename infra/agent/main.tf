@@ -473,6 +473,12 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
   policy_engine_id = awscc_bedrockagentcore_policy_engine.main.policy_engine_id
   description      = "From policy/agentcore/, one policy per gateway"
 
+  # `CreatePolicy` validates the action names in a statement against the gateway — an
+  # operation AWS authorizes as `InvokeGateway`, on the gateway ARN. So the tools have to be
+  # attached before a policy can name one: without this, `${target}___request_override` is an
+  # action the gateway does not yet have, and the policy lands in CREATE_FAILED.
+  depends_on = [null_resource.gateway_target]
+
   # ACTIVE, not LOG_ONLY. A policy engine in log-only mode is a record of the decisions it
   # would have made, and the whole argument for deciding authorization before execution is
   # that the decision has effect.
@@ -736,18 +742,32 @@ resource "aws_iam_role_policy" "gateway" {
       },
       {
         # The gateway reads the policy engine with *its own* role, at create time, before it
-        # has ever served a request — `Access denied while calling GetPolicyEngine ... with
-        # Gateway role`. Without this the gateway does not come up at all, so the failure is
-        # not a policy that silently fails open; it is a gateway that never exists.
+        # has served anything — `GenesisPolicyEngineCheck`. Without it the gateway does not
+        # come up at all, which is the good version of this failure: the bad version is
+        # documented, and it is a gateway that comes up and denies every tool call while the
+        # permit policies sit there looking correct.
+        Sid    = "PolicyEngineConfiguration"
+        Effect = "Allow"
+        Action = ["bedrock-agentcore:GetPolicyEngine"]
+        # `GetPolicyEngine` alone is what turns a LOG_ONLY engine into a silent one, per AWS's
+        # own troubleshooting note. It is here even though this engine is ACTIVE.
+        Resource = [awscc_bedrockagentcore_policy_engine.main.policy_engine_arn]
+      },
+      {
+        Sid    = "PolicyEngineAuthorization"
         Effect = "Allow"
         Action = [
-          "bedrock-agentcore:GetPolicyEngine",
-          "bedrock-agentcore:ListPolicies",
-          "bedrock-agentcore:GetPolicy",
+          "bedrock-agentcore:AuthorizeAction",
+          "bedrock-agentcore:PartiallyAuthorizeActions",
         ]
         Resource = [
           awscc_bedrockagentcore_policy_engine.main.policy_engine_arn,
-          "${awscc_bedrockagentcore_policy_engine.main.policy_engine_arn}/*",
+          # Both actions need the *gateway* ARN as well as the engine's. It is a wildcard
+          # rather than the gateways below, and not for convenience: the check runs while the
+          # gateway is being created, so a policy naming the gateway could only exist after
+          # the thing that needs it. Scoped to this account and region, on a role only
+          # AgentCore can assume, for gateways only this layer creates.
+          "arn:aws:bedrock-agentcore:${var.region}:${data.aws_caller_identity.current.account_id}:gateway/*",
         ]
       }
     ]
