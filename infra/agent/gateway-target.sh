@@ -84,6 +84,26 @@ case "$action" in
       aws bedrock-agentcore-control delete-gateway-target \
         --gateway-identifier "$gateway_id" --target-id "$target_id" --region "$region" >/dev/null
     fi
+
+    # Wait for the gateway to agree that it has no targets.
+    #
+    # `delete-gateway-target` returns before the gateway reflects it, and the very next thing
+    # Terraform does is delete the gateway — which refuses with `has targets associated with
+    # it. Delete all targets before deleting the gateway`. That is how a destroy fails with
+    # OpenSearch Serverless still standing and metered, which is the most expensive way for a
+    # teardown to stop.
+    #
+    # Polling rather than sleeping: the condition is observable, so waiting on the clock would
+    # be guessing at a number that is either too short on a bad day or wasted on every good
+    # one.
+    for _ in $(seq 1 30); do
+      remaining=$(aws bedrock-agentcore-control list-gateway-targets \
+        --gateway-identifier "$gateway_id" --region "$region" \
+        --query 'length(items)' --output text 2>/dev/null || echo 0)
+      [ "$remaining" = "0" ] || [ "$remaining" = "None" ] && break
+      echo "  $gateway_id still reports $remaining target(s)"
+      sleep 2
+    done
     ;;
 
   *)
