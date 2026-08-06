@@ -107,6 +107,14 @@ resource "aws_cognito_user_pool" "tenant" {
   mfa_configuration        = "OPTIONAL"
   auto_verified_attributes = ["email"]
 
+  # `OPTIONAL` on its own is rejected: Cognito requires at least one second factor to be
+  # enabled before it will let anyone opt in to one. Software tokens rather than SMS —
+  # an authenticator app costs nothing per user, works without a phone number on file, and
+  # is not SIM-swappable, which for people who sign off a regulated disclosure is the point.
+  software_token_mfa_configuration {
+    enabled = true
+  }
+
   password_policy {
     minimum_length                   = 14
     require_lowercase                = true
@@ -175,6 +183,16 @@ data "aws_iam_policy_document" "tools_assume" {
 resource "aws_iam_role" "tools" {
   name               = "${var.project}-tools"
   assume_role_policy = data.aws_iam_policy_document.tools_assume.json
+}
+
+# The handler runs in the private subnets, and Lambda refuses to create a function whose role
+# cannot manage an ENI — `The provided execution role does not have permissions to call
+# CreateNetworkInterface on EC2`, at create time, not at invoke time. AWS's own policy rather
+# than a hand-written copy: those actions need `Resource = "*"` because an ENI has no ARN
+# before it exists, so writing them out means writing a wildcard and arguing with a scanner.
+resource "aws_iam_role_policy_attachment" "tools_vpc" {
+  role       = aws_iam_role.tools.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_iam_role_policy" "tools" {
@@ -417,7 +435,7 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
   # `tenant_isolation.cedar` had to become `tenant-isolation` to be rejected.
   name             = trimsuffix(each.value, ".cedar")
   policy_engine_id = awscc_bedrockagentcore_policy_engine.main.policy_engine_id
-  description      = "Deployed verbatim from policy/cedar/${each.value}"
+  description      = "From policy/cedar/${each.value}, annotations stripped"
 
   # ACTIVE, not LOG_ONLY. A policy engine in log-only mode is a record of the decisions it
   # would have made, and the whole argument for deciding authorization before execution is
@@ -430,7 +448,17 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
 
   definition = {
     cedar = {
-      statement = file("${path.root}/../../policy/cedar/${each.value}")
+      # `@id("...")` annotations are stripped. AgentCore's Cedar parser rejects them outright
+      # — `unexpected token @` — and they are ours, not Cedar's: `src/attestor/policy/cedar.py`
+      # reads them so a decision can be reported against a named policy instead of an index.
+      # Removing them changes nothing about who is permitted to do what, which is why this is
+      # a strip and not a rewrite; the effect and the reason are both recorded here rather
+      # than left as a difference between the file and the deployed policy.
+      statement = trimspace(replace(
+        file("${path.root}/../../policy/cedar/${each.value}"),
+        "/@id\\(\"[^\"]*\"\\)\\s*/",
+        ""
+      ))
     }
   }
 }
