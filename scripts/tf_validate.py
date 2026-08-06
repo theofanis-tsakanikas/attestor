@@ -4,6 +4,15 @@
 `-backend=false` so no state is touched and no credentials are needed; the provider registry
 is the only thing reached. This is what catches an attribute that does not exist, and it is
 the difference between "this should apply" and "this applies".
+
+**What it does not catch**, established by planting one and watching this pass: a value that
+violates a provider's attribute pattern. `awscc_bedrockagentcore_policy_engine` requires a
+name matching `^[A-Za-z][A-Za-z0-9_]*$`, and `attestor-policy-engine` sailed through validate
+before failing a deploy fifteen minutes in. Those validators run in the plan phase, and a plan
+needs a backend and credentials, so an offline run cannot reach them.
+
+The gap is worth knowing rather than assuming away: green here means the configuration is
+well-formed and every attribute exists, not that every value is acceptable.
 """
 
 from __future__ import annotations
