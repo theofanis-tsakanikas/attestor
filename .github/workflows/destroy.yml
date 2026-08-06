@@ -51,6 +51,22 @@ jobs:
         with:
           terraform_version: 1.9.8
 
+      - name: ensure an AWS CLI that knows AgentCore
+        # The agent layer detaches its gateway target through a destroy provisioner, and that
+        # provisioner shells out to `bedrock-agentcore-control`. On a runner whose bundled CLI
+        # predates the service the provisioner fails, the agent layer's destroy fails with it,
+        # and the loop below stops — leaving OpenSearch Serverless, the single most expensive
+        # thing in the estate, standing behind an error about a CLI.
+        run: |
+          set -euo pipefail
+          if ! aws bedrock-agentcore-control help >/dev/null 2>&1; then
+            echo "runner CLI ($(aws --version 2>&1)) predates bedrock-agentcore-control; upgrading"
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+            unzip -q /tmp/awscli.zip -d /tmp
+            sudo /tmp/aws/install --update
+          fi
+          aws bedrock-agentcore-control help >/dev/null
+
       - name: empty the buckets
         # Versioned buckets refuse to delete while they hold objects, and `force_destroy`
         # covers current versions only. A teardown that stops here leaves the lake — the
