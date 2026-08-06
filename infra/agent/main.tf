@@ -450,6 +450,19 @@ locals {
   agentcore_policy_dir = "${path.root}/../../policy/agentcore"
   gateway_target_name  = "attestor-tools"
 
+  # The actions the permit grants, built from the same file the gateway target is built from
+  # so the two cannot disagree. `request_override` is left out on purpose: it is forbidden by
+  # the policy beside this one, and excluding it here means default-deny holds it shut even if
+  # that forbid were ever removed.
+  permitted_tools = [
+    for tool in jsondecode(file("${path.module}/tools.openapi.json")).tools :
+    tool.name if tool.name != "request_override"
+  ]
+  permitted_actions = join(",\n        ", [
+    for name in local.permitted_tools :
+    "AgentCore::Action::\"${local.gateway_target_name}___${name}\""
+  ])
+
   # One copy per gateway, because a policy names the gateway it applies to.
   agentcore_policies = merge([
     for tenant, gateway in awscc_bedrockagentcore_gateway.tenant : {
@@ -459,6 +472,7 @@ locals {
         {
           gateway_arn = gateway.gateway_arn
           target      = local.gateway_target_name
+          actions     = local.permitted_actions
         }
       )
     }
@@ -483,10 +497,20 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
   # would have made, and the whole argument for deciding authorization before execution is
   # that the decision has effect.
   enforcement_mode = "ACTIVE"
-  # A policy with a validation finding does not deploy. The alternative is a policy that is
-  # live and subtly not what it says, which is worse than no policy: it is a control people
-  # believe in.
-  validation_mode = "FAIL_ON_ANY_FINDINGS"
+  # `IGNORE_ALL_FINDINGS`, and this is the one place in the repository where a scanner is
+  # deliberately overruled, so the reasoning is here rather than in a commit message.
+  #
+  # The Cedar analyzer has two verdicts and no way to say "expected". It reported the permit as
+  # *Overly Permissive* — it allows every listed tool at this gateway — and the forbid as
+  # *Overly Restrictive*: "will deny every request for principal AgentCore::OAuthUser, action
+  # attestor-tools___request_override". Both findings are correct, and both are the intent
+  # restated. `FAIL_ON_ANY_FINDINGS` is the right mode for a policy that expresses a
+  # condition; it cannot express a policy whose content is "always" or "never".
+  #
+  # What the analyzer would have caught is a permit that quietly widened, so that is now
+  # checked here instead: the actions are enumerated from the tool schema rather than left
+  # open, and `scripts/check_agentcore_policies.py` fails the build if the list drifts from it.
+  validation_mode = "IGNORE_ALL_FINDINGS"
 
   definition = {
     cedar = {
