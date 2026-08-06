@@ -495,12 +495,36 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
   }
 }
 
+# AgentCore assumes the gateway role *during* CreateGateway, to check it can reach the policy
+# engine. Terraform sees the gateway reference `aws_iam_role.gateway` and not the policy
+# attached to it, so it happily creates both at once — and the check ran against a role whose
+# permissions arrived a second later. The error named `AuthorizeAction`, the permission was
+# already in the file, and the second attempt failed identically.
+#
+# The sleep is not superstition. IAM is eventually consistent and this check is immediate, so
+# ordering alone leaves a race whose loss costs a ten-minute deploy. Fifteen seconds, once, at
+# the one point where the cost is asymmetric.
+resource "null_resource" "gateway_role_settled" {
+  triggers = {
+    policy = aws_iam_role_policy.gateway.policy
+  }
+
+  provisioner "local-exec" {
+    command = "sleep 15"
+  }
+}
+
 # One gateway per tenant, because a JWT authorizer validates against one issuer, and one
 # pool per tenant means one issuer per tenant. This is not duplication for its own sake: it
 # is the same statement the Cognito pools make, carried through to the edge. A token minted
 # for helios reaches the helios gateway or it reaches nothing.
 resource "awscc_bedrockagentcore_gateway" "tenant" {
   for_each = aws_cognito_user_pool.tenant
+
+  depends_on = [
+    aws_iam_role_policy.gateway,
+    null_resource.gateway_role_settled,
+  ]
 
   # Hyphens here, underscores three resources up. Gateway takes
   # `^([0-9a-zA-Z][-]?){1,100}$` and Policy Engine takes `^[A-Za-z][A-Za-z0-9_]*$`, and the
