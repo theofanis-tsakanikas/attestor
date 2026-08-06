@@ -13,6 +13,35 @@ variable "region" {
 variable "github_repository" {
   type        = string
   description = "owner/repo. The OIDC trust is scoped to exactly this repository."
+
+  validation {
+    condition     = length(split("/", var.github_repository)) == 2
+    error_message = "github_repository must be exactly owner/repo."
+  }
+}
+
+variable "github_owner_id" {
+  type        = string
+  description = <<-EOT
+    The owner's numeric id, from `gh api users/<owner> --jq .id`.
+
+    GitHub issues an immutable subject claim — `repo:owner@<owner id>/repo@<repo id>:...` —
+    because a name can be released and re-registered by somebody else while an id cannot. A
+    trust scoped to names alone is inheritable by whoever claims the name after the
+    repository is deleted, and that is the whole point of the format.
+
+    There is no default and there cannot be one: this is a fact about an account, and a
+    wrong value fails the way the first deploy here failed — `Not authorized to perform
+    sts:AssumeRoleWithWebIdentity`, a message that names none of its causes.
+  EOT
+}
+
+variable "github_repository_id" {
+  type        = string
+  description = <<-EOT
+    The repository's numeric id, from `gh api repos/<owner>/<repo> --jq .id`.
+    See `github_owner_id` for why ids and not names.
+  EOT
 }
 
 variable "budget_usd" {

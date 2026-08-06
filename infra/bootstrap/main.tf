@@ -50,6 +50,30 @@ locals {
     ? aws_iam_openid_connect_provider.github[0].arn
     : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${local.github_oidc_host}"
   )
+
+  # GitHub issues an *immutable* subject: the owner and the repository each carry their
+  # numeric id, `owner@1234/repo@5678`. Names can be released and re-registered by somebody
+  # else; ids cannot, so a trust scoped to names can be inherited by whoever claims the name
+  # after you delete the repository. That is the attack the format closes.
+  #
+  # Both forms are accepted because the account decides which it sends, not this file, and a
+  # federation that works only against the format in use on the day it was written is a
+  # federation that breaks on a Tuesday. Both are equally specific — one repository, one
+  # environment — so accepting the pair widens nothing.
+  #
+  # Written out, four lines where a `for` over two lists would do. The loop moved the `repo:`
+  # prefix behind two more locals, and the subject a trust policy grants is the last string
+  # here that should have to be assembled in someone's head to be read.
+  # `scripts/check_oidc_subjects.py` reads this list, and it should be reading what IAM gets.
+  github_owner = split("/", var.github_repository)[0]
+  github_repo  = split("/", var.github_repository)[1]
+
+  github_subjects = [
+    "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repository_id}:environment:deploy",
+    "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repository_id}:environment:destroy",
+    "repo:${var.github_repository}:environment:deploy",
+    "repo:${var.github_repository}:environment:destroy",
+  ]
 }
 
 # ── State ────────────────────────────────────────────────────────────────────
@@ -145,6 +169,13 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 data "aws_iam_policy_document" "assume_from_github" {
+  # checkov:skip=CKV_AWS_358: cannot parse GitHub's immutable subject. The check splits the
+  # claim on `:` and requires segment 1 to look like `owner/repo`; the format actually issued
+  # is `owner@218610429/attestor@1324675810`, and the `@` fails its regex. It inspects only
+  # the first value in the list, so the result would turn on the ordering of the array rather
+  # than on its contents — a green that means "the element I could read was fine". The real
+  # coverage is `scripts/check_oidc_subjects.py`, which reads every value, requires each to
+  # name this repository and an environment, and refuses any wildcard anywhere.
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -164,19 +195,13 @@ data "aws_iam_policy_document" "assume_from_github" {
     # on `sub` would let any workflow in any repository this provider trusts assume the role,
     # which is the single most common way an OIDC setup ends up worse than a static key.
     #
-    # Written out rather than generated from a list. The two names are not a setting: they
-    # have to equal the `environment:` lines in `deploy.yml` and `destroy.yml` exactly, so a
-    # variable here would be a knob that silently breaks federation when turned. Spelling
-    # them out also keeps CKV_AWS_358 able to read this policy — a `for` expression leaves
-    # the claim unresolved, and the check that catches a wildcard `sub` is one worth keeping
-    # able to see its own subject.
+    # `deploy` and `destroy` are hard-coded rather than variable: they have to equal the
+    # `environment:` lines in `deploy.yml` and `destroy.yml` exactly, so a knob here is one
+    # that silently breaks federation when turned.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repository}:environment:deploy",
-        "repo:${var.github_repository}:environment:destroy",
-      ]
+      values   = local.github_subjects
     }
   }
 }
