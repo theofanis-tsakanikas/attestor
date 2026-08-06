@@ -100,9 +100,17 @@ def tool_schema() -> dict[str, Any]:
                         for name, description in spec.parameters.items()
                     },
                     "required": list(spec.required),
-                    # No scope-shaped property can be added by a caller, and none exists to
-                    # begin with — `scope_leaks()` asserts the second half.
-                    "additionalProperties": False,
+                    # No `additionalProperties`. AgentCore's tool schema accepts exactly five
+                    # keys — type, properties, required, items, description — and rejects the
+                    # target outright otherwise: `Unknown parameter in
+                    # toolSchema.inlinePayload[0].inputSchema: "additionalProperties"`.
+                    #
+                    # Nothing is lost, because nothing was enforcing it here anyway. A schema
+                    # is enforced by whatever validates it, and the validator is
+                    # `handler.invoke`, which compares the arguments against `spec.parameters`
+                    # in code and refuses the extras itself. That is the control; this was a
+                    # description of it. `scope_leaks()` covers the other half — no parameter
+                    # exists that would let a caller name its own scope.
                 },
             }
             for spec in SPECS
