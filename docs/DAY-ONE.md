@@ -8,9 +8,9 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 |---|---|---|---:|:--:|
 | ~~0~~ | ~~Push the repository to GitHub~~ | **Done.** Private, `theofanis-tsakanikas/attestor`. Everything below depends on it: the OIDC trust is scoped to `repo:<owner>/<repo>` | — | ☑ |
 | ~~1~~ | ~~Bedrock model access for Anthropic~~ | **Done.** Use-case form submitted and `eu.anthropic.claude-haiku-4-5-20251001-v1:0` verified to respond from the CLI, in `eu-central-1` | — | ☑ |
-| 2 | **Service quotas** — raise Bedrock on-demand TPM/RPM for the reasoning model | Quota increases are ticketed and reviewed | days | ☐ |
+| ~~2~~ | ~~Service quotas~~ | **Not needed.** The defaults are three orders of magnitude above what this uses — see below | — | ☑ |
 | ~~3~~ | ~~Confirm AgentCore region availability~~ | **Done.** Verified available in `eu-central-1`, so the data plane and the agent plane stay in the same region and there is no residency split to document | — | ☑ |
-| 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision | minutes | ☐ |
+| 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision. **Not a blocker** — checked, see below | minutes | ☐ |
 | ~~5~~ | ~~Bootstrap apply~~ | **Done.** 19 resources in `<account>` / `eu-central-1`; the backend, the deploy role and `/attestor/bootstrap/*` all stand | — | ☑ |
 | ~~6~~ | ~~GitHub Environments `deploy` and `destroy`~~ | **Done, without reviewers** — the plan does not allow them on a private repository. See the section below; this one is not merely ticked | — | ☑ |
 | ~~7~~ | ~~Two repository variables~~ | **Done.** `AWS_ACCOUNT_ID` and `AWS_REGION`. No secret | — | ☑ |
@@ -100,6 +100,34 @@ CI depends on, and it would happen without warning.
 per-tenant cost meter stays in euro, because that is our own arithmetic over our own price
 table and it reports what a European client is billed; the AWS-side ceiling is in dollars
 because AWS gives no choice.
+
+## Step 4 is the only one still open, and nothing waits on it
+
+Worth stating why, because "non-blocking" is easy to assert and easy to be wrong about.
+`infra/agent` creates one Cognito user pool per tenant and `lumen` is deliberately excluded
+from that list, so no resource in any layer reads `https://lumen.eu.auth0.com/`. The session
+layer *verifies* `iss` and `aud` against the registry; it never fetches them from a provider.
+
+Checked rather than reasoned: `attestor run --tenant lumen` completes with no identity
+provider reachable — `PASS lumen issued · 7 disclosed · 0 limitation(s)`. The step exists for
+the day a real Lumen authenticates real people, and until then the registry entry is the
+contract that shape is held to.
+
+## Step 2 was the item with a lead time, and it is not needed
+
+It was on the list because a quota increase is ticketed and reviewed, so it had to be asked
+for early or it would block deploy day. Checked instead of assumed, and the defaults in
+`eu-central-1` for `claude-haiku-4-5` are:
+
+| Quota | Default |
+|---|---|
+| Cross-region inference requests per minute | 10,000 |
+| Cross-region inference tokens per minute | 5,000,000 |
+| Model invocation tokens per day | 13,500,000 |
+
+A full run is three tenants over a few dozen datapoints. Nothing here is within three orders
+of magnitude of a limit, and the row stays ticked unless the shape of the work changes —
+a retrieval bake-off sweeping a large corpus is the case that would.
 
 ## Step 8 was a task that did not exist
 
