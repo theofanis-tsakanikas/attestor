@@ -160,6 +160,17 @@ jobs:
         run: checkov -d infra --compact --quiet
       - name: the container build context is complete
         run: python scripts/check_docker_context.py
+      - name: every OIDC subject names this repository and an environment
+        # CKV_AWS_358 above cannot parse GitHub's immutable subject and reads only the first
+        # value of the list. This reads all of them and refuses any wildcard.
+        run: python scripts/check_oidc_subjects.py
+      - name: the lambda payload can actually be built
+        # Not a formality. `make package` was green on every laptop and had never executed on
+        # a runner, because the Makefile hard-coded `.venv/bin/pip`. It failed inside a deploy
+        # instead — which is the expensive place, and the one this job exists to be cheaper
+        # than. A packaging step that only CI-by-proxy covers is a packaging step nobody
+        # covers.
+        run: make package
       - name: the gateway target compromise is still justified
         # `infra/agent` attaches its tools with a provisioner because no provider has a
         # gateway-target resource. This turns red the day one ships, so the workaround is
