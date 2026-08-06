@@ -6,7 +6,7 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 
 | # | Task | Why it is not code | Lead time | Done |
 |---|---|---|---:|:--:|
-| 1 | **Bedrock model access for Anthropic** — submit the use-case form, then enable the reasoning model | There *is* an API (`put-use-case-for-model-access`, `create-foundation-model-agreement`), and it is deliberately not used — see below | hours to days | ☐ |
+| 1 | **Bedrock model access for Anthropic** — submit the use-case form, then invoke the reasoning model once | There *is* an API, and it is deliberately not used — see below. The form also asks for company details this repository does not hold | hours to days | ☐ |
 | 2 | **Service quotas** — raise Bedrock on-demand TPM/RPM for the reasoning model | Quota increases are ticketed and reviewed | days | ☐ |
 | ~~3~~ | ~~Confirm AgentCore region availability~~ | **Done.** Verified available in `eu-central-1`, so the data plane and the agent plane stay in the same region and there is no residency split to document | — | ☑ |
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision | minutes | ☐ |
@@ -31,6 +31,25 @@ drifts from `recordings/`.
 misses its own cross-check by 4.3%. A workflow that went red on a correct refusal would teach
 everyone to ignore it.
 
+## How step 1 actually works now
+
+**The "Model access" page has been retired.** There is no longer a list of checkboxes to
+tick. Serverless foundation models are enabled automatically the first time they are invoked
+in an account, with two exceptions that both apply here:
+
+- **Anthropic models** ask a first-time user to submit use-case details before access is
+  granted. `aws bedrock get-use-case-for-model-access` returns `ResourceNotFoundException`
+  until that has happened, which makes it a precise, credential-free way to check.
+- **Marketplace-served models** are enabled account-wide by *one* invocation from a principal
+  holding AWS Marketplace permissions. The first invoke is the act of enabling.
+
+So the sequence is: open the model in the Bedrock **Model catalog**, run one prompt in the
+playground, fill in the use-case form when it appears, and the successful response is the
+confirmation. Not a checkbox — a first call.
+
+Region still matters exactly as much as it did. The enablement is per account **and** per
+region, so the console must be in `eu-central-1` when this is done.
+
 ## Why step 1 is first, and why it is not automated
 
 It is the only item with a lead time measured in days, and everything downstream is blocked
@@ -43,12 +62,19 @@ console shows one region at a time. A run that works in `eu-central-1` and fails
 
 **It could be scripted, and it will not be.** `aws bedrock put-use-case-for-model-access`
 submits the form and `aws bedrock create-foundation-model-agreement` accepts the offer, so
-this is not a gap in the API. What that second call accepts is a *commercial agreement* —
-the offer carries a rate card — and accepting pricing terms on an organisation's behalf is
-the kind of act that needs a named human behind it. This repository already takes that
-position where it matters most: no model, no agent and no service principal may request or
-approve an override ([ADR-0001](adr/0001-fail-closed-with-a-recorded-key.md)). A signature on
-a supplier agreement is not a weaker case than a signature on an omission.
+this is not a gap in the API. Two reasons it stays manual anyway.
+
+The form asks who the undertaking is — company, website, industry, intended use. Those are
+facts about the organisation, not about this repository, and a script that fills them is a
+script that asserts them.
+
+And the enabling act is a commercial one: the agreement offer carries a rate card, and under
+the current flow the first invocation is what accepts it account-wide. Accepting pricing
+terms on an organisation's behalf wants a named human behind it. This repository already
+takes that position where it matters most — no model, no agent and no service principal may
+request or approve an override ([ADR-0001](adr/0001-fail-closed-with-a-recorded-key.md)) —
+and a signature on a supplier agreement is not a weaker case than a signature on an
+omission.
 
 So the row above says "not code" rather than "no API", because the first is true and the
 second was not.
