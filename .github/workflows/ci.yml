@@ -160,6 +160,10 @@ jobs:
         run: checkov -d infra --compact --quiet
       - name: the container build context is complete
         run: python scripts/check_docker_context.py
+      - name: every AgentCore name is one AgentCore accepts
+        # Provider attribute validators run in the plan phase, and a plan needs credentials.
+        # Two deploys died fifteen minutes in on a hyphen this would have caught for free.
+        run: python scripts/check_agentcore_names.py
       - name: every OIDC subject names this repository and an environment
         # CKV_AWS_358 above cannot parse GitHub's immutable subject and reads only the first
         # value of the list. This reads all of them and refuses any wildcard.
