@@ -46,6 +46,19 @@ variable "embedding_model" {
   EOT
 }
 
+variable "embedding_dimension" {
+  type        = number
+  default     = 1024
+  description = <<-EOT
+    How many floats the embedding model emits. Titan Text Embeddings V2 emits 1024.
+
+    It is a variable rather than a constant in the indexer because it has to move with
+    `embedding_model`, and the failure when it does not is quiet: the index is created, the
+    knowledge base is created, and the first ingestion job fails on a dimension mismatch —
+    long after the apply that caused it went green.
+  EOT
+}
+
 variable "production_topology" {
   type        = bool
   default     = false

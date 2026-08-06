@@ -84,8 +84,25 @@ resource "aws_opensearchserverless_security_policy" "network" {
   type = "network"
   policy = jsonencode([
     {
+      # Bedrock reaches the collection from its own service network, not through our VPC
+      # endpoint, so a VPC-only policy locks out the very service the collection exists for:
+      # `CreateKnowledgeBase` fails with `storage configuration provided is invalid...
+      # server returned 401`, which reads like a credentials problem and is a routing one.
+      #
+      # `SourceServices` is the narrow answer. It is not `AllowFromPublic`: the collection is
+      # still unreachable from the internet, and everything else still arrives through the
+      # endpoint in the private subnets.
       Rules = [
         { ResourceType = "collection", Resource = ["collection/${local.collection}"] },
+      ]
+      AllowFromPublic = false
+      SourceVPCEs     = [aws_opensearchserverless_vpc_endpoint.main.id]
+      SourceServices  = ["bedrock.amazonaws.com"]
+    },
+    {
+      # The dashboard rule takes no `SourceServices` — nothing but a human opens it, and a
+      # human is on the VPC side or nowhere.
+      Rules = [
         { ResourceType = "dashboard", Resource = ["collection/${local.collection}"] },
       ]
       AllowFromPublic = false
@@ -111,7 +128,11 @@ resource "aws_opensearchserverless_access_policy" "data" {
           Permission   = ["aoss:*"]
         },
       ]
-      Principal = [aws_iam_role.knowledge_base.arn, var.deploy_role_arn]
+      Principal = [
+        aws_iam_role.knowledge_base.arn,
+        aws_iam_role.indexer.arn,
+        var.deploy_role_arn,
+      ]
     }
   ])
 }
@@ -128,6 +149,117 @@ resource "aws_opensearchserverless_collection" "main" {
   depends_on = [
     aws_opensearchserverless_security_policy.encryption,
     aws_opensearchserverless_security_policy.network,
+  ]
+}
+
+# ── The vector indexes ───────────────────────────────────────────────────────
+#
+# Bedrock does not create them, and says so only by failing `CreateKnowledgeBase` with
+# `storage configuration provided is invalid` — a message that names neither the index nor
+# the fact that it is missing. The console papers over this with "quick create"; Terraform
+# has no such step, so the step is here.
+#
+# It is a Lambda in the private subnets rather than a `null_resource` on the runner, because
+# the collection is reachable only through its VPC endpoint. Creating the index from CI would
+# have meant opening the collection to the internet for one PUT that happens once per estate,
+# and a control relaxed for convenience is a control that stays relaxed.
+
+data "archive_file" "indexer" {
+  type        = "zip"
+  source_dir  = "${path.module}/indexer"
+  output_path = "${path.module}/.build/indexer.zip"
+}
+
+data "aws_iam_policy_document" "indexer_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "indexer" {
+  name               = "${var.project}-indexer"
+  assume_role_policy = data.aws_iam_policy_document.indexer_assume.json
+}
+
+resource "aws_iam_role_policy" "indexer" {
+  name = "create-indexes"
+  role = aws_iam_role.indexer.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        # `aoss:APIAccessAll` is the data-plane grant. It is not enough on its own — the
+        # collection's data access policy names this role too, and both have to agree.
+        Action   = ["aoss:APIAccessAll"]
+        Resource = aws_opensearchserverless_collection.main.arn
+      },
+    ]
+  })
+}
+
+# Logs and the ENI lifecycle come from AWS's own policy rather than a hand-written copy of it.
+# Those actions genuinely need `Resource = "*"` — an ENI has no ARN before it is created — so
+# writing them out means writing a wildcard and then arguing with a scanner about it. Letting
+# AWS own the policy it designed for this is the smaller claim.
+resource "aws_iam_role_policy_attachment" "indexer_vpc" {
+  role       = aws_iam_role.indexer.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+resource "aws_lambda_function" "indexer" {
+  #checkov:skip=CKV_AWS_116: It is invoked synchronously by Terraform during apply. A dead
+  #letter queue catches failed *async* invocations, of which there are none.
+  #checkov:skip=CKV_AWS_272: Code signing needs a signing profile this estate would create and
+  #destroy alongside the function it signs.
+  #checkov:skip=CKV_AWS_50: X-Ray on a function that runs twice in an estate's life buys a
+  #trace nobody opens.
+  function_name    = "${var.project}-indexer"
+  role             = aws_iam_role.indexer.arn
+  runtime          = "python3.12"
+  handler          = "indexer.handler"
+  filename         = data.archive_file.indexer.output_path
+  source_code_hash = data.archive_file.indexer.output_base64sha256
+  # Long, because it waits for a fresh collection's data plane to accept writes and then for
+  # the new index to become visible to Bedrock. Both are real waits, not padding.
+  timeout                        = 300
+  reserved_concurrent_executions = 1
+
+  # No `environment` block. The one value it would carry — the embedding dimension — travels
+  # in the invocation payload instead, where it belongs: it describes the index being built,
+  # not the function building it.
+
+  vpc_config {
+    subnet_ids         = split(",", local.foundation.private_subnet_ids)
+    security_group_ids = [local.foundation.endpoint_security_group_id]
+  }
+}
+
+resource "aws_lambda_invocation" "indexes" {
+  function_name = aws_lambda_function.indexer.function_name
+
+  input = jsonencode({
+    endpoint = aws_opensearchserverless_collection.main.collection_endpoint
+    indexes = [
+      for name in ["evidence", "regulatory"] : {
+        name           = "${var.project}-${name}"
+        vector_field   = "embedding"
+        text_field     = "text"
+        metadata_field = "metadata"
+        dimension      = var.embedding_dimension
+      }
+    ]
+  })
+
+  depends_on = [
+    aws_opensearchserverless_access_policy.data,
+    aws_iam_role_policy.indexer,
+    aws_iam_role_policy_attachment.indexer_vpc,
   ]
 }
 
@@ -195,7 +327,7 @@ resource "aws_bedrockagent_knowledge_base" "evidence" {
     type = "OPENSEARCH_SERVERLESS"
     opensearch_serverless_configuration {
       collection_arn    = aws_opensearchserverless_collection.main.arn
-      vector_index_name = "attestor-evidence"
+      vector_index_name = "${var.project}-evidence"
       field_mapping {
         vector_field   = "embedding"
         text_field     = "text"
@@ -203,6 +335,10 @@ resource "aws_bedrockagent_knowledge_base" "evidence" {
       }
     }
   }
+
+  # The index has to exist before this resource is created, and Bedrock reports its absence
+  # as a malformed storage configuration rather than as a missing index.
+  depends_on = [aws_lambda_invocation.indexes]
 }
 
 resource "aws_bedrockagent_knowledge_base" "regulatory" {
@@ -220,7 +356,7 @@ resource "aws_bedrockagent_knowledge_base" "regulatory" {
     type = "OPENSEARCH_SERVERLESS"
     opensearch_serverless_configuration {
       collection_arn    = aws_opensearchserverless_collection.main.arn
-      vector_index_name = "attestor-regulatory"
+      vector_index_name = "${var.project}-regulatory"
       field_mapping {
         vector_field   = "embedding"
         text_field     = "text"
@@ -228,6 +364,10 @@ resource "aws_bedrockagent_knowledge_base" "regulatory" {
       }
     }
   }
+
+  # The index has to exist before this resource is created, and Bedrock reports its absence
+  # as a malformed storage configuration rather than as a missing index.
+  depends_on = [aws_lambda_invocation.indexes]
 }
 
 # Tenant corpora are separate data sources into one index, separated by metadata rather than
