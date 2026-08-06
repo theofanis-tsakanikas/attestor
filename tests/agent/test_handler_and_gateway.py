@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from tests.conftest import claims_for
 
 from attestor.agent import gateway, handler
 from attestor.agent.tools import SPECS, Denied, Toolbox
@@ -161,7 +160,7 @@ def test_a_reporter_cannot_draft_an_override_request(
 # ── The handler ──────────────────────────────────────────────────────────────
 
 
-def test_an_argument_naming_a_scope_is_refused() -> None:
+def test_an_argument_naming_a_scope_is_refused(claims_for) -> None:
     """Refused rather than ignored: ignoring it makes the attempt invisible in a log."""
     response = handler.invoke(
         {
@@ -176,7 +175,7 @@ def test_an_argument_naming_a_scope_is_refused() -> None:
     assert "name a scope" in response["body"]["error"]
 
 
-def test_an_unknown_tool_is_refused() -> None:
+def test_an_unknown_tool_is_refused(claims_for) -> None:
     response = handler.invoke(
         {
             "tool": "drop_everything",
@@ -188,7 +187,7 @@ def test_an_unknown_tool_is_refused() -> None:
     assert response["statusCode"] == 400
 
 
-def test_an_internal_error_does_not_leak_its_message() -> None:
+def test_an_internal_error_does_not_leak_its_message(claims_for) -> None:
     """An error message is an excellent map of the system for whoever provoked it."""
     response = handler.invoke(
         {
@@ -299,7 +298,7 @@ def test_no_tool_takes_a_period_argument() -> None:
         assert not {"period", "period_start", "period_end"} & set(spec.parameters)
 
 
-def test_an_argument_outside_the_schema_is_a_400_not_a_500() -> None:
+def test_an_argument_outside_the_schema_is_a_400_not_a_500(claims_for) -> None:
     response = handler.invoke(
         {
             "tool": "resolve_datapoint",
@@ -313,7 +312,7 @@ def test_an_argument_outside_the_schema_is_a_400_not_a_500() -> None:
     assert "does not accept" in response["body"]["error"]
 
 
-def test_a_missing_required_argument_is_a_400() -> None:
+def test_a_missing_required_argument_is_a_400(claims_for) -> None:
     response = handler.invoke(
         {
             "tool": "resolve_datapoint",
@@ -327,7 +326,7 @@ def test_a_missing_required_argument_is_a_400() -> None:
     assert "requires argument" in response["body"]["error"]
 
 
-def test_a_token_from_another_tenant_is_403(repo_root: Path) -> None:
+def test_a_token_from_another_tenant_is_403(repo_root: Path, claims_for) -> None:
     """The tenant id is caller-supplied; the token is what says which one it may name."""
     response = handler.invoke(
         {

@@ -96,3 +96,19 @@ def test_boto3_is_never_imported_at_module_scope() -> None:
             if re.match(r"^import boto3|^from boto3", line):
                 offenders.append(f"{path.relative_to(ROOT)}:{number}")
     assert not offenders, offenders
+
+
+def test_no_test_imports_the_suite_as_a_package() -> None:
+    """`from tests.conftest import ...` needs the repository root on `sys.path`.
+
+    An editable install happens to arrange that on a developer's machine; a clean checkout
+    does not. So the suite passed locally, failed collection in CI, and the difference was
+    invisible from either side — which is exactly the failure this file exists to catch.
+    Share helpers through a fixture; `conftest.py` is loaded by pytest, not imported.
+    """
+    offenders = []
+    for path in (ROOT / "tests").rglob("*.py"):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.match(r"^\s*(?:from tests[. ]|import tests\b)", line):
+                offenders.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+    assert not offenders, offenders

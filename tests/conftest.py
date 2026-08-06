@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from attestor.policy.tenants import TenantRegistry
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def claims_for(tenant_id: str, group: str, *, subject: str = "user-1") -> dict:
+def _claims_for(tenant_id: str, group: str, *, subject: str = "user-1") -> dict:
     """A well-formed token for a tenant, built from that tenant's own registry entry.
 
     Tests construct claims through this rather than by hand so that adding a claim the
@@ -25,6 +26,18 @@ def claims_for(tenant_id: str, group: str, *, subject: str = "user-1") -> dict:
         "aud": tenant.identity.audience,
         tenant.identity.groups_claim: [group],
     }
+
+
+@pytest.fixture(scope="session")
+def claims_for() -> Callable[..., dict]:
+    """`_claims_for`, reached the way pytest intends.
+
+    Handed over as a fixture rather than imported. `from tests.conftest import ...` needs the
+    repository root on `sys.path`, which an editable install happens to arrange on a developer's
+    machine and a clean checkout does not — so the suite passed locally and failed collection in
+    CI, which is the worst place for the difference to show up.
+    """
+    return _claims_for
 
 
 @pytest.fixture(scope="session")
