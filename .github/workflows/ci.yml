@@ -160,6 +160,11 @@ jobs:
         run: checkov -d infra --compact --quiet
       - name: the container build context is complete
         run: python scripts/check_docker_context.py
+      - name: the deployed Cedar policies are the ones the evaluator loads
+        # `infra/agent` splits the .cedar files with a regex because AgentCore takes one
+        # policy per resource. A policy that regex misses is a forbid the estate never
+        # enforces while claim 2 stays green.
+        run: python scripts/check_cedar_split.py
       - name: every AgentCore name is one AgentCore accepts
         # Provider attribute validators run in the plan phase, and a plan needs credentials.
         # Two deploys died fifteen minutes in on a hyphen this would have caught for free.

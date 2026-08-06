@@ -62,6 +62,66 @@ FILESET = re.compile(r'fileset\(\s*"(.+?)"\s*,\s*"(.+?)"\s*\)')
 TOSET_VAR = re.compile(r"toset\(\s*var\.(\w+)\s*\)")
 
 
+def _from_fileset(for_each: str) -> list[str] | None:
+    """`fileset("<dir>", "<glob>")` — the real files on disk."""
+    match = FILESET.search(for_each)
+    if not match:
+        return None
+    directory = ROOT / re.sub(r"^\$\{path\.root\}/\.\./\.\./", "", match.group(1))
+    if not directory.is_dir():
+        return []
+    return sorted(path.name for path in directory.glob(match.group(2)))
+
+
+def _from_variable(for_each: str) -> list[str] | None:
+    """`toset(var.<name>)` — the variable's declared default."""
+    match = TOSET_VAR.search(for_each)
+    if not match:
+        return None
+    declared = (ROOT / "infra" / "agent" / "variables.tf").read_text(encoding="utf-8")
+    block = re.search(
+        rf'variable\s+"{match.group(1)}"\s*\{{(.+?)^\}}', declared, re.DOTALL | re.MULTILINE
+    )
+    if not block:
+        return []
+    default = re.search(r"default\s*=\s*\[(.+?)\]", block.group(1), re.DOTALL)
+    return re.findall(r'"([^"]+)"', default.group(1)) if default else []
+
+
+def _from_cedar_local(for_each: str) -> list[str] | None:
+    """`local.cedar_policies` — the map the layer builds from the `.cedar` files.
+
+    Its keys are the AgentCore policy names. Taken from `check_cedar_split`, which already
+    derives them from the layer's own regex; deriving them a second time here would be exactly
+    the duplication that file exists to catch.
+    """
+    if for_each.strip() != "local.cedar_policies":
+        return None
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from check_cedar_split import extract  # noqa: PLC0415 - after sys.path is arranged
+
+    return sorted(extract()[0])
+
+
+def _from_resource(for_each: str, text: str, depth: int) -> list[str] | None:
+    """`aws_cognito_user_pool.tenant` — one resource iterating another's instances.
+
+    Followed rather than given up on, because the alternative is a gateway name nobody checks.
+    """
+    reference = re.fullmatch(r"(\w+)\.(\w+)", for_each.strip())
+    if not reference or depth >= MAX_FOR_EACH_HOPS:
+        return None
+    block = re.search(
+        rf'resource\s+"{reference.group(1)}"\s+"{reference.group(2)}"\s*\{{(.+?)^\}}',
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+    if not block:
+        return None
+    inner = FOR_EACH.search(block.group(1))
+    return iteration_values(inner.group(1), text, depth + 1) if inner else None
+
+
 def iteration_values(for_each: str | None, text: str, depth: int = 0) -> list[str]:
     """What `each.key` and `each.value` will actually be.
 
@@ -69,42 +129,21 @@ def iteration_values(for_each: str | None, text: str, depth: int = 0) -> list[st
     `replace(trimsuffix(each.value, ".cedar"), "_", "-")` — the exact expression that broke a
     deploy — because a name with no underscore in it survives a rule about underscores. A
     check fed convenient inputs is a check that agrees with you.
+
+    An unrecognised `for_each` yields nothing, and the caller reports that as a name left
+    unchecked rather than as a name that passed.
     """
     if not for_each:
         return [""]
-
-    fileset = FILESET.search(for_each)
-    if fileset:
-        directory = ROOT / re.sub(r"^\$\{path\.root\}/\.\./\.\./", "", fileset.group(1))
-        if directory.is_dir():
-            return sorted(path.name for path in directory.glob(fileset.group(2)))
-        return []
-
-    variable = TOSET_VAR.search(for_each)
-    if variable:
-        declared = (ROOT / "infra" / "agent" / "variables.tf").read_text(encoding="utf-8")
-        block = re.search(
-            rf'variable\s+"{variable.group(1)}"\s*\{{(.+?)^\}}', declared, re.DOTALL | re.MULTILINE
-        )
-        if block:
-            default = re.search(r"default\s*=\s*\[(.+?)\]", block.group(1), re.DOTALL)
-            if default:
-                return re.findall(r'"([^"]+)"', default.group(1))
-
-    # `for_each = aws_cognito_user_pool.tenant` — one resource iterating another's instances,
-    # so the keys are whatever that resource iterates. Followed rather than given up on,
-    # because the alternative is a gateway name nobody checks.
-    reference = re.fullmatch(r"(\w+)\.(\w+)", for_each.strip())
-    if reference and depth < MAX_FOR_EACH_HOPS:
-        block = re.search(
-            rf'resource\s+"{reference.group(1)}"\s+"{reference.group(2)}"\s*\{{(.+?)^\}}',
-            text,
-            re.DOTALL | re.MULTILINE,
-        )
-        if block:
-            inner = FOR_EACH.search(block.group(1))
-            if inner:
-                return iteration_values(inner.group(1), text, depth + 1)
+    for resolver in (
+        lambda: _from_cedar_local(for_each),
+        lambda: _from_fileset(for_each),
+        lambda: _from_variable(for_each),
+        lambda: _from_resource(for_each, text, depth),
+    ):
+        values = resolver()
+        if values is not None:
+            return values
     return []
 
 

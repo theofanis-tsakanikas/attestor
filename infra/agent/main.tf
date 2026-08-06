@@ -427,15 +427,45 @@ resource "awscc_bedrockagentcore_policy_engine" "main" {
   description = "Cedar policies from policy/cedar/, evaluated before any tool executes."
 }
 
-resource "awscc_bedrockagentcore_policy" "cedar" {
-  for_each = fileset("${path.root}/../../policy/cedar", "*.cedar")
+# One AgentCore policy per Cedar policy, not per file.
+#
+# `CreatePolicy` takes a single policy statement. Handing it a whole file failed on
+# `unexpected token forbid` — the parser read the first `permit`, reached the end of it, and
+# found another policy where it expected end-of-input. The two files here group by concern
+# (`roles`, `tenant_isolation`) and that grouping is worth keeping in the repository, so the
+# split happens on the way out rather than by scattering seven files across the directory.
+#
+# The `@id` annotation is the seam. It already names each policy for
+# `src/attestor/policy/cedar.py`, it is the thing AgentCore's parser refuses to accept, and it
+# marks exactly where one policy begins — so it becomes the AgentCore policy's name and is
+# removed from the statement in the same step. `scripts/check_cedar_split.py` fails the build
+# if this ever extracts a different set of policies than the offline evaluator loads.
+locals {
+  cedar_dir = "${path.root}/../../policy/cedar"
 
-  # The file name, unchanged. It used to be rewritten to hyphens, which is exactly the
-  # wrong direction: AgentCore policy names take `^[A-Za-z][A-Za-z0-9_]*$`, so
-  # `tenant_isolation.cedar` had to become `tenant-isolation` to be rejected.
-  name             = trimsuffix(each.value, ".cedar")
+  cedar_policies = merge([
+    for filename in fileset(local.cedar_dir, "*.cedar") : {
+      # `(?s)` so `.` spans lines; the terminator is `)` or `}` followed by `;` at the start
+      # of a line, which is how a Cedar policy ends and is not how a semicolon appears in the
+      # prose comments above them.
+      for policy in regexall(
+        "(?s)@id\\(\"([^\"]+)\"\\)\\s*(.*?\n[)}];)",
+        file("${local.cedar_dir}/${filename}")
+      ) : replace(policy[0], "-", "_") => trimspace(policy[1])
+    }
+  ]...)
+}
+
+resource "awscc_bedrockagentcore_policy" "cedar" {
+  for_each = local.cedar_policies
+
+  # The `@id` from the file, with hyphens turned into underscores because AgentCore policy
+  # names take `^[A-Za-z][A-Za-z0-9_]*$`. That annotation was already this policy's name in
+  # `src/attestor/policy/cedar.py`, which reports decisions against it — so the deployed
+  # policy and the offline one answer to the same name, spelled for two different validators.
+  name             = each.key
   policy_engine_id = awscc_bedrockagentcore_policy_engine.main.policy_engine_id
-  description      = "From policy/cedar/${each.value}, annotations stripped"
+  description      = "From policy/cedar/, one Cedar policy per AgentCore policy"
 
   # ACTIVE, not LOG_ONLY. A policy engine in log-only mode is a record of the decisions it
   # would have made, and the whole argument for deciding authorization before execution is
@@ -448,17 +478,7 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
 
   definition = {
     cedar = {
-      # `@id("...")` annotations are stripped. AgentCore's Cedar parser rejects them outright
-      # — `unexpected token @` — and they are ours, not Cedar's: `src/attestor/policy/cedar.py`
-      # reads them so a decision can be reported against a named policy instead of an index.
-      # Removing them changes nothing about who is permitted to do what, which is why this is
-      # a strip and not a rewrite; the effect and the reason are both recorded here rather
-      # than left as a difference between the file and the deployed policy.
-      statement = trimspace(replace(
-        file("${path.root}/../../policy/cedar/${each.value}"),
-        "/@id\\(\"[^\"]*\"\\)\\s*/",
-        ""
-      ))
+      statement = each.value
     }
   }
 }
@@ -707,6 +727,22 @@ resource "aws_iam_role_policy" "gateway" {
         Effect   = "Allow"
         Action   = ["lambda:InvokeFunction"]
         Resource = aws_lambda_function.tools.arn
+      },
+      {
+        # The gateway reads the policy engine with *its own* role, at create time, before it
+        # has ever served a request — `Access denied while calling GetPolicyEngine ... with
+        # Gateway role`. Without this the gateway does not come up at all, so the failure is
+        # not a policy that silently fails open; it is a gateway that never exists.
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:GetPolicyEngine",
+          "bedrock-agentcore:ListPolicies",
+          "bedrock-agentcore:GetPolicy",
+        ]
+        Resource = [
+          awscc_bedrockagentcore_policy_engine.main.policy_engine_arn,
+          "${awscc_bedrockagentcore_policy_engine.main.policy_engine_arn}/*",
+        ]
       }
     ]
   })
