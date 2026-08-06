@@ -8,15 +8,20 @@ OpenSearch Serverless is already standing and metered. That happened twice in a 
 resources, because the second was behind the first in the dependency graph and Terraform
 never walked far enough to complain about it.
 
-The rule is `^[A-Za-z][A-Za-z0-9_]*$` — letters, digits and underscores, starting with a
-letter. Not every AgentCore resource enforces it (Gateway and Workload Identity accept
-hyphens), and this check does not care: underscores are valid everywhere the rule is looser,
-so holding the whole layer to the strictest of them costs nothing and removes the question.
+There is no single rule, and assuming there was cost another deploy. Policy Engine and Policy
+require `^[A-Za-z][A-Za-z0-9_]*$` — underscores, never hyphens. Gateway requires
+`^([0-9a-zA-Z][-]?){1,100}$` — hyphens, never underscores. **No name satisfies both.** So the
+table below is per resource kind, and a house style for the layer is not available.
 
-Hard-coding a pattern AWS owns is a real cost, and the alternative was worse. The provider
+Each entry says where its pattern came from. `verified` means the provider rejected a real
+name and printed that regex; `inferred` means names of that shape were accepted in a plan,
+which shows the pattern admits them and not where its boundary is. A resource kind with no
+entry is reported as unchecked rather than assumed fine — adding one should mean looking the
+rule up, not discovering it fifteen minutes into a deploy.
+
+Hard-coding patterns AWS owns is a real cost, and the alternatives were worse. The provider
 schema Terraform exposes carries types and not validators, and reading the CloudFormation
-resource schema needs the credentials this check exists to avoid. So it is written down, with
-the failure that produced it, rather than discovered again.
+resource schema needs the credentials this check exists to avoid.
 """
 
 from __future__ import annotations
@@ -29,7 +34,20 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENT = ROOT / "infra" / "agent" / "main.tf"
 PROJECT = "attestor"
 
-ACCEPTED = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+#: resource kind → (pattern AgentCore enforces, where that pattern came from).
+#:
+#: `verified` entries are quoted from the provider's own rejection message. `inferred` entries
+#: are patterns consistent with names that were accepted in a plan — enough to catch a name
+#: shaped like the ones that failed, not enough to claim the boundary is exactly here.
+PATTERNS: dict[str, tuple[str, str]] = {
+    "awscc_bedrockagentcore_policy_engine": (r"^[A-Za-z][A-Za-z0-9_]*$", "verified"),
+    "awscc_bedrockagentcore_policy": (r"^[A-Za-z][A-Za-z0-9_]*$", "verified"),
+    "awscc_bedrockagentcore_gateway": (r"^([0-9a-zA-Z][-]?){1,100}$", "verified"),
+    "awscc_bedrockagentcore_memory": (r"^[A-Za-z][A-Za-z0-9_]*$", "inferred"),
+    "awscc_bedrockagentcore_runtime": (r"^[A-Za-z][A-Za-z0-9_]*$", "inferred"),
+    "awscc_bedrockagentcore_runtime_endpoint": (r"^[A-Za-z][A-Za-z0-9_]*$", "inferred"),
+    "awscc_bedrockagentcore_workload_identity": (r"^[A-Za-z][A-Za-z0-9_-]*$", "inferred"),
+}
 
 #: How far a `for_each` may point at another resource's `for_each` before we stop
 #: following. Nothing here is more than one hop; the bound exists so a cycle in the
@@ -162,6 +180,14 @@ def main() -> int:
 
     checked = 0
     for kind, label, expression, for_each in named:
+        if kind not in PATTERNS:
+            problems.append(
+                f"{kind}.{label}: no pattern recorded for this resource kind, so its name is "
+                "unchecked. Look the rule up and add it to PATTERNS with its provenance"
+            )
+            continue
+        pattern, provenance = PATTERNS[kind]
+        accepted = re.compile(pattern)
         values = iteration_values(for_each, text)
         if not values:
             problems.append(
@@ -177,9 +203,9 @@ def main() -> int:
                     f"{kind}.{label}: cannot resolve {expression!r} to a literal. Extend "
                     "`resolve()` rather than leaving the name unchecked"
                 )
-            elif not ACCEPTED.match(resolved):
+            elif not accepted.match(resolved):
                 problems.append(
-                    f"{kind}.{label}: {resolved!r} does not match {ACCEPTED.pattern}. "
+                    f"{kind}.{label}: {resolved!r} does not match {pattern} ({provenance}). "
                     "AgentCore rejects it at apply, which `terraform validate` cannot see"
                 )
 

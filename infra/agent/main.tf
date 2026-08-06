@@ -442,7 +442,11 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
 resource "awscc_bedrockagentcore_gateway" "tenant" {
   for_each = aws_cognito_user_pool.tenant
 
-  name        = "${var.project}_gateway_${each.key}"
+  # Hyphens here, underscores three resources up. Gateway takes
+  # `^([0-9a-zA-Z][-]?){1,100}$` and Policy Engine takes `^[A-Za-z][A-Za-z0-9_]*$`, and the
+  # two rules exclude each other — there is no name that satisfies both. Hence the per-kind
+  # table in `scripts/check_agentcore_names.py` rather than one house style.
+  name        = "${var.project}-gateway-${each.key}"
   role_arn    = aws_iam_role.gateway.arn
   description = "Attestor tools as MCP for ${each.key}. Tenant comes from the token."
 
