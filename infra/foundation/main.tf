@@ -94,6 +94,12 @@ data "aws_iam_policy_document" "data_key" {
         "s3.amazonaws.com",
         "sns.amazonaws.com",
         "athena.amazonaws.com",
+        # AgentCore Memory encrypts a tenant's conversation history with this key. Unlike the
+        # gateway — which encrypts under the role we hand it, and is therefore covered by an
+        # identity policy — Memory holds data across sessions on its own, so the key has to
+        # name the service. The alternative is an AWS-owned key, which would put a tenant's
+        # transcripts outside the one key this estate's destroy actually deletes.
+        "bedrock-agentcore.amazonaws.com",
       ]
     }
   }

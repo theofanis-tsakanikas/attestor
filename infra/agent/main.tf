@@ -793,6 +793,16 @@ resource "aws_iam_role_policy" "gateway" {
           # AgentCore can assume, for gateways only this layer creates.
           "arn:aws:bedrock-agentcore:${var.region}:${data.aws_caller_identity.current.account_id}:gateway/*",
         ]
+      },
+      {
+        # The gateway encrypts its target configuration with the estate's key, under its own
+        # role, at create time — `GenesisMCPTargetTargetEncryption`. The tools role and the
+        # runtime role were already granted this; the gateway was the one that had no reason
+        # to touch a key until it turned out to store something.
+        Sid      = "GatewayEncryption"
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Decrypt", "kms:DescribeKey"]
+        Resource = local.foundation.kms_key_arn
       }
     ]
   })
