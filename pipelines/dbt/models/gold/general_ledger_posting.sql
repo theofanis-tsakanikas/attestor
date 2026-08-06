@@ -1,4 +1,4 @@
--- Metered electricity, one row per site per reading date.
+-- Revenue postings. `period_status` is what makes an open period a reason to abstain.
 --
 -- The table the resolver queries read. `dq_status` is decided here and nowhere else, so
 -- every query can say `dq_status = 'clean'` and mean the same thing.
@@ -11,19 +11,20 @@
 {{ config(materialized='table', file_format='iceberg') }}
 
 WITH quarantined AS (
-    {{ quarantined_keys('stg_electricity_consumption') }}
+    {{ quarantined_keys('stg_general_ledger_posting') }}
 )
 
 SELECT
     s.tenant_id,
-    s.reading_date,
-    s.kwh,
-    s.reading_type,
+    s.posting_date,
+    s.account_code,
+    s.amount_eur,
+    s.period_status,
     CASE
         WHEN q.row_key IS NOT NULL THEN 'quarantined'
         WHEN s.upstream_dq_status <> 'clean' THEN 'quarantined'
         ELSE 'clean'
     END AS dq_status
-FROM {{ ref('stg_electricity_consumption') }} AS s
+FROM {{ ref('stg_general_ledger_posting') }} AS s
 LEFT JOIN quarantined AS q
-    ON q.row_key = {{ row_key(['s.tenant_id', 's.reading_date', 's.kwh']) }}
+    ON q.row_key = {{ row_key(['s.tenant_id', 's.posting_date', 's.account_code']) }}

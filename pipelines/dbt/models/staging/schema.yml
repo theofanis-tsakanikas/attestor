@@ -1,29 +1,41 @@
 version: 2
 
+# The eleven tables the seeded lake actually contains, named as the Glue catalogue names them.
+#
+# They used to be seven invented names — `electricity_invoice`, `fuel_transaction`,
+# `general_ledger` — and not one of them has ever existed. `dbt parse` cannot tell: parsing
+# resolves `source()` against this file rather than against a catalogue, so the project
+# compiled cleanly for as long as nobody ran it against Athena. The first live `dbt build`
+# failed on `Table 'awsdatacatalog.attestor_raw.electricity_invoice' does not exist`.
 sources:
   - name: raw
     schema: attestor_raw
+    description: >-
+      Written by ingestion and by pipelines/seed, partitioned by tenant_id, read only by the
+      staging models below. Every column arrives as a string except where the seed emits a
+      native type; casting is the staging layer's whole job.
     tables:
-      - name: electricity_invoice
-      - name: fuel_transaction
-      - name: general_ledger
-      - name: supplier_attestation
-      - name: model_evaluation_run
-      - name: risk_register_entry
-      - name: incident_report
+      - name: electricity_consumption
+      - name: meter_interval_reading
+      - name: ghg_scope_1_activity
+      - name: ghg_scope_3_activity
+      - name: procurement_fuel_spend
+      - name: general_ledger_posting
+      - name: financial_statement_extract
+      - name: model_evaluation_prediction
+      - name: model_evaluation_confusion
+      - name: risk_register
+      - name: incident_log
 
 models:
-  - name: stg_electricity
+  - name: stg_electricity_consumption
     description: >-
-      Metered electricity, one row per reading. The tests below are the data contract, and a
-      row that fails one is quarantined with the rule's name rather than dropped.
+      Metered electricity, one row per site per reading date. The tests below are the data
+      contract, and a row that fails one is quarantined with the rule's name rather than
+      dropped.
     columns:
       - name: tenant_id
-        tests:
-          - not_null
-          - relationships:
-              to: ref('dim_tenant')
-              field: tenant_id
+        tests: [not_null]
       - name: kwh
         tests:
           # Negative consumption is a meter rollover or a credit note, and both are real
@@ -36,29 +48,120 @@ models:
           - accepted_values:
               values: ["actual", "estimated"]
       - name: reading_date
-        tests:
-          - not_null
+        tests: [not_null]
 
-  - name: stg_fuel
+  - name: stg_meter_interval_reading
+    description: The independent meter feed the E1-5 figure is cross-checked against.
     columns:
-      - name: litres
+      - name: tenant_id
+        tests: [not_null]
+      - name: kwh
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+  - name: stg_ghg_scope_1_activity
+    description: Direct emissions, scoped by consolidation boundary.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: co2e_tonnes
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: consolidation_boundary
+        tests:
+          # The boundary decides which rows belong to the undertaking at all. An unrecognised
+          # value is not a rounding difference; it is a row nobody can place.
+          - accepted_values:
+              values: ["operational_control", "financial_control", "equity_share"]
+
+  - name: stg_ghg_scope_3_activity
+    description: Value-chain emissions, by category and estimation method.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: co2e_tonnes
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: estimation_method
+        tests:
+          - accepted_values:
+              values: ["supplier_specific", "spend_based", "average_data", "hybrid"]
+
+  - name: stg_procurement_fuel_spend
+    description: Fuel invoices — behind the Scope 1 cross-check, never behind the figure.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: net_amount_eur
         tests:
           - dbt_utils.accepted_range:
               min_value: 0
               inclusive: true
       - name: fuel_type
-        tests:
-          - not_null
-          - relationships:
-              to: ref('ref_fuel_emission_factor')
-              field: fuel_type
+        tests: [not_null]
 
-  - name: stg_ledger
+  - name: stg_general_ledger_posting
+    description: Revenue postings. `period_status` is what makes an open period an abstention.
     columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: account_code
+        tests: [not_null]
       - name: period_status
         tests:
           - accepted_values:
               values: ["open", "closed"]
-      - name: account_code
+
+  - name: stg_financial_statement_extract
+    description: The filed statement the ledger total is reconciled against.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: statement_status
         tests:
-          - not_null
+          - accepted_values:
+              values: ["filed", "draft"]
+
+  - name: stg_model_evaluation_prediction
+    description: One row per evaluated example, held-out flag included.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: example_id
+        tests: [not_null]
+
+  - name: stg_model_evaluation_confusion
+    description: The confusion matrix the accuracy figure is cross-checked against.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: count
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+  - name: stg_risk_register
+    description: Annex IV residual risks.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: residual_rating
+        tests:
+          - accepted_values:
+              values: ["low", "medium", "high"]
+
+  - name: stg_incident_log
+    description: >-
+      Serious incidents. Empty in the seeded lake on purpose — this is the table that makes
+      claim 5 real, because a datapoint with no evidence must be abstained from rather than
+      answered with a zero.
+    columns:
+      - name: tenant_id
+        tests: [not_null]

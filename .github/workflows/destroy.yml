@@ -143,27 +143,56 @@ jobs:
         # waiting out a failure.
         run: |
           set -euo pipefail
-          estate() {
-            aws resourcegroupstaggingapi get-resources \
-              --tag-filters Key=attestor:layer,Values=foundation,data,knowledge,agent \
-              --query 'ResourceTagMappingList[].ResourceARN' --output text
-          }
-          for attempt in $(seq 1 12); do
-            survivors=$(estate)
-            count=$(printf '%s' "$survivors" | wc -w | tr -d ' ')
-            [ "$count" = "0" ] && break
-            echo "attempt $attempt: $count still indexed; waiting for the tag index to settle"
-            sleep 30
+          failed=0
+
+          # 1. Terraform's own account of itself. Authoritative and immediate: a layer with an
+          #    empty state manages nothing, and a resource it failed to delete stays in state.
+          for layer in agent knowledge data foundation; do
+            terraform -chdir="infra/$layer" init \
+              -backend-config="bucket=$TF_STATE_BUCKET" \
+              -backend-config="region=$AWS_REGION" \
+              -backend-config="dynamodb_table=$TF_LOCK_TABLE" \
+              -backend-config="encrypt=true" >/dev/null 2>&1 || true
+            remaining=$(terraform -chdir="infra/$layer" state list 2>/dev/null | wc -l | tr -d ' ')
+            echo "  $layer: $remaining resource(s) in state"
+            [ "$remaining" = "0" ] || failed=1
           done
-          if [ "$count" != "0" ]; then
-            echo "the estate did not fully go down" >&2
-            printf '%s\n' $survivors >&2
-            exit 1
-          fi
-          echo "### Estate down — no foundation, data, knowledge or agent resources remain" \
-            >> "$GITHUB_STEP_SUMMARY"
-          echo "Bootstrap is untouched by design: state, locking and the deploy role." \
-            >> "$GITHUB_STEP_SUMMARY"
+
+          # 2. The three line items that would actually cost money if Terraform ever lost track
+          #    of one. Asked of the services that own them, because those answer with the truth.
+          collections=$(aws opensearchserverless list-collections \
+            --query 'collectionSummaries[?starts_with(name, `attestor`)].name' --output text)
+          nats=$(aws ec2 describe-nat-gateways \
+            --filter Name=state,Values=available,pending \
+            --query 'NatGateways[].NatGatewayId' --output text)
+          endpoints=$(aws ec2 describe-vpc-endpoints \
+            --query 'VpcEndpoints[?VpcEndpointType==`Interface`].VpcEndpointId' --output text)
+          for label in "collections:$collections" "nat gateways:$nats" "vpc endpoints:$endpoints"; do
+            values="${label#*:}"
+            if [ -n "$values" ]; then
+              echo "still standing — ${label%%:*}: $values" >&2
+              failed=1
+            fi
+          done
+
+          # 3. The tag index, for information only. It is an index rather than the truth and it
+          #    keeps deleted resources for hours: after a clean teardown it listed four Cognito
+          #    pools that `list-user-pools` could not find and a NAT gateway already in state
+          #    `deleted`. Polling it for six minutes changed nothing, which is how this stopped
+          #    being the check and became a footnote to it. Failing on a lagging index teaches
+          #    people to ignore a red teardown, and that is worse than not looking.
+          indexed=$(aws resourcegroupstaggingapi get-resources \
+            --tag-filters Key=attestor:layer,Values=foundation,data,knowledge,agent \
+            --query 'length(ResourceTagMappingList)' --output text)
+          echo "  tag index still lists $indexed (lags by hours; not a verdict)"
+
+          [ "$failed" = "0" ] || { echo "the estate did not fully go down" >&2; exit 1; }
+          {
+            echo "### Estate down"
+            echo "Every layer's Terraform state is empty, and no OpenSearch collection, NAT"
+            echo "gateway or interface endpoint remains. Bootstrap is untouched by design:"
+            echo "state, locking and the deploy role outlive every estate."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # infra/bootstrap is deliberately untouched: it holds the state and the identity this
       # workflow just used, and destroying it would leave no way to stand anything up again.

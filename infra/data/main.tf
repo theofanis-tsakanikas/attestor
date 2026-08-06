@@ -67,62 +67,26 @@ resource "aws_glue_catalog_database" "ref" {
   description = "Reference data: emission factors, chart of accounts, category screening."
 }
 
-# The tables the committed queries read. Declared rather than crawled: a crawler infers a
-# schema from whatever happens to be in the bucket, and a disclosure should not depend on
-# what a crawler thought last Tuesday.
+# The gold tables **the application writes**. That is the whole of what belongs here.
+#
+# Eleven analytical tables used to be declared alongside these, and none of them had a
+# producer: `pipelines/dbt` had five models where the queries read eleven tables. So the
+# catalogue described a lakehouse that existed only in Glue, `dbt build` failed on the first
+# live run, and every offline check stayed green because the resolver replays `recordings/`
+# and never touches gold at all.
+#
+# They are dbt's now, and declared once rather than twice. Two owners for one table is how a
+# schema ends up correct in Terraform and different in Athena, with each side pointing at the
+# other. `report_run` and `report_datapoint` stay because the report writer inserts into them
+# directly — no dbt model produces them, so nothing else would create them.
+#
+# Destroy is unaffected: dropping `aws_glue_catalog_database.gold` takes every table in it,
+# including the ones dbt made, and the teardown empties the bucket underneath.
+#
+# Declared rather than crawled: a crawler infers a schema from whatever happens to be in the
+# bucket, and a disclosure should not depend on what a crawler thought last Tuesday.
 resource "aws_glue_catalog_table" "gold" {
   for_each = {
-    ghg_scope_1_activity = [
-      { name = "tenant_id", type = "string" },
-      { name = "activity_date", type = "date" },
-      { name = "co2e_tonnes", type = "decimal(18,4)" },
-      { name = "consolidation_boundary", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
-    ghg_scope_3_activity = [
-      { name = "tenant_id", type = "string" },
-      { name = "activity_date", type = "date" },
-      { name = "category", type = "string" },
-      { name = "co2e_tonnes", type = "decimal(18,4)" },
-      { name = "estimation_method", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
-    electricity_consumption = [
-      { name = "tenant_id", type = "string" },
-      { name = "reading_date", type = "date" },
-      { name = "kwh", type = "decimal(18,4)" },
-      { name = "reading_type", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
-    meter_interval_reading = [
-      { name = "tenant_id", type = "string" },
-      { name = "interval_start", type = "timestamp" },
-      { name = "kwh", type = "decimal(18,6)" },
-      { name = "dq_status", type = "string" },
-    ]
-    general_ledger_posting = [
-      { name = "tenant_id", type = "string" },
-      { name = "posting_date", type = "date" },
-      { name = "account_code", type = "string" },
-      { name = "amount_eur", type = "decimal(18,2)" },
-      { name = "period_status", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
-    financial_statement_extract = [
-      { name = "tenant_id", type = "string" },
-      { name = "period_start", type = "date" },
-      { name = "period_end", type = "date" },
-      { name = "net_revenue_eur", type = "decimal(18,2)" },
-      { name = "statement_status", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
-    procurement_fuel_spend = [
-      { name = "tenant_id", type = "string" },
-      { name = "invoice_date", type = "date" },
-      { name = "fuel_type", type = "string" },
-      { name = "net_amount_eur", type = "decimal(18,2)" },
-      { name = "dq_status", type = "string" },
-    ]
     # One row per report run, and one per datapoint within it. This is what the analytics
     # views read, and it is the only place a trend across periods can be asked about — a
     # per-run JSON beside the artefacts answers "what happened", never "is it getting worse".
@@ -160,48 +124,9 @@ resource "aws_glue_catalog_table" "gold" {
       { name = "dq_status", type = "string" },
     ]
     # The AI Act vertical's sources.
-    model_evaluation_prediction = [
-      { name = "tenant_id", type = "string" },
-      { name = "evaluated_at", type = "date" },
-      { name = "example_id", type = "string" },
-      { name = "predicted_label", type = "string" },
-      { name = "true_label", type = "string" },
-      { name = "is_held_out", type = "boolean" },
-      { name = "dq_status", type = "string" },
-    ]
-    model_evaluation_confusion = [
-      { name = "tenant_id", type = "string" },
-      { name = "evaluated_at", type = "date" },
-      { name = "predicted_label", type = "string" },
-      { name = "true_label", type = "string" },
-      { name = "count", type = "bigint" },
-      { name = "dq_status", type = "string" },
-    ]
-    risk_register = [
-      { name = "tenant_id", type = "string" },
-      { name = "assessed_at", type = "date" },
-      { name = "risk_id", type = "string" },
-      { name = "mitigation_status", type = "string" },
-      { name = "residual_rating", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
-    incident_log = [
-      { name = "tenant_id", type = "string" },
-      { name = "occurred_at", type = "date" },
-      { name = "incident_id", type = "string" },
-      { name = "classification", type = "string" },
-      { name = "dq_status", type = "string" },
-    ]
     # Rows that failed a data contract land here rather than being dropped, carrying the rule
     # they violated. A quarantined row is why E_UPSTREAM_QUARANTINE exists, and a figure
     # computed over an unexamined quarantine is a figure computed over missing data.
-    quarantine = [
-      { name = "tenant_id", type = "string" },
-      { name = "source_table", type = "string" },
-      { name = "rule", type = "string" },
-      { name = "payload", type = "string" },
-      { name = "quarantined_at", type = "timestamp" },
-    ]
   }
 
   name          = each.key

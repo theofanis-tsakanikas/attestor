@@ -1,4 +1,4 @@
--- Metered electricity, one row per site per reading date.
+-- Annex IV residual risks. An unmitigated high rating is a disclosure, not a defect.
 --
 -- The table the resolver queries read. `dq_status` is decided here and nowhere else, so
 -- every query can say `dq_status = 'clean'` and mean the same thing.
@@ -11,19 +11,20 @@
 {{ config(materialized='table', file_format='iceberg') }}
 
 WITH quarantined AS (
-    {{ quarantined_keys('stg_electricity_consumption') }}
+    {{ quarantined_keys('stg_risk_register') }}
 )
 
 SELECT
     s.tenant_id,
-    s.reading_date,
-    s.kwh,
-    s.reading_type,
+    s.assessed_at,
+    s.risk_id,
+    s.mitigation_status,
+    s.residual_rating,
     CASE
         WHEN q.row_key IS NOT NULL THEN 'quarantined'
         WHEN s.upstream_dq_status <> 'clean' THEN 'quarantined'
         ELSE 'clean'
     END AS dq_status
-FROM {{ ref('stg_electricity_consumption') }} AS s
+FROM {{ ref('stg_risk_register') }} AS s
 LEFT JOIN quarantined AS q
-    ON q.row_key = {{ row_key(['s.tenant_id', 's.reading_date', 's.kwh']) }}
+    ON q.row_key = {{ row_key(['s.tenant_id', 's.assessed_at', 's.risk_id']) }}

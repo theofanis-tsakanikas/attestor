@@ -1,4 +1,4 @@
--- Metered electricity, one row per site per reading date.
+-- One row per evaluated example. `is_held_out` is what keeps Annex IV accuracy honest.
 --
 -- The table the resolver queries read. `dq_status` is decided here and nowhere else, so
 -- every query can say `dq_status = 'clean'` and mean the same thing.
@@ -11,19 +11,21 @@
 {{ config(materialized='table', file_format='iceberg') }}
 
 WITH quarantined AS (
-    {{ quarantined_keys('stg_electricity_consumption') }}
+    {{ quarantined_keys('stg_model_evaluation_prediction') }}
 )
 
 SELECT
     s.tenant_id,
-    s.reading_date,
-    s.kwh,
-    s.reading_type,
+    s.evaluated_at,
+    s.example_id,
+    s.predicted_label,
+    s.true_label,
+    s.is_held_out,
     CASE
         WHEN q.row_key IS NOT NULL THEN 'quarantined'
         WHEN s.upstream_dq_status <> 'clean' THEN 'quarantined'
         ELSE 'clean'
     END AS dq_status
-FROM {{ ref('stg_electricity_consumption') }} AS s
+FROM {{ ref('stg_model_evaluation_prediction') }} AS s
 LEFT JOIN quarantined AS q
-    ON q.row_key = {{ row_key(['s.tenant_id', 's.reading_date', 's.kwh']) }}
+    ON q.row_key = {{ row_key(['s.tenant_id', 's.evaluated_at', 's.example_id']) }}

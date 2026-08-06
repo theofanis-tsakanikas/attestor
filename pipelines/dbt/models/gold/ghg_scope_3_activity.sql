@@ -1,4 +1,4 @@
--- Metered electricity, one row per site per reading date.
+-- Value-chain emissions by category, with the estimation method kept for the disclosure.
 --
 -- The table the resolver queries read. `dq_status` is decided here and nowhere else, so
 -- every query can say `dq_status = 'clean'` and mean the same thing.
@@ -11,19 +11,20 @@
 {{ config(materialized='table', file_format='iceberg') }}
 
 WITH quarantined AS (
-    {{ quarantined_keys('stg_electricity_consumption') }}
+    {{ quarantined_keys('stg_ghg_scope_3_activity') }}
 )
 
 SELECT
     s.tenant_id,
-    s.reading_date,
-    s.kwh,
-    s.reading_type,
+    s.activity_date,
+    s.category,
+    s.co2e_tonnes,
+    s.estimation_method,
     CASE
         WHEN q.row_key IS NOT NULL THEN 'quarantined'
         WHEN s.upstream_dq_status <> 'clean' THEN 'quarantined'
         ELSE 'clean'
     END AS dq_status
-FROM {{ ref('stg_electricity_consumption') }} AS s
+FROM {{ ref('stg_ghg_scope_3_activity') }} AS s
 LEFT JOIN quarantined AS q
-    ON q.row_key = {{ row_key(['s.tenant_id', 's.reading_date', 's.kwh']) }}
+    ON q.row_key = {{ row_key(['s.tenant_id', 's.activity_date', 's.category']) }}

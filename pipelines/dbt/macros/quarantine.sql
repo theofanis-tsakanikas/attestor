@@ -29,7 +29,19 @@
         `store_failures` gives each test its own table, which is the right storage shape and
         the wrong query shape: the resolver wants a single answer to "was this row
         admissible". This builds that view from the tests that actually ran, so a test added
-        tomorrow is included without anybody editing a list. -#}
+        tomorrow is included without anybody editing a list.
+
+        **This is a skeleton, and saying so is the point.** Every branch below emits
+        `WHERE 1 = 0`, so `all_failures` is created with the right shape and no rows — it
+        names the tests that ran and reports none of their failures. `quarantined_keys`
+        therefore contributes nothing, and a row is marked quarantined in gold only because
+        the ingestion already said so.
+
+        Finishing it means selecting from each audit table rather than declaring it, and that
+        needs a `row_key` on the staging models so a stored failure can be matched back to the
+        row it came from. Until then `E_UPSTREAM_QUARANTINE` rests on the upstream marker
+        alone, which is a narrower claim than the one this repository makes elsewhere — and a
+        narrower claim stated is better than a wider one implied. -#}
     {% if execute %}
         {% set failure_tables = [] %}
         {% for result in results %}
