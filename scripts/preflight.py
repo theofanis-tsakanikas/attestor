@@ -255,6 +255,14 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "AgentCore names",
+        [sys.executable, "scripts/check_agentcore_names.py"],
+        "AgentCore rejects a name with a hyphen where it wants underscores, and "
+        "`terraform validate` cannot see it — those validators run in the plan phase. This "
+        "is the offline stand-in for a plan nobody can run without credentials.",
+    ),
+    Check(
+        "deployability",
         "OIDC subjects",
         [sys.executable, "scripts/check_oidc_subjects.py"],
         "Every subject the deploy role trusts names this repository and one environment, "

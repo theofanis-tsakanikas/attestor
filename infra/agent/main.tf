@@ -397,7 +397,7 @@ resource "aws_cloudwatch_metric_alarm" "denial_spike" {
 # is the log group and metric filters above, with `tenant_id` on every record.
 
 resource "awscc_bedrockagentcore_workload_identity" "agent" {
-  name = "${var.project}-agent"
+  name = "${var.project}_agent"
 }
 
 # The Cedar policies, deployed from the same files the offline evaluator parses.
@@ -412,7 +412,10 @@ resource "awscc_bedrockagentcore_policy_engine" "main" {
 resource "awscc_bedrockagentcore_policy" "cedar" {
   for_each = fileset("${path.root}/../../policy/cedar", "*.cedar")
 
-  name             = replace(trimsuffix(each.value, ".cedar"), "_", "-")
+  # The file name, unchanged. It used to be rewritten to hyphens, which is exactly the
+  # wrong direction: AgentCore policy names take `^[A-Za-z][A-Za-z0-9_]*$`, so
+  # `tenant_isolation.cedar` had to become `tenant-isolation` to be rejected.
+  name             = trimsuffix(each.value, ".cedar")
   policy_engine_id = awscc_bedrockagentcore_policy_engine.main.policy_engine_id
   description      = "Deployed verbatim from policy/cedar/${each.value}"
 
@@ -439,7 +442,7 @@ resource "awscc_bedrockagentcore_policy" "cedar" {
 resource "awscc_bedrockagentcore_gateway" "tenant" {
   for_each = aws_cognito_user_pool.tenant
 
-  name        = "${var.project}-gateway-${each.key}"
+  name        = "${var.project}_gateway_${each.key}"
   role_arn    = aws_iam_role.gateway.arn
   description = "Attestor tools as MCP for ${each.key}. Tenant comes from the token."
 
