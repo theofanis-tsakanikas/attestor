@@ -12,6 +12,7 @@ import datetime as dt
 from pathlib import Path
 
 import pytest
+import yaml
 
 from attestor.agent import narrative
 from attestor.agent.narrative import (
@@ -161,3 +162,27 @@ def test_no_provider_still_refuses_rather_than_inventing(
     outcome = resolver.resolve_all(_context())[TRANSITION_PLAN]
     assert not outcome.is_published
     assert outcome.reason_code == "E_METHOD_UNAVAILABLE"
+
+
+def test_the_captures_name_the_model_they_came_from(repo_root: Path) -> None:
+    """A capture that does not say which model wrote it is a claim about "the model" that
+    survives replacing it.
+
+    The prompt digest already catches a prompt edit. Nothing caught a model change: swap the
+    family and every committed draft replays unchanged while still being presented as what
+    the deployed model produces. `seed_recordings.py --check` closes that, because the model
+    is read from `infra/agent/variables.tf` rather than typed — so changing the default
+    rewrites the file and the check asks for a re-capture.
+    """
+    payload = yaml.safe_load((repo_root / "recordings" / "narratives.yaml").read_text())
+    variables = (repo_root / "infra" / "agent" / "variables.tf").read_text(encoding="utf-8")
+    block = variables.split('variable "reasoning_model"', 1)[1]
+    configured = next(
+        line.split("=", 1)[1].strip().strip('"')
+        for line in block.splitlines()
+        if line.strip().startswith("default")
+    )
+    assert payload["model"] == configured, (
+        "the committed drafts were captured against a different model than infra/agent "
+        "deploys; run `python scripts/seed_recordings.py`"
+    )

@@ -300,3 +300,31 @@ resource "aws_iam_role_policy" "budget_action" {
     ]
   })
 }
+
+# ── What CI needs to know, published rather than transcribed ─────────────────
+#
+# Three of the four values a workflow used to carry as repository configuration are not
+# facts — they are consequences of the names this layer already chose. Transcribing them
+# into GitHub by hand made them look like independent settings, which is how a renamed
+# bucket becomes a deploy that fails on a backend nobody can find.
+#
+# So they are published here and read at run time. What cannot be published is the account
+# id: CI has to know *which* account before it can ask that account anything, and that one
+# stays a repository variable. One irreducible value instead of four transcribed ones.
+resource "aws_ssm_parameter" "published" {
+  #checkov:skip=CKV2_AWS_34: A bucket name, a table name and a role ARN. None is a secret —
+  #the boundary is the OIDC trust policy, which is scoped to one repository and one
+  #environment, not the confidentiality of these strings.
+  #checkov:skip=CKV_AWS_337: Same reason.
+  for_each = {
+    state_bucket    = aws_s3_bucket.state.id
+    lock_table      = aws_dynamodb_table.locks.name
+    deploy_role_arn = aws_iam_role.deploy.arn
+  }
+
+  name        = "/${var.project}/bootstrap/${each.key}"
+  description = "Read by the deploy and destroy workflows once they have assumed the role."
+  type        = "String"
+  value       = each.value
+  tier        = "Standard"
+}

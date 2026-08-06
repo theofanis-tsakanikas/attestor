@@ -32,6 +32,25 @@ from attestor.datapoints.backends import query_digest
 ROOT = Path(__file__).resolve().parents[1]
 RECORDINGS = ROOT / "recordings"
 
+
+def configured_model() -> str:
+    """The model `infra/agent` deploys with, read from the variable's default.
+
+    Read rather than repeated. A capture records what a model wrote, so it has to say which
+    model — and if that were typed here it could drift from the one actually deployed,
+    leaving captures that claim to represent a model nobody is running. Reading it means a
+    change to the default rewrites every capture's `model` field, `--check` sees the
+    difference, and the build asks for a re-capture. Exactly the discipline `query_digest`
+    already gives the SQL.
+    """
+    variables = (ROOT / "infra" / "agent" / "variables.tf").read_text(encoding="utf-8")
+    block = variables.split('variable "reasoning_model"', 1)[1]
+    for line in block.splitlines():
+        if line.strip().startswith("default"):
+            return line.split("=", 1)[1].strip().strip('"')
+    raise SystemExit("cannot read the reasoning_model default from infra/agent/variables.tf")
+
+
 PERIOD = {"period_start": "2026-01-01", "period_end": "2027-01-01"}
 
 # Per tenant: query path -> the recorded answer. `None` means "the query matched no rows",
@@ -405,10 +424,13 @@ def build_narratives() -> dict[str, Any]:
         )
     return {
         "provenance": "synthetic",
+        "model": configured_model(),
         "note": (
             "Drafts captured from a model run and reviewed before commit. Re-captured by "
-            "`python scripts/seed_recordings.py --capture`. Editing a prompt without "
-            "re-capturing makes the replay stale and the resolver refuses it."
+            "`python scripts/seed_recordings.py --capture`. Two things make a replay stale "
+            "and both are caught here rather than at run time: editing a prompt, and "
+            "changing the model. A capture that does not name the model it came from is a "
+            "claim about 'the model' that survives replacing it."
         ),
         "drafts": drafts,
     }

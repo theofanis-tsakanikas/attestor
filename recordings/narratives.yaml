@@ -1,7 +1,10 @@
 provenance: synthetic
-note: Drafts captured from a model run and reviewed before commit. Re-captured by
-  `python scripts/seed_recordings.py --capture`. Editing a prompt without re-capturing
-  makes the replay stale and the resolver refuses it.
+model: eu.anthropic.claude-haiku-4-5-20251001-v1:0
+note: 'Drafts captured from a model run and reviewed before commit. Re-captured by
+  `python scripts/seed_recordings.py --capture`. Two things make a replay stale and
+  both are caught here rather than at run time: editing a prompt, and changing the
+  model. A capture that does not name the model it came from is a claim about ''the
+  model'' that survives replacing it.'
 drafts:
 - tenant: helios
   datapoint_id: ESRS_E1-1_transition_plan
