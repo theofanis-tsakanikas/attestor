@@ -402,7 +402,10 @@ resource "awscc_bedrockagentcore_workload_identity" "agent" {
 
 # The Cedar policies, deployed from the same files the offline evaluator parses.
 resource "awscc_bedrockagentcore_policy_engine" "main" {
-  name        = "${var.project}-policy-engine"
+  # Underscores, because a policy engine name must match `^[A-Za-z][A-Za-z0-9_]*$` — no
+  # hyphens, unlike every other AgentCore resource in this file. Memory and Runtime below
+  # already spell their names that way for the same reason.
+  name        = "${var.project}_policy_engine"
   description = "Cedar policies from policy/cedar/, evaluated before any tool executes."
 }
 
