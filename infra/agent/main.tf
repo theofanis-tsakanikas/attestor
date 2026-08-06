@@ -91,6 +91,12 @@ data "aws_ssm_parameter" "knowledge" {
 locals {
   foundation = { for key, param in data.aws_ssm_parameter.foundation : key => param.value }
   knowledge  = { for key, param in data.aws_ssm_parameter.knowledge : key => param.value }
+
+  # An EU cross-region inference profile is the foundation-model id with a region prefix:
+  # `eu.anthropic.claude-haiku-4-5-...` routes to `anthropic.claude-haiku-4-5-...`. Deriving
+  # it rather than declaring it twice means the two cannot disagree, and a profile that is
+  # not prefixed (a first-party id used directly) trims to itself.
+  reasoning_foundation_model = trimprefix(trimprefix(var.reasoning_model, "eu."), "global.")
 }
 
 resource "aws_cognito_user_pool" "tenant" {
@@ -202,9 +208,18 @@ resource "aws_iam_role_policy" "tools" {
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-        Resource = "arn:aws:bedrock:*::foundation-model/${var.reasoning_model}"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        # Both ARNs, because invoking through a cross-region inference profile needs both.
+        # `var.reasoning_model` is a *profile* id (`eu.anthropic....`), and the previous
+        # policy spent it as if it were a foundation-model id — an ARN that matches nothing,
+        # so every narrative would have failed with AccessDenied at run time while the
+        # apply reported success. The profile grants the right to route; the foundation-model
+        # grant is what the regions it routes into actually check.
+        Resource = [
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.reasoning_model}",
+          "arn:aws:bedrock:*::foundation-model/${local.reasoning_foundation_model}",
+        ]
       },
       {
         Effect   = "Allow"
@@ -684,9 +699,18 @@ resource "aws_iam_role_policy" "runtime" {
         Resource = aws_ecr_repository.agent.arn
       },
       {
-        Effect   = "Allow"
-        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-        Resource = "arn:aws:bedrock:*::foundation-model/${var.reasoning_model}"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        # Both ARNs, because invoking through a cross-region inference profile needs both.
+        # `var.reasoning_model` is a *profile* id (`eu.anthropic....`), and the previous
+        # policy spent it as if it were a foundation-model id — an ARN that matches nothing,
+        # so every narrative would have failed with AccessDenied at run time while the
+        # apply reported success. The profile grants the right to route; the foundation-model
+        # grant is what the regions it routes into actually check.
+        Resource = [
+          "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.reasoning_model}",
+          "arn:aws:bedrock:*::foundation-model/${local.reasoning_foundation_model}",
+        ]
       },
       {
         Effect   = "Allow"

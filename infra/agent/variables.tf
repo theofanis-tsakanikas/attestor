@@ -45,11 +45,31 @@ variable "callback_urls" {
 
 variable "reasoning_model" {
   type        = string
-  default     = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
   description = <<-EOT
-    Sonnet, not Haiku. The work is interpreting a standard and refusing to overstate what
-    evidence supports, which is judgement rather than throughput. Anthropic models are gated
-    behind a one-time account approval — a Day-1 task, not a deploy-time surprise.
+    A cross-region inference profile, EU-resident, and deliberately not the largest model
+    available.
+
+    What the model does here is narrow: three narrative datapoints, each a few hundred words
+    of grounded prose that must cite retrieved passages, must carry no digit, and must come
+    back as JSON with five named keys. It never produces a figure, never decides an
+    abstention and never authorizes anything — `contracts/model.py` makes the first a type
+    error and Cedar makes the third a policy.
+
+    That narrowness is what decides the tier. Every way this model can fail is caught
+    structurally: a digit fails the manifest and then the provenance gate, an invented
+    citation fails `check_draft`, prose where JSON was demanded raises rather than being
+    re-prompted into something softer. So a weaker model does not produce a wrong report —
+    it produces a blocked one. The choice is about how often a build stops, not about
+    whether a number can be trusted, and it is a two-way door: raising it is this line and
+    a re-run.
+
+    Note where the money actually is. A report run makes a handful of model calls; the
+    estate's dominant cost is OpenSearch Serverless sitting idle. Choosing a cheaper model
+    is right because it fits the task, not because it moves the bill.
+
+    Anthropic models are gated behind a one-time account approval, per account *and* per
+    region — a Day-1 task, not a deploy-time surprise.
   EOT
 }
 
