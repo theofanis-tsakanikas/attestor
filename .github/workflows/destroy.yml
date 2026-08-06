@@ -124,20 +124,46 @@ jobs:
           done
 
       - name: confirm nothing survived
+        # Two things this used to get wrong, and both made it useless in opposite directions.
+        #
+        # It filtered on `attestor:managed=terraform`, which `infra/bootstrap` also carries —
+        # the state bucket, the lock table, its KMS key and three SSM parameters. Those are
+        # supposed to survive; the comment at the bottom of this file says so. So the check
+        # counted six resources it had just been told to leave alone, and could never pass,
+        # on any teardown, however perfect.
+        #
+        # And the Resource Groups Tagging API is an index, not the truth. Straight after a
+        # destroy it still lists resources that are gone — verified: it reported four Cognito
+        # user pools while `list-user-pools` returned nothing at all. A check that reads a
+        # lagging index once will cry wolf every time, and the cost of that is not the noise:
+        # it is that nobody believes it on the day something really is left standing.
+        #
+        # So: only the four layers the destroy actually removes, and poll until the index
+        # agrees. A real survivor never disappears from it, so this waits out lag without
+        # waiting out a failure.
         run: |
           set -euo pipefail
-          survivors=$(aws resourcegroupstaggingapi get-resources \
-            --tag-filters Key=attestor:managed,Values=terraform \
-            --query 'length(ResourceTagMappingList)' --output text)
-          echo "tagged resources remaining: $survivors"
-          if [ "$survivors" != "0" ]; then
-            echo "the estate did not fully go down" >&2
+          estate() {
             aws resourcegroupstaggingapi get-resources \
-              --tag-filters Key=attestor:managed,Values=terraform \
-              --query 'ResourceTagMappingList[].ResourceARN' --output table
+              --tag-filters Key=attestor:layer,Values=foundation,data,knowledge,agent \
+              --query 'ResourceTagMappingList[].ResourceARN' --output text
+          }
+          for attempt in $(seq 1 12); do
+            survivors=$(estate)
+            count=$(printf '%s' "$survivors" | wc -w | tr -d ' ')
+            [ "$count" = "0" ] && break
+            echo "attempt $attempt: $count still indexed; waiting for the tag index to settle"
+            sleep 30
+          done
+          if [ "$count" != "0" ]; then
+            echo "the estate did not fully go down" >&2
+            printf '%s\n' $survivors >&2
             exit 1
           fi
-          echo "### Estate down — 0 tagged resources remain" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Estate down — no foundation, data, knowledge or agent resources remain" \
+            >> "$GITHUB_STEP_SUMMARY"
+          echo "Bootstrap is untouched by design: state, locking and the deploy role." \
+            >> "$GITHUB_STEP_SUMMARY"
 
       # infra/bootstrap is deliberately untouched: it holds the state and the identity this
       # workflow just used, and destroying it would leave no way to stand anything up again.
