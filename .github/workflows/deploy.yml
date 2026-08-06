@@ -137,6 +137,30 @@ jobs:
         # invisibly.
         run: make package
 
+      - uses: docker/setup-qemu-action@v3
+        if: contains(fromJSON('["agent","full"]'), inputs.stage)
+      - uses: docker/setup-buildx-action@v3
+        if: contains(fromJSON('["agent","full"]'), inputs.stage)
+
+      - name: build the agent image
+        if: contains(fromJSON('["agent","full"]'), inputs.stage)
+        # Before any infrastructure, because nothing about building this image depends on
+        # infrastructure. Only the *push* needs ECR, and ECR is created by the agent layer.
+        #
+        # Building it late is how a missing `COPY LICENSE` became a failure forty minutes in,
+        # with OpenSearch Serverless already standing and metered. The build costs two minutes
+        # and it costs them whether it succeeds or not; paying them first means a broken
+        # Dockerfile stops a deploy before the deploy has spent anything.
+        #
+        # `--provenance=false` because `--load` has to hand the result to the classic image
+        # store, and a build that emits attestations produces a manifest list that older
+        # dockers refuse to load. The image is built from a pinned base and a locked
+        # dependency set in a workflow whose ref is recorded; the attestation is not what
+        # makes it traceable.
+        run: |
+          docker buildx build --platform linux/arm64 --provenance=false \
+            -t "attestor-agent:${{ github.sha }}" --load .
+
       # ── Infrastructure ────────────────────────────────────────────────────
 
       - name: apply foundation
@@ -221,14 +245,19 @@ jobs:
 
       # ── The agent container ───────────────────────────────────────────────
 
-      - name: build and push the agent image
+      - name: push the agent image
         if: contains(fromJSON('["agent","full"]'), inputs.stage)
+        # Tag and push what was already built. Re-running `buildx build` here would be nearly
+        # free on a warm cache, but it would also mean the artefact that reaches ECR was built
+        # from a second evaluation of the Dockerfile rather than from the one that was proved
+        # to succeed before anything was spent.
         run: |
           set -euo pipefail
           REPO=$(terraform -chdir=infra/agent output -raw ecr_repository_url)
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${REPO%%/*}"
-          docker buildx build --platform linux/arm64 -t "$REPO:${{ github.sha }}" --push .
+          docker tag "attestor-agent:${{ github.sha }}" "$REPO:${{ github.sha }}"
+          docker push "$REPO:${{ github.sha }}"
           echo "pushed $REPO:${{ github.sha }}"
 
       - name: apply agent with the runtime

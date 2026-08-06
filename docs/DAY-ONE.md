@@ -14,7 +14,7 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 | ~~5~~ | ~~Bootstrap apply~~ | **Done.** 19 resources in `387229419515` / `eu-central-1`; the backend, the deploy role and `/attestor/bootstrap/*` all stand | — | ☑ |
 | ~~6~~ | ~~GitHub Environments `deploy` and `destroy`~~ | **Done, without reviewers** — the plan does not allow them on a private repository. See the section below; this one is not merely ticked | — | ☑ |
 | ~~7~~ | ~~Two repository variables~~ | **Done.** `AWS_ACCOUNT_ID` and `AWS_REGION`. No secret | — | ☑ |
-| 8 | **Budget alert address** confirmed | Two notification subscriptions were created for `theotsak90@gmail.com`; an unconfirmed one silently drops every alert | minutes | ☐ |
+| ~~8~~ | ~~Budget alert address confirmed~~ | **Nothing to confirm** — the row was wrong. See below | — | ☑ |
 
 ## Step 0 is not a formality
 
@@ -100,6 +100,52 @@ CI depends on, and it would happen without warning.
 per-tenant cost meter stays in euro, because that is our own arithmetic over our own price
 table and it reports what a European client is billed; the AWS-side ceiling is in dollars
 because AWS gives no choice.
+
+## Step 8 was a task that did not exist
+
+The row said an unconfirmed subscription silently drops every alert. That is true of **SNS**
+email subscriptions and it is not true here: the budget carries `SubscriptionType: EMAIL`
+directly, AWS Budgets sends to it without an opt-in, and there is no SNS topic in the path.
+Verified with `describe-subscribers-for-notification` — one `EMAIL` subscriber, no topic.
+
+There is a real version of that worry a layer down, and it is worth writing where the wrong
+one used to be. `infra/foundation` creates `attestor-alerts` and **subscribes nobody to it**.
+Anything published there reaches no one. Nothing depends on it for a deploy, so it is not a
+blocker; but "an alert that arrives while nobody is reading it has never stopped a bill" is
+this repository's own line, and a topic with no subscriber is the same sentence with one more
+step of indirection.
+
+## What it costs to leave standing
+
+The plan is the place to find this out, not the invoice. `infra/foundation` alone is about
+**€125–135 a month** while it stands, and almost all of it is two line items:
+
+| What | Roughly |
+|---|---|
+| 6 interface VPC endpoints × 2 AZs | ~€95/mo — billed per endpoint per AZ per hour, whether or not anything calls them |
+| 1 NAT gateway | ~€35/mo plus data processing |
+| KMS, S3, SNS, Lambda, CloudWatch at this volume | a few euro |
+
+OpenSearch Serverless, in `infra/knowledge`, is the one that dominates everything: its floor
+is 2 OCU for indexing and 2 for search, which is roughly **€600–700 a month** — about €20 a
+day. `production_topology = true` doubles it, which is why it defaults to off and is meant to
+be on only for the capture run.
+
+So a `full` estate costs on the order of **€25 a day**, and the 300 USD budget's first alert
+fires at 60% — around €180. Twelve days of a standing `full` estate reaches it. That is the
+arithmetic behind "OpenSearch lives in deliberate, bounded blocks", stated as a number
+rather than as a principle, and it is the reason the `days` input has no default.
+
+## Never apply a layer from a laptop
+
+Already the rule, and there is now a second, sharper reason. The workflows pin Terraform
+**1.9.8**; a current laptop has something much newer (1.15.5 here). State written by a newer
+Terraform cannot be read by an older one, so one local `apply` of a shared layer locks CI out
+of its own state until somebody upgrades the pin under pressure.
+
+`terraform plan` is safe — it writes no state — and it is how every layer here was checked
+before the first deploy. `apply` is not. `infra/bootstrap` is the sole exception, and it is
+exempt because its state is local and CI never reads it.
 
 ## Where the bootstrap state lives
 
