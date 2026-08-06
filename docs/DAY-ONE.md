@@ -6,7 +6,7 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 
 | # | Task | Why it is not code | Lead time | Done |
 |---|---|---|---:|:--:|
-| 1 | **Bedrock model access for Anthropic** — submit the use-case form, then invoke the reasoning model once | There *is* an API, and it is deliberately not used — see below. The form also asks for company details this repository does not hold | hours to days | ☐ |
+| ~~1~~ | ~~Bedrock model access for Anthropic~~ | **Done.** Use-case form submitted and `eu.anthropic.claude-haiku-4-5-20251001-v1:0` verified to respond from the CLI, in `eu-central-1` | — | ☑ |
 | 2 | **Service quotas** — raise Bedrock on-demand TPM/RPM for the reasoning model | Quota increases are ticketed and reviewed | days | ☐ |
 | ~~3~~ | ~~Confirm AgentCore region availability~~ | **Done.** Verified available in `eu-central-1`, so the data plane and the agent plane stay in the same region and there is no residency split to document | — | ☑ |
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision | minutes | ☐ |
@@ -87,12 +87,21 @@ table if time has passed — it is a snapshot, not a control.
 | What | State |
 |---|---|
 | `amazon.titan-embed-text-v2:0` | **Ready.** Entitled, and Amazon's own models need no marketplace agreement |
-| `anthropic.claude-haiku-4-5-...` | **Not enabled.** An unaccepted agreement offer is outstanding |
-| Anthropic use-case form | **Not submitted** — `GetUseCaseForModelAccess` returns `ResourceNotFoundException` |
+| `eu.anthropic.claude-haiku-4-5-...` | **Ready.** Verified by a `converse` call against the exact profile id `infra/agent` pins |
+| Anthropic use-case form | **Submitted** |
 | AgentCore control plane | **Available** in `eu-central-1` |
 | `attestor:managed` resources | **0** — nothing left over from a previous run |
 
-The one that blocks a deploy is the Anthropic pair. Titan needs nothing.
+Note which of those two model rows was work. Amazon's own models are simply available, which
+is why a previous project in this account used Bedrock without ever meeting this step:
+`amazon.titan-embed-text-v2:0` and `eu.amazon.nova-lite-v1:0` appear in CloudWatch, and
+neither needs an agreement. The gate is Anthropic's, not AWS's, and it is per account rather
+than per project.
+
+**`agreementAvailability` is not the access signal.** It reads `NOT_AVAILABLE` for an
+Anthropic model both before and after access is granted — it describes whether an offer can
+be created, not whether you may invoke. The signal that means something is an actual
+`converse` call returning text.
 
 ## Step 3, and the decision behind it
 
