@@ -312,7 +312,13 @@ resource "aws_bedrockagent_data_source" "regulatory" {
 # personal data reaching a model prompt, and refuse the categories of request that have no
 # legitimate place in a reporting conversation.
 resource "aws_bedrock_guardrail" "main" {
-  name                      = "${var.project}-guardrail"
+  name = "${var.project}-guardrail"
+  # Set because omitting it fails the apply outright: the provider returns `description` as
+  # still-unknown afterwards, and Terraform treats an unknown value after apply as a provider
+  # bug and aborts — "Provider returned invalid result object after apply". The guardrail is
+  # created by then, so the failure lands after the side effect, which is the worst shape a
+  # failure can have. A description is worth writing anyway.
+  description               = "Blocks prompt-attack inputs and the disclosure of one tenant's evidence in another tenant's report."
   blocked_input_messaging   = "This request cannot be processed by the reporting assistant."
   blocked_outputs_messaging = "This response was withheld by policy."
 

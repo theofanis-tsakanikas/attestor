@@ -13,7 +13,21 @@ variable "expires_at" {
   type = string
 }
 variable "deploy_role_arn" {
-  type = string
+  type        = string
+  description = <<-EOT
+    The role CI assumes. It goes into the OpenSearch data access policy so that `kb-sync.sh`
+    and the ingestion jobs can reach the collection — the knowledge base's own role is not
+    enough, because the workflow talks to the index directly.
+
+    The validation is here because AOSS reports a bad principal by printing the six ARN
+    patterns it would have accepted, and the knowledge base then fails separately with a 401
+    about "storage configuration". Three errors, none of which say "this string was empty".
+  EOT
+
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$", var.deploy_role_arn))
+    error_message = "deploy_role_arn must be an IAM role ARN. Empty usually means the workflow never resolved it from /attestor/bootstrap/deploy_role_arn."
+  }
 }
 
 variable "tenants" {
