@@ -16,6 +16,7 @@ No dependencies beyond what the Lambda runtime already ships. botocore signs, ur
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -72,11 +73,23 @@ def _signed_put(endpoint: str, index: str, body: dict, region: str) -> tuple[int
     payload = json.dumps(body).encode("utf-8")
 
     request = AWSRequest(
-        method="PUT", url=url, data=payload, headers={"Content-Type": "application/json"}
+        method="PUT",
+        url=url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            # OpenSearch Serverless requires the payload hash as a header, and botocore does
+            # not add it for this service — it only does so where the signing algorithm asks
+            # for payload signing. Without it every request is rejected with a bare
+            # `403 Forbidden` carrying no reason, which is indistinguishable from a principal
+            # that is missing from the data access policy. It has to be set *before* signing
+            # so that it is part of the signed header set.
+            "X-Amz-Content-SHA256": hashlib.sha256(payload).hexdigest(),
+        },
     )
     credentials = boto3.Session().get_credentials().get_frozen_credentials()
-    # `aoss`, not `es`. Signing against the wrong service name is a 403 that reads exactly
-    # like a missing data access policy entry.
+    # `aoss`, not `es`. Signing against the wrong service name is the other 403 that reads
+    # exactly like a missing data access policy entry.
     SigV4Auth(credentials, "aoss", region).add_auth(request)
 
     sent = urllib.request.Request(  # noqa: S310 - the URL is the collection endpoint
