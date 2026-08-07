@@ -230,3 +230,49 @@ def test_multiple_clauses_are_conjoined() -> None:
 def test_a_filter_of_only_empty_values_is_refused() -> None:
     with pytest.raises(ValueError, match="every value"):
         _filter_expression({"tenant": ""})
+
+
+def test_the_placeholder_list_goes_in_the_system_turn_not_beside_the_evidence(
+    repo_root, contract
+) -> None:
+    """Where this list is put decided whether any narrative existed at all.
+
+    Appended to the user turn, next to the retrieved corpus and phrased as an instruction, it
+    made Bedrock's guardrail block every narrative for every tenant — `GuardrailIntervened`,
+    three tenants, deploy 31187156441. The guardrail was not wrong. Instructions arriving
+    inside user content is the shape its prompt-attack filter exists to catch, and it is the
+    same thing this system tells every one of its own components to distrust about the corpus.
+
+    So: the corpus is untrusted and stays in the user turn; our instructions are ours and live
+    in the system turn. This test is the guard on that placement, because the failure it
+    prevents is invisible offline and costs a deploy to observe.
+    """
+    client = StubConverse(json.dumps(GOOD))
+    provider = _provider(repo_root, client)
+    provider.placeholder_ids = ("ESRS_E1-6_gross_scope_1", "ESRS_E1-6_total_ghg")
+
+    provider(contract, CONTEXT)
+
+    system = " ".join(block["text"] for block in client.calls[0]["system"])
+    user = json.dumps(client.calls[0]["messages"])
+
+    for name in provider.placeholder_ids:
+        assert name in system, "the model cannot name a placeholder it was never shown"
+        assert name not in user, (
+            "an instruction in the user turn is an injection attempt by our own hand; "
+            "the guardrail blocks it and every narrative dies"
+        )
+
+
+def test_without_placeholders_the_system_turn_is_the_prompt_unchanged(repo_root, contract) -> None:
+    """The recorded backend digests the prompt file; appending to it invisibly would drift."""
+    client = StubConverse(json.dumps(GOOD))
+    provider = _provider(repo_root, client)
+    assert provider.placeholder_ids == ()
+
+    provider(contract, CONTEXT)
+
+    system = " ".join(block["text"] for block in client.calls[0]["system"])
+    assert system == (repo_root / "prompts" / f"{contract.resolver.prompt_id}.md").read_text(
+        encoding="utf-8"
+    )
