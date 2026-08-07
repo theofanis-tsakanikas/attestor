@@ -58,9 +58,18 @@ class ModelConfig:
     guardrail_version: str
     region: str = "eu-central-1"
     max_tokens: int = 2048
-    #: Zero. The same evidence must produce the same draft, because claim 4 covers the whole
-    #: report and a narrative that drifts between runs makes it untestable.
+    #: Zero, and it is not enough on its own. Temperature zero makes a draft *stable*, not
+    #: identical: the same contract, corpus and prompt were observed citing three passages on
+    #: two consecutive runs and one on the third. Claim 4 is carried by the lineage record and
+    #: by replay of a captured draft, not by an assumption that generation repeats.
     temperature: float = 0.0
+    #: How many times an identical prompt may be asked before the datapoint is refused.
+    #:
+    #: Not a softening. Nothing is relaxed between attempts — same prompt, same evidence, same
+    #: checks — so a draft that passes on the second attempt is a draft that would have passed
+    #: on the first had the sampling gone differently. What the retry removes is a system that
+    #: issues on Tuesday and blocks on Wednesday, where nobody can tell a defect from a die.
+    draft_attempts: int = 3
 
     def __post_init__(self) -> None:
         if self.guardrail_version.strip().upper() == "DRAFT":
@@ -93,29 +102,54 @@ class BedrockNarrativeProvider:
         return self.client
 
     def __call__(self, contract: DatapointContract, context: ResolutionContext) -> NarrativeDraft:
+        """Draft, check, and try again on the *same* prompt if the check refuses.
+
+        The retry is not the softening this module refuses elsewhere, and the difference is
+        the whole point. Re-prompting with a relaxed instruction turns a refusal into a
+        paragraph nobody can trace; asking the identical question again does not move the
+        threshold, does not touch the evidence and does not weaken a single check. Every
+        attempt faces the same `check_draft`, the same manifest rule and the same provenance
+        gate, and if none passes the datapoint is refused exactly as before.
+
+        It is here because generation is not deterministic even at temperature zero. Observed
+        directly: the same contract, the same corpus and the same prompt cited three passages
+        on two consecutive runs and one on the third. A hard threshold over a variable
+        generator with no retry does not produce a stricter system — it produces one that
+        issues on Tuesday and blocks on Wednesday, which is worse than either, because nobody
+        can tell a real defect from the roll of a die.
+        """
         prompt = self._read_prompt(contract.resolver.prompt_id)
         passages = self.retrieve(contract, context)
         evidence = self._envelope(passages)
+        retrieved = frozenset(p.id for p in passages)
 
-        response = self._converse(system=prompt, user=evidence)
-        payload = self._parse(response, contract)
+        refusals: list[str] = []
+        for attempt in range(1, self.config.draft_attempts + 1):
+            response = self._converse(system=prompt, user=evidence)
+            payload = self._parse(response, contract)
 
-        draft = NarrativeDraft(
-            text=payload["narrative"],
-            citations=tuple(payload["citations"]),
-            prompt_ref=f"{contract.resolver.prompt_id}@{self._prompt_version(prompt)}",
-        )
+            draft = NarrativeDraft(
+                text=payload["narrative"],
+                citations=tuple(payload["citations"]),
+                prompt_ref=f"{contract.resolver.prompt_id}@{self._prompt_version(prompt)}",
+            )
 
-        check = injection.check_draft(
-            text=draft.text,
-            citations=draft.citations,
-            retrieved_ids=frozenset(p.id for p in passages),
-            min_citations=contract.resolver.grounding.min_citations,
-            max_words=contract.resolver.max_words,
-        )
-        if not check.ok:
-            raise ModelError(f"{contract.id}: draft refused — {'; '.join(check.problems)}")
-        return draft
+            check = injection.check_draft(
+                text=draft.text,
+                citations=draft.citations,
+                retrieved_ids=retrieved,
+                min_citations=contract.resolver.grounding.min_citations,
+                max_words=contract.resolver.max_words,
+            )
+            if check.ok:
+                self.last_usage["draft_attempts"] = attempt
+                return draft
+            refusals.append(f"attempt {attempt}: {'; '.join(check.problems)}")
+
+        # Every attempt refused. The reasons are reported in full rather than only the last,
+        # because "cited one passage" three times running and three different failures are
+        # different diagnoses.
+        raise ModelError(f"{contract.id}: draft refused — " + " | ".join(refusals))
 
     # ── Bedrock ──────────────────────────────────────────────────────────────
 
