@@ -120,6 +120,19 @@ jobs:
           set -euo pipefail
           for layer in agent knowledge data foundation; do
             echo "── $layer"
+            # AgentCore attaches its own network interfaces into our private subnets, and it
+            # releases them some minutes *after* the runtime and gateways are gone. They are
+            # `ela-attach` interfaces owned by `amazon-aws`: not deletable, not detachable,
+            # and enough to hold a subnet. Destroy 31189541492 spent 36 minutes retrying
+            # `DeleteSubnet` against them and then failed on a DependencyViolation, leaving
+            # the VPC standing — free, but standing, which is not what a teardown means.
+            #
+            # So the foundation layer waits for its own subnets to be empty first. Bounded:
+            # if AWS has not released them in 20 minutes the destroy proceeds and fails
+            # loudly, because a teardown that waits forever is a teardown nobody watches.
+            if [ "$layer" = foundation ]; then
+              ./.github/scripts/wait-for-empty-subnets.sh || true
+            fi
             ./.github/scripts/tf.sh destroy "$layer"
           done
 
