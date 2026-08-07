@@ -137,6 +137,7 @@ class BedrockNarrativeProvider:
                 text=payload["narrative"],
                 citations=tuple(payload["citations"]),
                 prompt_ref=f"{contract.resolver.prompt_id}@{self._prompt_version(prompt)}",
+                injection_observed=tuple(str(o) for o in payload["injection_observed"]),
             )
 
             check = injection.check_draft(
@@ -211,10 +212,11 @@ class BedrockNarrativeProvider:
         missing = sorted(REQUIRED_KEYS - set(payload))
         if missing:
             raise ModelError(f"{contract.id}: response omits {', '.join(missing)}")
-        if payload["injection_observed"]:
-            # Not a failure — the model did the right thing. It is a finding about a document,
-            # and it has to leave this function attached to something that will surface it.
-            self.last_usage["injection_observed"] = len(payload["injection_observed"])
+        # The finding leaves on the draft, not in `last_usage`. It used to be counted into
+        # that dict, which `_meter_model` reads for `inputTokens` and `outputTokens` and
+        # nothing else — so a model that correctly reported an attempted injection had the
+        # report discarded one function later. This module's own docstring calls that "an
+        # unreported attack"; it was one, for as long as the line above existed.
         return payload
 
     # ── Evidence ─────────────────────────────────────────────────────────────

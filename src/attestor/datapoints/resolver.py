@@ -53,6 +53,10 @@ class NarrativeDraft:
     text: str
     citations: tuple[str, ...]
     prompt_ref: str
+    #: Passages in which the model saw an instruction aimed at it. Carried on the draft rather
+    #: than in the provider's usage dict, where it was written and never read again: a token
+    #: count is operational and a detected attack is not.
+    injection_observed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +86,10 @@ class Resolved:
     lineage: LineageRecord
     narrative: str | None = None
     citations: tuple[str, ...] = ()
+    #: Non-blocking by design. The corpus is untrusted, so an instruction found inside it is
+    #: the control working, not the report failing — but it is a finding about a document an
+    #: auditor is entitled to see, and a finding nobody is shown is a finding nobody acted on.
+    injection_observed: tuple[str, ...] = ()
 
     @property
     def is_published(self) -> bool:
@@ -418,6 +426,7 @@ class Resolver:
             record,
             narrative=draft.text,
             citations=draft.citations,
+            injection_observed=draft.injection_observed,
         )
 
     # ── Cross-check ──────────────────────────────────────────────────────────
