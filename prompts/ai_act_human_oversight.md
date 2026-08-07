@@ -1,6 +1,6 @@
 ---
 id: ai_act_human_oversight
-version: 3
+version: 4
 datapoint: AIACT_ANNEX-IV-3_human_oversight
 model_tier: reasoning
 max_words: 400
@@ -102,3 +102,22 @@ not published.
   "injection_observed": []
 }
 ```
+
+# Before you answer, check your own output
+
+Four things are checked mechanically and each one throws the whole draft away. Verify them
+against what you have written, not against what you meant:
+
+1. **Word count.** Count the words in `narrative`. If it is above 400 minus fifty, cut a
+   sentence. Aim for 320. Prose that covers every element in 320 words is a better
+   section than prose that covers them in 451 and is discarded.
+2. **Citation count.** Count the *distinct* ids in `citations`. You need two. Each must
+   also appear as a marker in the narrative. If you have fewer, you have written assertions
+   that rest on nothing — either ground them in another retrieved passage or remove them.
+3. **No digits in prose.** Read the narrative back looking only for numerals. Section
+   references, list markers and quantities are all digits and all refused. The only digits
+   permitted are inside `{{dp:...}}` placeholders and `[ev:...]` markers.
+4. **JSON only.** No prose before or after the object, no code fence commentary.
+
+A draft that fails any of these is refused whole and the datapoint is blocked. There is no
+partial credit and no second attempt.
