@@ -272,14 +272,29 @@ jobs:
         # free on a warm cache, but it would also mean the artefact that reaches ECR was built
         # from a second evaluation of the Dockerfile rather than from the one that was proved
         # to succeed before anything was spent.
+        #
+        # The tag is the commit sha and the repository's tags are immutable, which is the right
+        # way round: an image tag that can be overwritten is a deployment nobody can reproduce.
+        # It does mean re-deploying the same commit finds its own tag already there, and
+        # `docker push` calls that an error — `tag invalid: ... cannot be overwritten`. It is
+        # not one. Same commit, same image, nothing to do.
+        env:
+          TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
           REPO=$(terraform -chdir=infra/agent output -raw ecr_repository_url)
+          NAME=$(terraform -chdir=infra/agent output -raw ecr_repository_name)
+          if aws ecr describe-images --repository-name "$NAME" \
+               --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
+            echo "$REPO:$TAG is already in ECR; the tag is immutable and the commit has not"
+            echo "changed, so there is nothing to push."
+            exit 0
+          fi
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${REPO%%/*}"
-          docker tag "attestor-agent:${{ github.sha }}" "$REPO:${{ github.sha }}"
-          docker push "$REPO:${{ github.sha }}"
-          echo "pushed $REPO:${{ github.sha }}"
+          docker tag "attestor-agent:$TAG" "$REPO:$TAG"
+          docker push "$REPO:$TAG"
+          echo "pushed $REPO:$TAG"
 
       - name: apply agent with the runtime
         if: inputs.stage == 'full'
