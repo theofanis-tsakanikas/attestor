@@ -304,6 +304,19 @@ resource "aws_iam_role_policy" "knowledge_base" {
         Resource = ["arn:aws:s3:::${local.evidence_bucket}", "arn:aws:s3:::${local.evidence_bucket}/*"]
       },
       {
+        # The evidence bucket is SSE-KMS, so `s3:GetObject` alone reads nothing. Without this
+        # the ingestion job completes — `status: COMPLETE` — with every document counted as
+        # failed and none indexed, and the only place that says why is `failureReasons` on the
+        # job itself. Downstream it surfaces as a knowledge base that answers every query with
+        # silence, which the narrative layer reports as "no deliverable evidence".
+        #
+        # A job that succeeds while indexing nothing is the worst shape available, and it is
+        # why `kb-sync.sh` should fail on `numberOfDocumentsFailed` rather than on status.
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = local.foundation.kms_key_arn
+      },
+      {
         Effect   = "Allow"
         Action   = ["aoss:APIAccessAll"]
         Resource = aws_opensearchserverless_collection.main.arn
