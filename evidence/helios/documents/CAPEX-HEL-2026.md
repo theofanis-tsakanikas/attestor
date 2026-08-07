@@ -2,34 +2,38 @@
 document_id: CAPEX-HEL-2026
 document_class: capex_plan
 tenant: helios
-covers_from: 2026-01-01
-covers_to: 2030-12-31
 ---
 
-# Capital expenditure plan 2026–2030
+# Capital expenditure plan
 
-Approved alongside the transition plan on 12 December 2025.
+Approved by the Board alongside the transition plan.
 
-## Committed capital
+## Alignment with the transition plan
 
-Total committed capital expenditure over the plan period is €148.6 million, of which
-€96.2 million (64.7%) is aligned with the transition plan's decarbonisation levers:
+The majority of committed capital expenditure over the plan period supports the
+decarbonisation levers named in the transition plan. Expenditure is grouped into four
+categories: the battery-electric vehicle fleet, depot charging infrastructure, heat pumps and
+building fabric, and maintenance and replacement that is not aligned with the plan.
 
-| Lever | 2026–2030 (€m) | Share |
-|---|---:|---:|
-| Battery-electric vehicle fleet | 71.4 | 48.0% |
-| Depot charging infrastructure | 16.3 | 11.0% |
-| Heat pumps and building fabric | 8.5 | 5.7% |
-| Non-aligned maintenance and replacement | 52.4 | 35.3% |
+The fleet programme is the largest category. Charging infrastructure is sequenced ahead of
+vehicle deliveries at each depot, because a vehicle that arrives before its charger is a
+vehicle that continues to run on diesel.
 
 ## Financing
 
-The fleet programme is financed through a €60 million sustainability-linked facility signed in
-January 2026, whose margin steps up if the Scope 1 trajectory is missed by more than 5% in any
-year. The remainder is funded from operating cash flow.
+The fleet programme is financed through a sustainability-linked facility signed during the
+reporting period. Its margin steps up if the emissions trajectory in the transition plan is
+missed, which places the cost of delay inside the financing rather than outside it. The
+remainder is funded from operating cash flow.
 
-## Relationship to the transition plan
+## What this plan does not fund
 
-No capital expenditure in this plan supports the extension of fossil-fuelled vehicle capacity.
-Expenditure on the 180 leased vehicles described as locked-in in TPLAN-HEL-2026 is limited to
-statutory maintenance and is reported as non-aligned.
+No capital expenditure supports the extension of fossil-fuelled vehicle capacity. Expenditure
+on the leased vehicles described as locked-in in the transition plan is limited to statutory
+maintenance and is reported as not aligned.
+
+## Governance of changes
+
+A change to the alignment of any category requires the approval of the Sustainability
+Committee, and the reason is recorded. Capital plans drift quietly otherwise, and a plan that
+drifts without a record is a plan whose alignment nobody can attest to a year later.
