@@ -18,7 +18,7 @@
 -- stored a failure", which is true before any test has run, and the empty branch keeps the
 -- column types so the table is created with the right shape either way.
 
-{{ config(materialized='incremental', incremental_strategy='append', file_format='iceberg') }}
+{{ config(materialized='incremental', incremental_strategy='append', table_type='iceberg') }}
 
 {% set failures = adapter.get_relation(
     database=target.database, schema=target.schema, identifier='all_failures'

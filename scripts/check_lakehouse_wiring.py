@@ -70,6 +70,36 @@ def query_gold_tables() -> set[str]:
     return names
 
 
+def _gold_models_are_iceberg() -> list[str]:
+    """Claim 4 is a table format before it is an application property.
+
+    Every gold model declared `file_format='iceberg'`, which is a Spark config key. dbt-athena
+    ignores it without a word, so the tables were built as Hive and looked entirely correct
+    until a resolver asked for `"gold"."<table>$snapshots"` — a metadata relation only an
+    Iceberg table has — and got `TABLE_NOT_FOUND`. A config key with a typo in it is not a
+    table format, and nothing about the wrong one is visible until something reads a snapshot.
+    """
+    problems = []
+    for path in sorted((DBT / "models" / "gold").glob("*.sql")):
+        text = path.read_text(encoding="utf-8")
+        config = re.search(r"\{\{\s*config\((?P<body>.*?)\)\s*\}\}", text, re.DOTALL)
+        if config is None:
+            problems.append(f"{path.name}: no config block, so it cannot declare a table type")
+            continue
+        body = config.group("body")
+        if "file_format" in body:
+            problems.append(
+                f"{path.name}: uses `file_format`, which dbt-athena ignores. The key is "
+                "`table_type`, and the difference is a Hive table wearing an Iceberg label"
+            )
+        elif "table_type='iceberg'" not in body.replace('"', "'"):
+            problems.append(
+                f"{path.name}: does not declare `table_type='iceberg'`. Without it the "
+                "resolver's snapshot pin reads a metadata table that does not exist"
+            )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -110,6 +140,8 @@ def main() -> int:
             f"`gold.{name}` is declared by `infra/data` *and* materialised by dbt. Two owners "
             "for one table is how a schema ends up correct in Terraform and different in Athena"
         )
+
+    problems.extend(_gold_models_are_iceberg())
 
     for problem in problems:
         print(f"  {problem}", file=sys.stderr)
