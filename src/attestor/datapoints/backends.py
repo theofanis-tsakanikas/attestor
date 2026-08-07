@@ -313,6 +313,29 @@ def tables_in(sql: str) -> tuple[str, ...]:
     return tuple(seen)
 
 
+def _quoted(value: str) -> str:
+    """A parameter value as Athena needs to receive it: quoted, with quotes doubled.
+
+    `ExecutionParameters` reads like a bound-parameter API and is not one. Athena substitutes
+    each value into the statement as text, so `2026-01-01` arrives as an arithmetic expression
+    and evaluates to the integer 2024 — first as `Cannot apply operator: date <= integer`, then,
+    once the query cast explicitly, as `Cannot cast integer to date`. AWS documents this: string
+    values must carry their own quotes.
+
+    Which makes the quoting ours to get right, so the value is checked as well as escaped.
+    Doubling `'` is the escape SQL defines; the refusal below is for everything that has no
+    business in a tenant id or a date and would only be there to end the literal early. Both,
+    because an escape nobody has bounded is a promise about a function rather than about the
+    input, and this is the one place a value reaches a statement as text.
+    """
+    if "\x00" in value or "\n" in value or "\r" in value:
+        raise QueryError(
+            f"parameter value {value!r} contains a control character. Values reach Athena as "
+            "quoted text, so this is refused rather than escaped."
+        )
+    return "'" + value.replace("'", "''") + "'"
+
+
 def _bind(
     sql: str,
     parameters: dict[str, str],
@@ -346,7 +369,7 @@ def _bind(
             return "NULL" if snapshot_id is None else f"'{snapshot_id}'"
         if name not in parameters:
             raise QueryError(f"query binds :{name} but no value was supplied")
-        ordered.append(str(parameters[name]))
+        ordered.append(_quoted(str(parameters[name])))
         return "?"
 
     statement = _substitute_outside_literals(sql, replace, database=database)

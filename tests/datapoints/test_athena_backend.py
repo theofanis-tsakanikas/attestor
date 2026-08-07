@@ -162,10 +162,16 @@ def test_an_unset_snapshot_becomes_null() -> None:
 
 
 def test_the_tenant_is_bound_never_concatenated() -> None:
+    """The tenant reaches Athena beside the statement, never inside it.
+
+    The value carries its own quotes because `ExecutionParameters` substitutes text rather
+    than binding — see `TestValuesReachAthenaQuoted`. What matters here is unchanged: no
+    caller assembles a statement with a tenant id in it.
+    """
     statement, ordered = _bind(SQL, PARAMS)
     assert "helios" not in statement
     assert "?" in statement
-    assert ordered == ["helios"]
+    assert ordered == ["'helios'"]
 
 
 def test_a_bound_marker_with_no_value_is_refused() -> None:
@@ -247,21 +253,21 @@ class TestParameterMarkersInComments:
         sql = "-- :tenant_id is the undertaking\nSELECT x FROM t WHERE id = :tenant_id"
         statement, values = _bind(sql, {"tenant_id": "helios"}, snapshot_id=None)
         assert statement.count("?") == 1
-        assert values == ["helios"]
+        assert values == ["'helios'"]
         assert ":tenant_id is the undertaking" in statement
 
     def test_a_marker_in_a_block_comment_is_left_alone(self) -> None:
         sql = "/* binds :period_start */ SELECT x FROM t WHERE d >= :period_start"
         statement, values = _bind(sql, {"period_start": "2026-01-01"}, snapshot_id=None)
         assert statement.count("?") == 1
-        assert values == ["2026-01-01"]
+        assert values == ["'2026-01-01'"]
 
     def test_a_marker_in_a_string_literal_is_left_alone(self) -> None:
         sql = "SELECT ':tenant_id' AS label FROM t WHERE id = :tenant_id"
         statement, values = _bind(sql, {"tenant_id": "aegis"}, snapshot_id=None)
         assert statement.count("?") == 1
         assert "':tenant_id'" in statement
-        assert values == ["aegis"]
+        assert values == ["'aegis'"]
 
     def test_every_committed_query_binds_what_athena_will_count(self, repo_root) -> None:
         """Placeholders in the statement must equal the values passed beside it."""
@@ -314,3 +320,32 @@ class TestLogicalSchemaResolution:
     def test_lineage_still_records_the_logical_name(self, repo_root) -> None:
         sql = (repo_root / "queries/esrs/e1_5_electricity_consumption.sql").read_text()
         assert any(name.startswith("gold.") for name in tables_in(sql))
+
+
+class TestValuesReachAthenaQuoted:
+    """`ExecutionParameters` reads like a bound-parameter API and is not one.
+
+    Athena substitutes each value into the statement as text. An unquoted `2026-01-01` is an
+    arithmetic expression that evaluates to 2024 — first `Cannot apply operator: date <=
+    integer`, then, once the query cast explicitly, `Cannot cast integer to date`. Every
+    quantitative datapoint failed this way on the live path, and `RecordedBackend` never
+    passes a value to anything, so nothing offline could have seen it.
+    """
+
+    def test_values_carry_their_own_quotes(self) -> None:
+        sql = "SELECT x FROM t WHERE d >= CAST(:period_start AS DATE)"
+        _, values = _bind(sql, {"period_start": "2026-01-01"})
+        assert values == ["'2026-01-01'"]
+
+    def test_an_embedded_quote_is_doubled(self) -> None:
+        _, values = _bind("SELECT x FROM t WHERE n = :tenant_id", {"tenant_id": "o'brien"})
+        assert values == ["'o''brien'"]
+
+    def test_a_control_character_is_refused_rather_than_escaped(self) -> None:
+        with pytest.raises(QueryError, match="control character"):
+            _bind("SELECT x FROM t WHERE n = :tenant_id", {"tenant_id": "a\nb"})
+
+    def test_the_snapshot_id_is_still_substituted_not_bound(self) -> None:
+        statement, values = _bind("SELECT x FROM t WHERE s = :snapshot_id", {}, snapshot_id="12345")
+        assert "'12345'" in statement
+        assert values == []
