@@ -111,9 +111,14 @@ the system stops on its own, why intervention is possible rather than merely per
 IV requires both, and a section that rests entirely on the procedure has described the process
 and not the system.
 
-So ground the *design* assertions in the system description and the *role* assertions in the
-procedure. That is where the second citation comes from, and it comes from there because the
-two documents genuinely say different things.
+A third says what the operator is told: the instructions for use, which describe how the
+system presents its work for review, when to stop and escalate, and what an operator may not
+do. Oversight that exists in a procedure but is not in the operator's hands is oversight on
+paper.
+
+So ground the *design* assertions in the system description, the *role* assertions in the
+procedure, and the *operator* assertions in the instructions. The citations come from there
+because the documents genuinely say different things, not because a count needed filling.
 
 # Before you answer, check your own output
 

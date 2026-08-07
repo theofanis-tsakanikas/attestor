@@ -52,6 +52,14 @@ documents:
     content_sha256: 3179ea9a65fe2a57aef841a5ea0bd3f6d01a3972ae07fa8c3be678d881c03553
     source_uri: s3://attestor-evidence-lumen/attestor/risk-register.csv
 
+  - document_id: INSTRUCTIONS-ATT-2026
+    tenant: lumen
+    document_class: oversight_procedure
+    covers_from: 2026-01-01
+    covers_to: 2026-12-31
+    content_sha256: d39cba0b7e0ad51271a1b02b13daf9fc483b3c813d6efa4893edf93227c8105b
+    source_uri: evidence/lumen/documents/INSTRUCTIONS-ATT-2026.md
+
   - document_id: OVERSIGHT-ATT-2026
     tenant: lumen
     document_class: oversight_procedure
