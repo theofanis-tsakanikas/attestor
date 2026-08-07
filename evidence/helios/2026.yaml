@@ -209,6 +209,14 @@ documents:
     content_sha256: 8e7ff01d3f97cde5f7245dba31fd38907a122d8d8d1a81cdc4cd3f2e6b28c0b2
     source_uri: s3://attestor-evidence-helios/methodology/eea-en38-2026.pdf
 
+  - document_id: TPLAN-HEL-2026-REVIEW
+    tenant: helios
+    document_class: board_approved_transition_plan
+    covers_from: 2026-01-01
+    covers_to: 2030-12-31
+    content_sha256: f36965d18359d501eb493938ef21a460ade8bea1eb168501c0af2aa55b2814d1
+    source_uri: evidence/helios/documents/TPLAN-HEL-2026-REVIEW.md
+
   - document_id: TPLAN-HEL-2026-ANNEX
     tenant: helios
     document_class: board_approved_transition_plan

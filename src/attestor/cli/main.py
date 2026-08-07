@@ -220,8 +220,21 @@ def gate_provenance(
     _ok(f"{len(results)} artefact(s) clean")
 
 
-def _render(tenant: str, root: Path, out: Path):
-    results = _resolve(tenant, root)
+def _render(tenant: str, root: Path, out: Path, results=None):
+    """Render a tenant's documents from results that have already been judged.
+
+    `results` is a parameter because this function used to call `_resolve` itself, and a
+    caller that had *just* resolved in order to decide whether a report could be issued then
+    resolved again to produce it. Two resolutions, two sets of model calls, two sets of Athena
+    queries — and, because a narrative draft is not deterministic, two different answers. A run
+    was observed where the first resolution issued and the second raised `ReportBlocked`.
+
+    The cost was the smaller half. The document was being built from results other than the
+    ones the run record described, so the manifest, the lineage and the artefact could all
+    disagree about the same figure and every one of them would look internally consistent.
+    """
+    if results is None:
+        results = _resolve(tenant, root)
     registry = TenantRegistry.load(root)
     context = RenderContext(
         tenant_id=tenant,
@@ -476,8 +489,8 @@ def run_report(
         # escape as a traceback, taking the whole run record with them. The estate then had no
         # account of what it refused or why, which is worse than the defect that caused it.
         try:
-            produced = _render(tenant, root, out)
-        except (NumeralInNarrative, TemplateError) as failure:
+            produced = _render(tenant, root, out, results)
+        except (NumeralInNarrative, TemplateError, ReportBlocked) as failure:
             console.print("  [red]blocked[/] — rendering refused, no artefact")
             console.print(f"      {failure}")
             record.blockers.append(
