@@ -17,16 +17,16 @@ documents:
     document_class: model_card
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: 4d6af4fd5c875d6b76a872693b2f21bc43eb67d696c5fff4c1dde9abe0990498
-    source_uri: s3://attestor-evidence-lumen/attestor/model-card.md
+    content_sha256: cf17cda1490faab7ffa1855a9c945a80a792852d30e1406aec1a496c31550de1
+    source_uri: evidence/lumen/documents/MODELCARD-ATT-2026.md
 
   - document_id: SYSDOC-ATT-2026
     tenant: lumen
     document_class: system_documentation
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: 1984648a892f2a5bbc17bfe2f5ab3cbba3c9c9b2da48f2f252bfe5164b2d0933
-    source_uri: s3://attestor-evidence-lumen/attestor/architecture.md
+    content_sha256: 0bf7dcdf802d5f2ebffd2580a19b8699152d00aa65ec3089ae4d4e15db18ecb8
+    source_uri: evidence/lumen/documents/SYSDOC-ATT-2026.md
 
   - document_id: EVALREPORT-ATT-2026
     tenant: lumen
@@ -57,8 +57,8 @@ documents:
     document_class: oversight_procedure
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: 5d1553d334ed82e51587243bf4295752cf7b67070c703ac9f02ec24d19424c5e
-    source_uri: s3://attestor-evidence-lumen/attestor/oversight.md
+    content_sha256: b708d608ea7124d409145246dd9c443d9984fb8b0c832a5c9ee08f60c3186765
+    source_uri: evidence/lumen/documents/OVERSIGHT-ATT-2026.md
 
   - document_id: INCIDENTS-ATT-2026
     tenant: lumen

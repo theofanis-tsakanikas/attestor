@@ -214,16 +214,16 @@ documents:
     document_class: board_approved_transition_plan
     covers_from: 2026-01-01
     covers_to: 2030-12-31
-    content_sha256: d7425f65f7225f701b25d70df47927b9da5b9ce25f5d19cfa017c37a5f793b9c
-    source_uri: s3://attestor-evidence-helios/governance/transition-plan-2026.pdf
+    content_sha256: ca7f95ab5b856fdeb3b47633566e834df6bf966a80c84d4ffdfcd4fcf49e53d5
+    source_uri: evidence/helios/documents/TPLAN-HEL-2026.md
 
   - document_id: CAPEX-HEL-2026
     tenant: helios
     document_class: capex_plan
     covers_from: 2026-01-01
     covers_to: 2030-12-31
-    content_sha256: 33940edbee8b1f443209598795ba224e7df50b1913927a22994ff3c59d5232c0
-    source_uri: s3://attestor-evidence-helios/governance/capex-2026-2030.xlsx
+    content_sha256: 49b65cf222b3fba5a7391c677b27e5998f9999fa83ea5a0fbaa2cb96b6eeee22
+    source_uri: evidence/helios/documents/CAPEX-HEL-2026.md
 
   - document_id: SUPP-HEL-2026-002
     tenant: helios
