@@ -32,9 +32,9 @@ from typing import Any
 import yaml
 
 from attestor.contracts import loader
-from attestor.contracts.model import DatapointContract
+from attestor.contracts.model import DatapointContract, Standard
 from attestor.datapoints.resolver import NarrativeDraft, ResolutionContext
-from attestor.policy.tenants import Session
+from attestor.policy.tenants import Session, TenantRegistry
 
 NARRATIVES_FILE = "narratives.yaml"
 
@@ -183,10 +183,17 @@ def build(
             )
         return passages
 
-    # Quantitative datapoints only. A narrative may point at a figure another datapoint
-    # resolves; it may not point at itself or at another narrative.
-    contracts = loader.load(root)
-    placeholders = tuple(sorted(c.id for c in contracts.values() if c.resolver.kind != "narrative"))
+    # Quantitative datapoints, of this tenant's standard only. A narrative may point at a
+    # figure another datapoint resolves; never at itself, at another narrative, or at a figure
+    # belonging to a standard this report is not written under.
+    standard = Standard(TenantRegistry.load(root)[session.tenant].standard)
+    placeholders = tuple(
+        sorted(
+            contract.id
+            for contract in loader.load(root).for_standard(standard)
+            if not contract.is_model_authored
+        )
+    )
 
     return BedrockNarrativeProvider(
         config=config,
