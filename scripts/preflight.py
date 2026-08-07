@@ -173,6 +173,14 @@ CHECKS: list[Check] = [
     ),
     Check(
         "consistency",
+        "knowledge base metadata",
+        [sys.executable, "scripts/generate_kb_metadata.py", "--check"],
+        "Retrieval is filtered at the index, and Bedrock reads the attributes from a sidecar "
+        "beside each document. Without them every filtered query matches nothing, and the "
+        "ingestion job reports it only as `numberOfMetadataDocumentsScanned: 0`.",
+    ),
+    Check(
+        "consistency",
         "override register",
         [PYTHON, "scripts/check_overrides.py", "--warn-days", "30"],
         "No accepted defect has outlived its acceptance.",
