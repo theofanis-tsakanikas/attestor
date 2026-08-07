@@ -32,10 +32,12 @@ SELECT
     f.rule,
     f.row_key,
     f.payload,
-    -- `TIMESTAMP(6)`, not bare `CURRENT_TIMESTAMP`. Athena hands back
-    -- `timestamp(3) with time zone` and Iceberg refuses it outright:
-    -- `NOT_SUPPORTED: Unsupported Hive type: timestamp(3) with time zone`.
-    CAST(CURRENT_TIMESTAMP AS TIMESTAMP(6)) AS quarantined_at
+    -- Cast, but not widened. Bare `CURRENT_TIMESTAMP` is `timestamp(3) with time zone`
+    -- and Iceberg refuses the zone: `Unsupported Hive type: timestamp(3) with time zone`.
+    -- `TIMESTAMP(6)` is refused for the opposite reason — these tables are configured in
+    -- MILLISECONDS, so six digits of precision is as wrong as a time zone. Plain
+    -- `TIMESTAMP` is milliseconds without a zone, which is the one shape both accept.
+    CAST(CURRENT_TIMESTAMP AS TIMESTAMP) AS quarantined_at
 FROM {{ target.schema }}.all_failures AS f
 
 {% if is_incremental() %}
@@ -50,7 +52,7 @@ SELECT
     CAST(NULL AS VARCHAR) AS rule,
     CAST(NULL AS VARCHAR) AS row_key,
     CAST(NULL AS VARCHAR) AS payload,
-    CAST(CURRENT_TIMESTAMP AS TIMESTAMP(6)) AS quarantined_at
+    CAST(CURRENT_TIMESTAMP AS TIMESTAMP) AS quarantined_at
 WHERE 1 = 0
 
 {% endif %}
