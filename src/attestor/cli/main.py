@@ -27,8 +27,9 @@ from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import ResolutionContext, Resolver
 from attestor.documents import render as render_module
 from attestor.documents import writers
+from attestor.documents.manifest import NumeralInNarrative
 from attestor.documents.render import RenderContext, ReportBlocked
-from attestor.documents.template import Template
+from attestor.documents.template import Template, TemplateError
 from attestor.gates import abstention, provenance
 from attestor.observability import dashboard as dashboard_module
 from attestor.observability import run_record
@@ -469,7 +470,31 @@ def run_report(
     )
 
     if results.can_issue:
-        produced = _render(tenant, root, out)
+        # A render that raises is still a refusal, and a refusal that leaves no record is the
+        # one thing this system may not do. `NumeralInNarrative` and `TemplateError` are gates
+        # firing — correctly, on the artefact rather than on the draft — and they used to
+        # escape as a traceback, taking the whole run record with them. The estate then had no
+        # account of what it refused or why, which is worse than the defect that caused it.
+        try:
+            produced = _render(tenant, root, out)
+        except (NumeralInNarrative, TemplateError) as failure:
+            console.print("  [red]blocked[/] — rendering refused, no artefact")
+            console.print(f"      {failure}")
+            record.blockers.append(
+                run_record.OmissionRecord(
+                    datapoint_id=getattr(failure, "datapoint_id", "?"),
+                    reference="",
+                    reason_code="E_RESOLVER_ERROR",
+                    detail=str(failure),
+                    outcome="blocked",
+                    lawful=False,
+                )
+            )
+            record.finished_at = dt.datetime.now(dt.UTC)
+            written = record.write(out / "runs")
+            console.print(f"  recorded {written}")
+            console.print(f"[red]FAIL[/] {tenant} could not issue; the record says why")
+            return 1
         gate_results = provenance.check_all(produced)
         for (path, _), gate in zip(produced, gate_results, strict=True):
             record.artefacts.append(

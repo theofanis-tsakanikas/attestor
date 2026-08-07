@@ -43,6 +43,16 @@ _TABLE_HEADERS: dict[str, tuple[str, ...]] = {
 #: A retrieval identifier inside model-authored prose, e.g. ``[ev:7f3a]``.
 CITATION = re.compile(r"\[ev:[0-9a-z]+\]")
 
+#: A datapoint placeholder the model embedded in its own prose. The prompt requires one
+#: wherever a figure belongs, so a narrative legitimately contains these and the renderer
+#: has to place the value rather than read the placeholder as text.
+EMBEDDED_DATAPOINT = re.compile(r"\{\{dp:([A-Za-z0-9_.\-]+)\}\}")
+
+#: Both, in one pass, so the prose between them is whatever is left.
+NARRATIVE_TOKEN = re.compile(
+    r"(?P<citation>\[ev:[0-9a-z]+\])|\{\{dp:(?P<datapoint>[A-Za-z0-9_.\-]+)\}\}"
+)
+
 
 class ReportBlocked(RuntimeError):
     """The report cannot be issued, so no artefact is produced."""
@@ -316,7 +326,7 @@ def _placeholder_runs(
     if placeholder.kind is PlaceholderKind.NARRATIVE:
         if outcome.narrative is None:
             raise TemplateError(f"{location}: {reference} resolved without narrative text")
-        return _narrative_runs(outcome, reference, manifest, location)
+        return _narrative_runs(outcome, reference, manifest, location, results, contracts)
 
     return [
         manifest.add(
@@ -332,7 +342,12 @@ def _placeholder_runs(
 
 
 def _narrative_runs(
-    outcome, reference: str, manifest: RenderManifest, location: str
+    outcome,
+    reference: str,
+    manifest: RenderManifest,
+    location: str,
+    results,
+    contracts,
 ) -> list[TextRun]:
     """Split model-authored prose from the citation markers embedded in it.
 
@@ -345,52 +360,92 @@ def _narrative_runs(
     either a hallucinated source or an attempt to smuggle characters past the rule.
     """
     text = outcome.narrative
-    declared = set(outcome.citations)
+    declared = {c.split(":", 1)[-1] for c in outcome.citations}
     runs: list[TextRun] = []
     cursor = 0
-    for match in CITATION.finditer(text):
-        marker = match.group(0)
-        if marker.strip("[]").split(":", 1)[1] not in {c.split(":", 1)[-1] for c in declared}:
-            raise TemplateError(
-                f"{location}: {reference} cites {marker} which is not in its declared "
-                "citations — a quoted source must be one the retriever returned"
-            )
-        if match.start() > cursor:
+
+    def prose(fragment: str) -> None:
+        if fragment:
             runs.append(
                 manifest.add(
                     TextRun(
                         kind=RunKind.NARRATIVE,
-                        text=text[cursor : match.start()],
+                        text=fragment,
                         datapoint_id=reference,
                         lineage_id=outcome.lineage.lineage_id,
                         location=location,
                     )
                 )
             )
-        runs.append(
-            manifest.add(
-                TextRun(
-                    kind=RunKind.CITATION,
-                    text=marker,
-                    datapoint_id=reference,
-                    lineage_id=outcome.lineage.lineage_id,
-                    location=location,
+
+    for match in NARRATIVE_TOKEN.finditer(text):
+        prose(text[cursor : match.start()])
+
+        marker = match.group("citation")
+        if marker is not None:
+            if marker.strip("[]").split(":", 1)[1] not in declared:
+                raise TemplateError(
+                    f"{location}: {reference} cites {marker} which is not in its declared "
+                    "citations — a quoted source must be one the retriever returned"
+                )
+            runs.append(
+                manifest.add(
+                    TextRun(
+                        kind=RunKind.CITATION,
+                        text=marker,
+                        datapoint_id=reference,
+                        lineage_id=outcome.lineage.lineage_id,
+                        location=location,
+                    )
                 )
             )
-        )
+            cursor = match.end()
+            continue
+
+        # A datapoint placeholder the model embedded in its prose. This is the whole point of
+        # the mechanism: the model marks where a figure belongs and the resolver puts one
+        # there, carrying that datapoint's own lineage rather than the narrative's. Treating
+        # it as prose is what made a correct draft fail the numeral rule on the digits inside
+        # `{{dp:ESRS_E1-6_gross_scope_1}}` — the renderer refusing the very thing the prompt
+        # demands.
+        embedded = match.group("datapoint")
+        contract = contracts.get(embedded)
+        if contract is None:
+            raise TemplateError(
+                f"{location}: {reference} places {embedded!r}, which is not a datapoint. A "
+                "model may mark where a figure goes; it may not invent what goes there"
+            )
+        placed = results.get(embedded)
+        if placed is None:
+            raise TemplateError(
+                f"{location}: {reference} places {embedded}, which was never resolved"
+            )
+        if isinstance(placed, Abstained):
+            runs.append(
+                manifest.add(
+                    TextRun(
+                        kind=RunKind.LIMITATION,
+                        text=_omission_text(placed, contract),
+                        datapoint_id=embedded,
+                        location=location,
+                    )
+                )
+            )
+        else:
+            runs.append(
+                manifest.add(
+                    TextRun(
+                        kind=RunKind.FIGURE,
+                        text=format_figure(contract, placed.value),
+                        datapoint_id=embedded,
+                        lineage_id=placed.lineage.lineage_id,
+                        location=location,
+                    )
+                )
+            )
         cursor = match.end()
-    if cursor < len(text):
-        runs.append(
-            manifest.add(
-                TextRun(
-                    kind=RunKind.NARRATIVE,
-                    text=text[cursor:],
-                    datapoint_id=reference,
-                    lineage_id=outcome.lineage.lineage_id,
-                    location=location,
-                )
-            )
-        )
+
+    prose(text[cursor:])
     if not runs:  # pragma: no cover — an empty narrative is refused upstream
         raise TemplateError(f"{location}: {reference} produced no narrative runs")
     return runs
