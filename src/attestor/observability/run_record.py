@@ -81,6 +81,29 @@ class GateRecord(BaseModel):
     detail: str = ""
 
 
+class InjectionFinding(BaseModel):
+    """A passage of the corpus that tried to instruct the model, and was reported instead.
+
+    Not a blocker. The corpus is untrusted by construction, so an instruction found inside it
+    is the control working rather than the report failing. It is still a finding about a
+    document, and one an auditor is entitled to see: a company whose invoices carry
+    instructions for the reporting system has a problem, whether or not the instructions
+    worked this time.
+
+    It exists because it used to not. The provider counted these into its usage dict, which
+    is read for token counts and nothing else, so every observation was dropped one function
+    after it was made — under a module docstring warning that exactly that turns a detected
+    attack into an unreported one.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    datapoint_id: str
+    #: What the model said it saw. Never re-emitted into a prompt, and never rendered as
+    #: instructions — it is quoted evidence of an attempt, in a field nothing executes.
+    observation: str
+
+
 class RunRecord(BaseModel):
     """Everything one report run did."""
 
@@ -102,6 +125,7 @@ class RunRecord(BaseModel):
     blockers: list[OmissionRecord] = Field(default_factory=list)
     artefacts: list[ArtefactRecord] = Field(default_factory=list)
     gates: list[GateRecord] = Field(default_factory=list)
+    injection_findings: list[InjectionFinding] = Field(default_factory=list)
     cost_eur: str = "0.0000"
     cost_by_operation: dict[str, str] = Field(default_factory=dict)
 
@@ -151,6 +175,7 @@ class RunRecord(BaseModel):
             "issued": self.issued,
             "published_count": len(self.published),
             "limitation_count": len(self.limitations),
+            "injection_finding_count": len(self.injection_findings),
             "blocker_count": len(self.blockers),
             "artefact_count": len(self.artefacts),
             "cost_eur": self.cost_eur,
@@ -247,6 +272,11 @@ def build(
                 ),
             )
         )
+
+        for observation in outcome.injection_observed:
+            record.injection_findings.append(
+                InjectionFinding(datapoint_id=outcome.datapoint_id, observation=observation)
+            )
 
     for outcome in sorted(results.abstentions, key=lambda a: a.datapoint_id):
         entry = _omission(outcome, contracts)

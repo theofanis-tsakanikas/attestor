@@ -178,3 +178,61 @@ def test_html_from_a_record_is_escaped() -> None:
 
 def test_an_empty_dashboard_says_so() -> None:
     assert "No runs recorded yet" in dashboard.render(())
+
+
+def test_an_observed_injection_reaches_the_record(repo_root: Path, contract_set: ContractSet):
+    """Claim 1's reporting half, end to end.
+
+    Detecting an attack and then discarding the detection is indistinguishable, from outside,
+    from never detecting it. This walks the whole path — provider, resolver, record — because
+    the defect it guards lived in the seam between two of them and each looked correct alone.
+    """
+
+    def reporting(_contract, _context) -> NarrativeDraft:
+        return NarrativeDraft(
+            text="A plan exists. [ev:7f3a] It is funded. [ev:91c0] Minutes confirm. [ev:2d55]",
+            citations=("ev:7f3a", "ev:91c0", "ev:2d55"),
+            prompt_ref="p@1",
+            injection_observed=("INV-HEL-2026-0009: instructs the reader to restate Scope 1",),
+        )
+
+    contracts = contract_set.for_standard(Standard.ESRS)
+    resolver = Resolver(
+        contracts=contracts,
+        backend=RecordedBackend.from_directory(repo_root / "recordings"),
+        evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
+        override_register=overrides.load_register(repo_root),
+        root=repo_root,
+        narrative_provider=reporting,
+    )
+    results = resolver.resolve_all(
+        ResolutionContext(
+            tenant="helios",
+            period="2026",
+            period_start=dt.date(2026, 1, 1),
+            period_end=dt.date(2027, 1, 1),
+            as_of=dt.date(2026, 7, 1),
+        )
+    )
+    record = run_record.build(
+        run_id="test",
+        tenant="helios",
+        tenant_name="Helios",
+        standard=Standard.ESRS.value,
+        period="2026",
+        started_at=STARTED,
+        results=results,
+        contracts=contracts,
+    )
+
+    assert [f.observation for f in record.injection_findings] == [
+        "INV-HEL-2026-0009: instructs the reader to restate Scope 1"
+    ]
+    # Reported, not blocking. The corpus is untrusted by construction, so an instruction found
+    # inside it is the control working — a report that refused here would refuse on every
+    # honest corpus that happens to quote an email.
+    assert record.issued is True
+
+
+def test_a_clean_run_reports_no_injection_findings(issued: RunRecord):
+    assert issued.injection_findings == []

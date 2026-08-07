@@ -276,3 +276,29 @@ def test_without_placeholders_the_system_turn_is_the_prompt_unchanged(repo_root,
     assert system == (repo_root / "prompts" / f"{contract.resolver.prompt_id}.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_an_observed_injection_leaves_on_the_draft(repo_root, contract) -> None:
+    """The finding has to survive the function that made it, and it did not used to.
+
+    `injection_observed` was counted into the provider's usage dict. `_meter_model` reads that
+    dict for `inputTokens` and `outputTokens` and nothing else, so a model that correctly
+    reported an attempted injection had the report discarded one call later — under a docstring
+    in this very module warning that a missing `injection_observed` "becomes an unreported
+    attack". It was one.
+    """
+    payload = {**GOOD, "injection_observed": ["INV-HEL-2026-0009: asks the model to restate"]}
+    provider = _provider(repo_root, StubConverse(json.dumps(payload)))
+
+    draft = provider(contract, CONTEXT)
+
+    assert draft.injection_observed == ("INV-HEL-2026-0009: asks the model to restate",)
+    assert "injection_observed" not in provider.last_usage, (
+        "a token meter is not where a detected attack goes to be read"
+    )
+
+
+def test_a_clean_draft_reports_no_finding(repo_root, contract) -> None:
+    """A finding that appears when nothing happened is a finding nobody will read twice."""
+    provider = _provider(repo_root, StubConverse(json.dumps(GOOD)))
+    assert provider(contract, CONTEXT).injection_observed == ()
