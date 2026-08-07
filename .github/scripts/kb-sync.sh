@@ -21,7 +21,7 @@ sync_one() {
       --knowledge-base-id "$kb" --data-source-id "$ds" --ingestion-job-id "$job" \
       --query 'ingestionJob.status' --output text)
     case "$status" in
-      COMPLETE) return 0 ;;
+      COMPLETE) break ;;
       FAILED)
         aws bedrock-agent get-ingestion-job --knowledge-base-id "$kb" --data-source-id "$ds" \
           --ingestion-job-id "$job" --query 'ingestionJob.failureReasons' --output text >&2
@@ -29,6 +29,28 @@ sync_one() {
     esac
     sleep 10
   done
+
+  # `COMPLETE` is not the same as "it worked". A job that could not read a single file still
+  # completes, with every document counted as failed — which is exactly what happened: the
+  # knowledge base role had no `kms:Decrypt` on the key the evidence bucket is encrypted with,
+  # so all 17 regulatory documents failed, the step went green, and the first sign of trouble
+  # was three datapoints refusing hours later with "no deliverable evidence".
+  #
+  # The statistics are the only place that says so, so they are what this reads.
+  local stats failed indexed
+  stats=$(aws bedrock-agent get-ingestion-job \
+    --knowledge-base-id "$kb" --data-source-id "$ds" --ingestion-job-id "$job" \
+    --query 'ingestionJob.statistics' --output json)
+  failed=$(echo "$stats" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("numberOfDocumentsFailed", 0))')
+  indexed=$(echo "$stats" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("numberOfNewDocumentsIndexed",0)+d.get("numberOfModifiedDocumentsIndexed",0))')
+  echo "   indexed $indexed, failed $failed"
+  if [ "$failed" != "0" ]; then
+    echo "ingestion job $job completed with $failed document(s) it could not read:" >&2
+    aws bedrock-agent get-ingestion-job --knowledge-base-id "$kb" --data-source-id "$ds" \
+      --ingestion-job-id "$job" --query 'ingestionJob.failureReasons' --output text >&2
+    return 1
+  fi
+  return 0
 }
 
 for kb in "$kb_evidence" "$kb_regulatory"; do

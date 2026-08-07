@@ -276,3 +276,41 @@ class TestParameterMarkersInComments:
             )
             stripped = re.sub(r"--[^\n]*|/\*.*?\*/", "", statement, flags=re.DOTALL)
             assert stripped.count("?") == len(values), path.name
+
+
+class TestLogicalSchemaResolution:
+    """`queries/` names a layer; the deployment decides where the layer lives.
+
+    Every committed query says `FROM gold.electricity_consumption`. The Glue database in this
+    account is `attestor_gold`, and an explicitly qualified name beats the execution context —
+    so the live run failed on `SCHEMA_NOT_FOUND: Schema 'gold' does not exist` for every
+    quantitative datapoint, while `RecordedBackend` never looked at a schema at all.
+    """
+
+    def test_the_layer_resolves_to_the_configured_database(self) -> None:
+        sql = "SELECT SUM(kwh) FROM gold.electricity_consumption WHERE id = :tenant_id"
+        statement, _ = _bind(sql, {"tenant_id": "helios"}, database="attestor_gold")
+        assert "attestor_gold.electricity_consumption" in statement
+        assert "gold.electricity_consumption" not in statement.replace("attestor_gold.", "")
+
+    def test_a_quoted_metadata_table_resolves_too(self) -> None:
+        sql = 'SELECT MAX(snapshot_id) FROM "gold"."electricity_consumption$snapshots"'
+        statement, _ = _bind(sql, {}, database="attestor_gold")
+        assert '"attestor_gold"."electricity_consumption$snapshots"' in statement
+
+    def test_the_layer_is_left_alone_in_comments_and_strings(self) -> None:
+        sql = "-- reads gold.foo\nSELECT 'gold.bar' AS s FROM gold.baz"
+        statement, _ = _bind(sql, {}, database="attestor_gold")
+        assert "-- reads gold.foo" in statement
+        assert "'gold.bar'" in statement
+        assert "FROM attestor_gold.baz" in statement
+
+    def test_without_a_database_nothing_is_rewritten(self) -> None:
+        """The recorded path passes no database, and its digests must not move."""
+        sql = "SELECT x FROM gold.t"
+        statement, _ = _bind(sql, {})
+        assert statement == sql
+
+    def test_lineage_still_records_the_logical_name(self, repo_root) -> None:
+        sql = (repo_root / "queries/esrs/e1_5_electricity_consumption.sql").read_text()
+        assert any(name.startswith("gold.") for name in tables_in(sql))

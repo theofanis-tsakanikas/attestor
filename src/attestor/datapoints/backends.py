@@ -178,7 +178,9 @@ class AthenaBackend:
         happens here and nowhere else — no caller ever builds a SQL string with a tenant id
         in it.
         """
-        statement, ordered = _bind(sql, parameters, snapshot_id=snapshot_id)
+        statement, ordered = _bind(
+            sql, parameters, snapshot_id=snapshot_id, database=self._database
+        )
         started = self._athena().start_query_execution(
             QueryString=statement,
             QueryExecutionContext={"Catalog": self._catalog, "Database": self._database},
@@ -281,6 +283,13 @@ _TABLE = re.compile(r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", r
 #: A bound parameter marker. Matched only where the surrounding text is code.
 _MARKER = re.compile(r":([a-z_][a-z0-9_]*)")
 
+#: The logical schema the committed queries speak in. `queries/` names the *layer* — `gold` —
+#: and the deployment decides where that layer lives, which in this account is `attestor_gold`.
+#: Resolving it here keeps the queries free of an account's naming and keeps lineage recording
+#: the logical name; `tables_in()` reads the original text, so a lineage record still says
+#: `gold.electricity_consumption` whatever the database is called.
+_GOLD_SCHEMA = re.compile(r'(?:\bgold|"gold")\s*\.')
+
 #: Iceberg snapshot ids are integers. This is the only value in the system that reaches a SQL
 #: statement by substitution rather than by binding — Athena will not take a table-version pin
 #: as a parameter — so the shape is asserted here instead of trusted.
@@ -302,7 +311,11 @@ def tables_in(sql: str) -> tuple[str, ...]:
 
 
 def _bind(
-    sql: str, parameters: dict[str, str], *, snapshot_id: str | None = None
+    sql: str,
+    parameters: dict[str, str],
+    *,
+    snapshot_id: str | None = None,
+    database: str | None = None,
 ) -> tuple[str, list[str]]:
     """Rewrite `:name` markers to positional `?`, returning values in matching order.
 
@@ -333,11 +346,13 @@ def _bind(
         ordered.append(str(parameters[name]))
         return "?"
 
-    statement = _substitute_outside_literals(sql, replace)
+    statement = _substitute_outside_literals(sql, replace, database=database)
     return statement, ordered
 
 
-def _substitute_outside_literals(sql: str, replace: Callable[[str], str]) -> str:
+def _substitute_outside_literals(
+    sql: str, replace: Callable[[str], str], *, database: str | None = None
+) -> str:
     """Rewrite `:name` markers, but only where they are code.
 
     Every query in `queries/` documents its own parameters in a comment header —
@@ -380,7 +395,13 @@ def _substitute_outside_literals(sql: str, replace: Callable[[str], str]) -> str
             if match:
                 out.append(replace(match.group(1)))
                 index = match.end()
-            else:
-                out.append(character)
-                index += 1
+                continue
+            schema = _GOLD_SCHEMA.match(sql, index) if database else None
+            if schema:
+                quoted = schema.group(0).startswith('"')
+                out.append(f'"{database}".' if quoted else f"{database}.")
+                index = schema.end()
+                continue
+            out.append(character)
+            index += 1
     return "".join(out)
