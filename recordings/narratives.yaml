@@ -9,7 +9,7 @@ drafts:
 - tenant: helios
   datapoint_id: ESRS_E1-1_transition_plan
   prompt_id: esrs_e1_1_transition_plan
-  prompt_digest: 65ba95f95b7bf704f675b68bc2183d75ccd62d386142690851bf22d203239943
+  prompt_digest: 18e9d541757beb231d6c46cc300656f220ae37758ac0011e58bfe2623b0e0524
   citations:
   - ev:7f3a
   - ev:91c0
@@ -28,7 +28,7 @@ drafts:
 - tenant: aegis
   datapoint_id: ESRS_E1-1_transition_plan
   prompt_id: esrs_e1_1_transition_plan
-  prompt_digest: 65ba95f95b7bf704f675b68bc2183d75ccd62d386142690851bf22d203239943
+  prompt_digest: 18e9d541757beb231d6c46cc300656f220ae37758ac0011e58bfe2623b0e0524
   citations:
   - ev:4b1e
   - ev:c07d
