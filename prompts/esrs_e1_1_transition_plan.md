@@ -1,6 +1,6 @@
 ---
 id: esrs_e1_1_transition_plan
-version: 4
+version: 5
 datapoint: ESRS_E1-1_transition_plan
 model_tier: reasoning
 max_words: 400
@@ -36,6 +36,11 @@ other citation of the standard inside the narrative. The document template alrea
 reference; writing it again puts digits in prose that the provenance gate refuses, and the
 refusal is not negotiable — see the rule above. Refer to the requirement in words if you must
 refer to it at all.
+
+**No numbered or lettered lists.** Write paragraphs. A list marker is a digit in prose, the
+provenance gate cannot tell it from a figure, and the draft is refused for it — which is how a
+section that named its levers correctly was thrown away three times. Name the levers in
+sentences; an auditor reads prose perfectly well.
 
 **Regulatory constants are named, not numbered.** The Paris temperature goal is "the goal of
 limiting warming to one and a half degrees" or "the Paris temperature goal". It is never
