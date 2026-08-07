@@ -31,6 +31,22 @@ The system is built so that a person can intervene where it would otherwise proc
 refusal carries a machine-readable reason code and a sentence a reader can act on, and no
 refusal can be lifted by the system itself.
 
+Oversight is designed in rather than added on. The system never issues a report on its own
+authority: a preparer accepts each drafted narrative against the evidence it cites, and a
+report with an unresolved or out-of-tolerance datapoint cannot be issued at all, so the
+decision to proceed always rests with a person. Where a control refuses, the refusal names the
+datapoint and the reason rather than failing generically, which is what makes intervention
+possible rather than merely permitted.
+
+The interface presents a drafted paragraph as a proposal beside the passages it rests on, so
+that review is a comparison against sources rather than a judgement of plausibility. This is
+the system's answer to automation bias, and it is a property of what the operator is shown
+rather than of what the model produces.
+
+The measures a deployer must put in place around the system — who holds each role, how
+acceptance is recorded, how an override is approved and when it expires — are set out in the
+human oversight procedure that accompanies this documentation.
+
 ## Data governance
 
 Evidence is immutable once ingested and addressed by the hash of its content, so a document

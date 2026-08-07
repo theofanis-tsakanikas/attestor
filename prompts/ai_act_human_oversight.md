@@ -103,6 +103,18 @@ not published.
 }
 ```
 
+# Two documents describe oversight, not one
+
+The oversight procedure sets out the roles and what each may do. The system documentation
+describes how oversight is built into the system itself — what the operator is shown, where
+the system stops on its own, why intervention is possible rather than merely permitted. Annex
+IV requires both, and a section that rests entirely on the procedure has described the process
+and not the system.
+
+So ground the *design* assertions in the system description and the *role* assertions in the
+procedure. That is where the second citation comes from, and it comes from there because the
+two documents genuinely say different things.
+
 # Before you answer, check your own output
 
 Four things are checked mechanically and each one throws the whole draft away. Verify them
