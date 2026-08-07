@@ -60,7 +60,7 @@ drafts:
 - tenant: lumen
   datapoint_id: AIACT_ANNEX-IV-3_human_oversight
   prompt_id: ai_act_human_oversight
-  prompt_digest: 316bc3e7cb3cbdfe451eb1e3527ec877c35607b358a4b1a99502544fc476fba7
+  prompt_digest: 436102c0ae885b984a0b12e5da3d131ee995e5c20c2b7e01eca70075a67e4ec8
   citations:
   - ev:33cc
   - ev:44dd
