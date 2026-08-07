@@ -31,6 +31,7 @@ from typing import Any
 
 import yaml
 
+from attestor.contracts import loader
 from attestor.contracts.model import DatapointContract
 from attestor.datapoints.resolver import NarrativeDraft, ResolutionContext
 from attestor.policy.tenants import Session
@@ -182,11 +183,17 @@ def build(
             )
         return passages
 
+    # Quantitative datapoints only. A narrative may point at a figure another datapoint
+    # resolves; it may not point at itself or at another narrative.
+    contracts = loader.load(root)
+    placeholders = tuple(sorted(c.id for c in contracts.values() if c.resolver.kind != "narrative"))
+
     return BedrockNarrativeProvider(
         config=config,
         session=session,
         prompts_dir=root / "prompts",
         retrieve=retrieve,
+        placeholder_ids=placeholders,
     )
 
 
