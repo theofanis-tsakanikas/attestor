@@ -8,10 +8,10 @@
 -- says whose verdict it is. Dropping it would silently promote every row the evidence
 -- pipeline had already marked as suspect.
 
--- Plain `TIMESTAMP`, because this model is a **view** and a Hive view rejects
--- `timestamp(6)`: `Invalid column type for column ...: Unsupported Hive type:
--- timestamp(6)`. The gold models are Iceberg and want the opposite — the precision is
--- added there, at the layer that stores it. One rule per materialisation, not one rule.
+-- Plain `TIMESTAMP` throughout: milliseconds, no time zone. A Hive view rejects
+-- `timestamp(6)` and an Iceberg table configured in MILLISECONDS rejects it too, so the
+-- only thing that ever needed fixing was the *zone* Athena attaches to
+-- `CURRENT_TIMESTAMP` and `FROM_ISO8601_TIMESTAMP`. The cast is what removes it.
 
 {{ config(materialized='view') }}
 
