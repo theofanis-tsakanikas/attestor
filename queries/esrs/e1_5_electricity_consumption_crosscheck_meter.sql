@@ -12,6 +12,6 @@ SELECT
 FROM gold.meter_interval_reading AS m
 WHERE
     m.tenant_id = :tenant_id
-    AND m.interval_start >= :period_start
-    AND m.interval_start < :period_end
+    AND m.interval_start >= CAST(:period_start AS DATE)
+    AND m.interval_start < CAST(:period_end AS DATE)
     AND m.dq_status = 'clean'

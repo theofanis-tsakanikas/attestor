@@ -1,0 +1,9 @@
+tenant_id,category,period_start,is_significant,screening_basis
+helios,cat_1_purchased_goods,2026-01-01,true,Above 5% of total Scope 3
+helios,cat_4_upstream_transport,2026-01-01,true,Above 5% of total Scope 3
+helios,cat_9_downstream_transport,2026-01-01,true,Above 5% of total Scope 3
+helios,cat_6_business_travel,2026-01-01,false,Below the 5% threshold
+aegis,cat_1_purchased_goods,2026-01-01,true,Above 5% of total Scope 3
+aegis,cat_4_upstream_transport,2026-01-01,true,Above 5% of total Scope 3
+aegis,cat_9_downstream_transport,2026-01-01,true,Above 5% of total Scope 3
+aegis,cat_6_business_travel,2026-01-01,false,Below the 5% threshold

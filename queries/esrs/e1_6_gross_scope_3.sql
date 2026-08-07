@@ -32,8 +32,8 @@ SELECT
         FROM gold.ghg_scope_3_activity AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.activity_date >= :period_start
-            AND q.activity_date < :period_end
+            AND q.activity_date >= CAST(:period_start AS DATE)
+            AND q.activity_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 FROM gold.ghg_scope_3_activity AS a
@@ -41,10 +41,10 @@ INNER JOIN ref.scope_3_category_screening AS s
     ON
         s.tenant_id = a.tenant_id
         AND s.category = a.category
-        AND s.period_start = :period_start
+        AND s.period_start = CAST(:period_start AS DATE)
 WHERE
     a.tenant_id = :tenant_id
-    AND a.activity_date >= :period_start
-    AND a.activity_date < :period_end
+    AND a.activity_date >= CAST(:period_start AS DATE)
+    AND a.activity_date < CAST(:period_end AS DATE)
     AND s.is_significant = TRUE
     AND a.dq_status = 'clean'

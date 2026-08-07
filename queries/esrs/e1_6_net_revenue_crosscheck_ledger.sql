@@ -16,7 +16,7 @@ SELECT
 FROM gold.financial_statement_extract AS f
 WHERE
     f.tenant_id = :tenant_id
-    AND f.period_start = :period_start
-    AND f.period_end = :period_end
+    AND f.period_start = CAST(:period_start AS DATE)
+    AND f.period_end = CAST(:period_end AS DATE)
     AND f.statement_status = 'filed'
     AND f.dq_status = 'clean'

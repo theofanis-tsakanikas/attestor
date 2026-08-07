@@ -25,14 +25,14 @@ SELECT
         FROM gold.electricity_consumption AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.reading_date >= :period_start
-            AND q.reading_date < :period_end
+            AND q.reading_date >= CAST(:period_start AS DATE)
+            AND q.reading_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 FROM gold.electricity_consumption AS e
 WHERE
     e.tenant_id = :tenant_id
-    AND e.reading_date >= :period_start
-    AND e.reading_date < :period_end
+    AND e.reading_date >= CAST(:period_start AS DATE)
+    AND e.reading_date < CAST(:period_end AS DATE)
     AND e.reading_type = 'actual'
     AND e.dq_status = 'clean'

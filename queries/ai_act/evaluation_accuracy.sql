@@ -29,14 +29,14 @@ SELECT
         FROM gold.model_evaluation_prediction AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.evaluated_at >= :period_start
-            AND q.evaluated_at < :period_end
+            AND q.evaluated_at >= CAST(:period_start AS DATE)
+            AND q.evaluated_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 FROM gold.model_evaluation_prediction AS p
 WHERE
     p.tenant_id = :tenant_id
-    AND p.evaluated_at >= :period_start
-    AND p.evaluated_at < :period_end
+    AND p.evaluated_at >= CAST(:period_start AS DATE)
+    AND p.evaluated_at < CAST(:period_end AS DATE)
     AND p.is_held_out = TRUE
     AND p.dq_status = 'clean'

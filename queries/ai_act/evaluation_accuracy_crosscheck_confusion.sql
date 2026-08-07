@@ -14,6 +14,6 @@ SELECT
 FROM gold.model_evaluation_confusion AS c
 WHERE
     c.tenant_id = :tenant_id
-    AND c.evaluated_at >= :period_start
-    AND c.evaluated_at < :period_end
+    AND c.evaluated_at >= CAST(:period_start AS DATE)
+    AND c.evaluated_at < CAST(:period_end AS DATE)
     AND c.dq_status = 'clean'

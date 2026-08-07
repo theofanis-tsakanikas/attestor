@@ -24,15 +24,15 @@ SELECT
         FROM gold.risk_register AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.assessed_at >= :period_start
-            AND q.assessed_at < :period_end
+            AND q.assessed_at >= CAST(:period_start AS DATE)
+            AND q.assessed_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 FROM gold.risk_register AS r
 WHERE
     r.tenant_id = :tenant_id
-    AND r.assessed_at >= :period_start
-    AND r.assessed_at < :period_end
+    AND r.assessed_at >= CAST(:period_start AS DATE)
+    AND r.assessed_at < CAST(:period_end AS DATE)
     AND r.mitigation_status = 'complete'
     AND r.residual_rating IN ('low', 'medium', 'high')
     AND r.dq_status = 'clean'

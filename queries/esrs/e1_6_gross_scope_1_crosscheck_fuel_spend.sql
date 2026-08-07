@@ -17,8 +17,8 @@ WITH spend AS (
     FROM gold.procurement_fuel_spend AS p
     WHERE
         p.tenant_id = :tenant_id
-        AND p.invoice_date >= :period_start
-        AND p.invoice_date < :period_end
+        AND p.invoice_date >= CAST(:period_start AS DATE)
+        AND p.invoice_date < CAST(:period_end AS DATE)
         AND p.dq_status = 'clean'
     GROUP BY p.fuel_type
 ),
@@ -29,8 +29,8 @@ price AS (
         r.avg_price_eur_per_litre
     FROM ref.fuel_price_period AS r
     WHERE
-        r.period_start = :period_start
-        AND r.period_end = :period_end
+        r.period_start = CAST(:period_start AS DATE)
+        AND r.period_end = CAST(:period_end AS DATE)
 )
 
 SELECT

@@ -1,5 +1,17 @@
 version: 2
 
+# Reference data, materialised into the `ref` schema by `+schema: ref` in dbt_project.yml.
+#
+# Three of these tables did not exist. `queries/` joined `ref.fuel_price_period`,
+# `ref.chart_of_accounts` and `ref.scope_3_category_screening`, and nothing anywhere produced
+# them — the first live run failed with `SCHEMA_NOT_FOUND: Schema 'ref' does not exist`, and
+# would have failed on the tables even once the schema resolved.
+#
+# `column_types` is explicit on every date and decimal. A seed's types are inferred from CSV
+# text otherwise, and a `period_start` that arrives as `varchar` compares against a bound
+# `DATE` parameter with `Cannot apply operator: date = varchar` — at query time, on the live
+# path, where it is most expensive to find out.
+
 seeds:
   - name: dim_tenant
     description: >-
@@ -10,13 +22,81 @@ seeds:
       - name: tenant_id
         tests: [not_null, unique]
 
-  - name: ref_fuel_emission_factor
+  - name: fuel_emission_factor
     description: >-
       Conversion factors as reference data, not as constants in a query. Every factor carries
       its source and its published year, and a fuel type with no factor fails the staging
       relationship test rather than contributing nothing to a total.
+    config:
+      column_types:
+        fuel_type: varchar
+        kg_co2e_per_litre: decimal(18,4)
+        published_year: integer
     columns:
       - name: fuel_type
         tests: [not_null, unique]
       - name: kg_co2e_per_litre
+        tests: [not_null]
+
+  - name: fuel_price_period
+    description: >-
+      The average price a litre of fuel cost over the period, which is what turns an invoice
+      total into a volume and a volume into emissions. It is the reason the Scope 1
+      cross-check is *independent*: the primary figure comes from metered activity, this one
+      from what procurement paid.
+
+      The diesel price is a synthetic constant, and deliberately so. `pipelines/seed` writes
+      spend as `crosscheck_target × 1200`, so the price that makes the reconciliation exact is
+      `1200 × 2.6870 / 1000 = 3.2244`. It is not a market price and does not claim to be —
+      this is a synthetic corpus, and the property that matters is that the two independent
+      routes to Scope 1 land where the recordings say they land: helios 0.34% apart and inside
+      its tolerance, aegis 4.3% apart and outside it.
+    config:
+      column_types:
+        fuel_type: varchar
+        period_start: date
+        period_end: date
+        avg_price_eur_per_litre: decimal(18,4)
+    columns:
+      - name: fuel_type
+        tests: [not_null]
+      - name: avg_price_eur_per_litre
+        tests:
+          # A zero would divide by zero and a negative would invert the sign of a disclosed
+          # emissions figure. Neither is a rounding difference.
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: false
+
+  - name: chart_of_accounts
+    description: >-
+      Which ledger accounts are revenue. ESRS E1-6 §55 needs net revenue and not "everything
+      credited", so the classification lives here rather than as an account-code literal
+      inside the query — a query that hard-codes `4000` is a query nobody can audit against
+      the undertaking's own chart.
+    config:
+      column_types:
+        tenant_id: varchar
+        account_code: varchar
+        account_class: varchar
+    columns:
+      - name: account_class
+        tests:
+          - accepted_values:
+              values: ["net_revenue", "other_income", "operating_cost"]
+
+  - name: scope_3_category_screening
+    description: >-
+      Which Scope 3 categories the undertaking screened in for the period. The join in
+      `e1_6_gross_scope_3.sql` is inner on purpose: a category with activity data but no
+      screening decision is a category nobody has judged, and it must not reach a disclosure
+      on the strength of having rows.
+    config:
+      column_types:
+        tenant_id: varchar
+        category: varchar
+        period_start: date
+        is_significant: boolean
+    columns:
+      - name: is_significant
         tests: [not_null]
