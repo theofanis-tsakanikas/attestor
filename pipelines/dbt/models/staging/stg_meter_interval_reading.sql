@@ -8,13 +8,16 @@
 -- says whose verdict it is. Dropping it would silently promote every row the evidence
 -- pipeline had already marked as suspect.
 
+-- Plain `TIMESTAMP`, because this model is a **view** and a Hive view rejects
+-- `timestamp(6)`: `Invalid column type for column ...: Unsupported Hive type:
+-- timestamp(6)`. The gold models are Iceberg and want the opposite — the precision is
+-- added there, at the layer that stores it. One rule per materialisation, not one rule.
+
 {{ config(materialized='view') }}
 
 SELECT
     CAST(tenant_id AS VARCHAR) AS tenant_id,
-    -- `TIMESTAMP(6)` because this column lands in an Iceberg table, and Iceberg rejects
-    -- the `timestamp(3) with time zone` that `FROM_ISO8601_TIMESTAMP` returns.
-    CAST(FROM_ISO8601_TIMESTAMP(interval_start) AS TIMESTAMP(6)) AS interval_start,
+    CAST(FROM_ISO8601_TIMESTAMP(interval_start) AS TIMESTAMP) AS interval_start,
     CAST(kwh AS DECIMAL(18, 6)) AS kwh,
     LOWER(CAST(dq_status AS VARCHAR)) AS upstream_dq_status
 FROM {{ source('raw', 'meter_interval_reading') }}
