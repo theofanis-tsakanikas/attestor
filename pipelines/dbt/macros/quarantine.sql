@@ -1,8 +1,20 @@
 {# Helpers that turn dbt's stored test failures into a quarantine a resolver can reason about. #}
 
 {% macro row_key(columns) %}
-    {#- A stable identity for a row, so a stored failure can be matched back to it. -#}
-    LOWER(TO_HEX(MD5(TO_UTF8(CONCAT_WS('|', {{ columns | join(', ') }})))))
+    {#- A stable identity for a row, so a stored failure can be matched back to it.
+
+        Every column is cast to VARCHAR first. `concat_ws` takes strings and nothing else, and
+        the columns handed to it here are dates and decimals — `FUNCTION_NOT_FOUND: Unexpected
+        parameters (varchar(1), varchar, date, decimal(18,4)) for function concat_ws`. Casting
+        at the call site rather than asking each model to pre-format keeps the key's definition
+        in one place, which matters because two models disagreeing about how a date becomes a
+        string would produce two different identities for the same row. -#}
+    LOWER(TO_HEX(MD5(TO_UTF8(CONCAT_WS(
+        '|'
+        {%- for column in columns -%}
+        , CAST({{ column }} AS VARCHAR)
+        {%- endfor -%}
+    )))))
 {% endmacro %}
 
 {% macro quarantined_keys(model_name) %}
