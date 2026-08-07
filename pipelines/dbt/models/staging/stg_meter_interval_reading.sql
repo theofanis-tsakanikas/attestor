@@ -12,7 +12,9 @@
 
 SELECT
     CAST(tenant_id AS VARCHAR) AS tenant_id,
-    CAST(FROM_ISO8601_TIMESTAMP(interval_start) AS TIMESTAMP) AS interval_start,
+    -- `TIMESTAMP(6)` because this column lands in an Iceberg table, and Iceberg rejects
+    -- the `timestamp(3) with time zone` that `FROM_ISO8601_TIMESTAMP` returns.
+    CAST(FROM_ISO8601_TIMESTAMP(interval_start) AS TIMESTAMP(6)) AS interval_start,
     CAST(kwh AS DECIMAL(18, 6)) AS kwh,
     LOWER(CAST(dq_status AS VARCHAR)) AS upstream_dq_status
 FROM {{ source('raw', 'meter_interval_reading') }}
