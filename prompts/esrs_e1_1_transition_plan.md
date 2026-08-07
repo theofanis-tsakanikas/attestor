@@ -1,6 +1,6 @@
 ---
 id: esrs_e1_1_transition_plan
-version: 3
+version: 4
 datapoint: ESRS_E1-1_transition_plan
 model_tier: reasoning
 max_words: 400
@@ -87,6 +87,24 @@ Write for an auditor, not for a brochure. No "committed to", no "journey", no "p
 Declarative sentences about what the plan says and what the evidence shows. Where the plan is
 aspirational rather than funded, say that plainly — an unfunded target described as funded is
 a misstatement, not optimism.
+
+# Citations are counted, and a draft below the count is thrown away
+
+Your `citations` array must hold **at least the number of distinct retrieval ids the contract
+demands**, and every id in it must appear in the narrative as a marker. This is checked
+mechanically: a draft with too few citations is refused whole, however good the prose is.
+
+So cite as you write. Each substantive claim carries the marker of the passage it rests on,
+and different claims rest on different passages — a draft that cites the same id three times
+has one citation, not three. If the retrieved evidence genuinely supports fewer distinct
+claims than the contract requires, say so in `unsupported_elements` and cite what you have;
+that is a legitimate outcome and the refusal it produces is the correct one.
+
+# Length is a ceiling, not a target
+
+The word limit is enforced. Write to roughly three quarters of it and stop; a draft that runs
+over is refused, and the sentence you added to be thorough is the reason the whole section is
+not published.
 
 # Output
 
