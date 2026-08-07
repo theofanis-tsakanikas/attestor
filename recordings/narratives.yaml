@@ -9,7 +9,7 @@ drafts:
 - tenant: helios
   datapoint_id: ESRS_E1-1_transition_plan
   prompt_id: esrs_e1_1_transition_plan
-  prompt_digest: 33888d0428519fee28ca3f98ca4639db929bc3641a02046d9393b5e2d0dbd492
+  prompt_digest: b96bf66121521411ea4aa0c92647b791c01f680cd7a2a532f4ba7a77425e57c7
   citations:
   - ev:7f3a
   - ev:91c0
@@ -28,7 +28,7 @@ drafts:
 - tenant: aegis
   datapoint_id: ESRS_E1-1_transition_plan
   prompt_id: esrs_e1_1_transition_plan
-  prompt_digest: 33888d0428519fee28ca3f98ca4639db929bc3641a02046d9393b5e2d0dbd492
+  prompt_digest: b96bf66121521411ea4aa0c92647b791c01f680cd7a2a532f4ba7a77425e57c7
   citations:
   - ev:4b1e
   - ev:c07d
@@ -44,7 +44,7 @@ drafts:
 - tenant: lumen
   datapoint_id: AIACT_ANNEX-IV-1_intended_purpose
   prompt_id: ai_act_intended_purpose
-  prompt_digest: e3a63971a85553283120703d3488d39e94f885fb00e76c2500769d17f2962d66
+  prompt_digest: 8843144e4364204b4224ca28d09257f476b8085143308f11b8cfe5e896c9653c
   citations:
   - ev:11aa
   - ev:22bb
@@ -60,7 +60,7 @@ drafts:
 - tenant: lumen
   datapoint_id: AIACT_ANNEX-IV-3_human_oversight
   prompt_id: ai_act_human_oversight
-  prompt_digest: 098a8f1cf91750271e81f8964c70accefcbe7abd20e412c8b2e6270df547bbdc
+  prompt_digest: 6e77ba789321914e8e3898240ce2cf6a3654ac0f4247c734d348adc324674639
   citations:
   - ev:33cc
   - ev:44dd

@@ -319,6 +319,10 @@ def envelope(text: str, *, document_id: str, document_class: str) -> str:
 #: Must agree with `documents.render.CITATION`; `tests/security/test_injection.py` asserts it.
 CITATION_MARKER = re.compile(r"\[ev:[0-9a-z]+\]")
 
+#: The sanctioned way for a draft to reference a figure it must not state. The renderer
+#: replaces it with a value carrying its own lineage; until then it is an identifier, not prose.
+DATAPOINT_PLACEHOLDER = re.compile(r"\{\{dp:[A-Za-z0-9_.-]+\}\}")
+
 
 @dataclass(frozen=True, slots=True)
 class DraftCheck:
@@ -354,9 +358,16 @@ def check_draft(
         problems.append(f"{words} words exceeds the contract's ceiling of {max_words}")
 
     # Citation markers are the retriever's identifiers, not the model's prose, and they are
-    # recorded as their own run kind downstream. Stripping them here keeps the digit rule
-    # absolute for everything that *is* prose, rather than softening it to accommodate ids.
-    prose = CITATION_MARKER.sub(" ", text)
+    # recorded as their own run kind downstream. Datapoint placeholders are the same kind of
+    # thing from the other direction: `{{dp:ESRS_E1-6_gross_scope_1}}` is an instruction to the
+    # resolver, and emitting one is precisely how the model *avoids* stating a figure.
+    #
+    # Both are stripped before the digit rule, which keeps that rule absolute for everything
+    # that is prose rather than softening it to accommodate identifiers. Not stripping the
+    # placeholder put the prompt and this check in direct contradiction: the prompt requires
+    # a placeholder where a figure belongs, and the draft was then refused for containing the
+    # digits inside it. A model doing exactly as instructed was told it had broken the rule.
+    prose = DATAPOINT_PLACEHOLDER.sub(" ", CITATION_MARKER.sub(" ", text))
     if any(char.isdigit() for char in prose):
         digits = sorted({c for c in prose if c.isdigit()})
         problems.append(f"contains digits {digits} — a model never places a figure")
