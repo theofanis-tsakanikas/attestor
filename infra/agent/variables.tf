@@ -45,7 +45,7 @@ variable "callback_urls" {
 
 variable "reasoning_model" {
   type        = string
-  default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+  default     = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
   description = <<-EOT
     A cross-region inference profile, EU-resident, and deliberately not the largest model
     available.
@@ -63,6 +63,17 @@ variable "reasoning_model" {
     it produces a blocked one. The choice is about how often a build stops, not about
     whether a number can be trusted, and it is a two-way door: raising it is this line and
     a re-run.
+
+    **This is that re-run.** The line said Haiku 4.5 and the empirical answer came back: it
+    blocked every narrative datapoint on every tenant, across five deploys, and never once
+    produced a draft that passed. Not for one reason — it numbered its levers, wrote section
+    references into prose, cited one passage where three were demanded and then none at all,
+    and ran past the word ceiling. Each of those is a rule the prompt states plainly; holding
+    four absolute rules at once is what it could not do.
+
+    The prediction above held exactly, which is the part worth keeping. Nothing wrong was
+    published. The system refused, said why, and the refusals were legible enough to diagnose
+    from. A tier is a decision about how often a build stops, and this one stopped always.
 
     Note where the money actually is. A report run makes a handful of model calls; the
     estate's dominant cost is OpenSearch Serverless sitting idle. Choosing a cheaper model

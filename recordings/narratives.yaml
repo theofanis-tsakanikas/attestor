@@ -1,5 +1,5 @@
 provenance: synthetic
-model: eu.anthropic.claude-haiku-4-5-20251001-v1:0
+model: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
 note: 'Drafts captured from a model run and reviewed before commit. Re-captured by
   `python scripts/seed_recordings.py --capture`. Two things make a replay stale and
   both are caught here rather than at run time: editing a prompt, and changing the
