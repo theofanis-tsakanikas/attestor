@@ -24,14 +24,14 @@ SELECT
         FROM gold.incident_log AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.occurred_at >= :period_start
-            AND q.occurred_at < :period_end
+            AND q.occurred_at >= CAST(:period_start AS DATE)
+            AND q.occurred_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 FROM gold.incident_log AS i
 WHERE
     i.tenant_id = :tenant_id
-    AND i.occurred_at >= :period_start
-    AND i.occurred_at < :period_end
+    AND i.occurred_at >= CAST(:period_start AS DATE)
+    AND i.occurred_at < CAST(:period_end AS DATE)
     AND i.classification IN ('serious', 'under_investigation')
     AND i.dq_status = 'clean'

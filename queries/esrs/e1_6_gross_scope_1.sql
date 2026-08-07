@@ -31,8 +31,8 @@ SELECT
         FROM gold.ghg_scope_1_activity AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.activity_date >= :period_start
-            AND q.activity_date < :period_end
+            AND q.activity_date >= CAST(:period_start AS DATE)
+            AND q.activity_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 -- Reads current, and reports which snapshot current was through `resolved_snapshot_id`
@@ -50,8 +50,8 @@ SELECT
 FROM gold.ghg_scope_1_activity AS t
 WHERE
     t.tenant_id = :tenant_id
-    AND t.activity_date >= :period_start
-    AND t.activity_date < :period_end
+    AND t.activity_date >= CAST(:period_start AS DATE)
+    AND t.activity_date < CAST(:period_end AS DATE)
     AND t.consolidation_boundary = 'operational_control'
     -- Quarantined rows never reach a disclosure. They are not zero, they are absent, and
     -- their absence is reported as E_UPSTREAM_QUARANTINE rather than silently summed over.

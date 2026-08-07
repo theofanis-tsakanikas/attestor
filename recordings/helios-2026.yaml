@@ -6,7 +6,7 @@ note: Shaped by hand to exercise the resolver's branches. Re-captured against th
   with the run id.
 results:
 - query: esrs/e1_6_gross_scope_1.sql
-  query_digest: 62ed5117442257cb1bc7ef27b8c77b7a363cccd194ff250c4e64e3281e212fb6
+  query_digest: c5a198c36793996fd98addce23365f19b1ebbcc855e4e009ba68cd7276f19c88
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'
@@ -19,7 +19,7 @@ results:
   row_counts:
     gold.ghg_scope_1_activity: 214883
 - query: esrs/e1_6_gross_scope_1_crosscheck_fuel_spend.sql
-  query_digest: c099f696a6381bdf3051ba295e6f0ef6f12838c54265a812edc1fac23f358979
+  query_digest: 3d9a258f261a936f2bdccd45f44bb0293a2523b65a3c5fb5a33019cb6ae4e033
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'
@@ -31,7 +31,7 @@ results:
   snapshot_ids:
     gold.procurement_fuel_spend: '7284419023871123002'
 - query: esrs/e1_5_electricity_consumption.sql
-  query_digest: 118009df56e7833d692ee80c8ac531720c194310884d7786d115921185719fec
+  query_digest: 07bee5cec574fa850b4db03ff210d942fb611aa86de7d254674196ed9d7d0e10
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'
@@ -44,7 +44,7 @@ results:
   row_counts:
     gold.electricity_consumption: 1448
 - query: esrs/e1_5_electricity_consumption_crosscheck_meter.sql
-  query_digest: 3c76d37f0a2377b1ad096a99561f5126f280c623acbd5f23a82958e796f21948
+  query_digest: d75d5192bda5775d01e5a80178dfeb2bdfacc5d4eaaae69cdfd020e181850ee0
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'
@@ -55,7 +55,7 @@ results:
   snapshot_ids:
     gold.meter_interval_reading: '7284419023871123004'
 - query: esrs/e1_6_gross_scope_3.sql
-  query_digest: 9f3035cbbb710f6500434eec4b4ee17d553c19c5c090baec75221678a579bbda
+  query_digest: 40a4e9f03532ce8bd6ccf6b5a4ace04226fb6b377abcabe8714c3e6c88baf685
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'
@@ -67,7 +67,7 @@ results:
   snapshot_ids:
     gold.ghg_scope_3_activity: '7284419023871123005'
 - query: esrs/e1_6_net_revenue.sql
-  query_digest: 67a96165ca360f589a32dd46dbbc369c39a0e550f61a306b03be47f9d81f69ac
+  query_digest: 13c9c0526c4d4bd753293f3991a4e633811b01dee1223a2ba01b875c359ce62e
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'
@@ -79,7 +79,7 @@ results:
   snapshot_ids:
     gold.general_ledger_posting: '7284419023871123006'
 - query: esrs/e1_6_net_revenue_crosscheck_ledger.sql
-  query_digest: ae78a456400e80bce81a1923be2e97efd9a07d048346d23e79d3ac3e4c300e65
+  query_digest: ce9dc8a663255bef6dd5dd3905d41024f9e07089b7bc6cf8c98cc17083ceaf65
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'

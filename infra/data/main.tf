@@ -57,14 +57,12 @@ locals {
   kms  = local.foundation.kms_key_arn
 }
 
+# There is no `ref` database here. dbt owns the reference tables, and `+schema: ref` puts
+# them in `<database>_ref` — so a Terraform-declared `attestor_ref` was a third name for a
+# thing with two, permanently empty, and the queries never looked at it.
 resource "aws_glue_catalog_database" "gold" {
   name        = "${var.project}_gold"
   description = "Published-figure sources. Everything a disclosure resolves through."
-}
-
-resource "aws_glue_catalog_database" "ref" {
-  name        = "${var.project}_ref"
-  description = "Reference data: emission factors, chart of accounts, category screening."
 }
 
 # The gold tables **the application writes**. That is the whole of what belongs here.

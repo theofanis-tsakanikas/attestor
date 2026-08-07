@@ -1,0 +1,4 @@
+fuel_type,period_start,period_end,avg_price_eur_per_litre,source
+diesel,2026-01-01,2027-01-01,3.2244,Synthetic corpus — see seeds/schema.yml
+petrol,2026-01-01,2027-01-01,3.0000,Synthetic corpus — see seeds/schema.yml
+lpg,2026-01-01,2027-01-01,1.8000,Synthetic corpus — see seeds/schema.yml

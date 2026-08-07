@@ -24,8 +24,8 @@ SELECT
         FROM gold.general_ledger_posting AS q
         WHERE
             q.tenant_id = :tenant_id
-            AND q.posting_date >= :period_start
-            AND q.posting_date < :period_end
+            AND q.posting_date >= CAST(:period_start AS DATE)
+            AND q.posting_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
 FROM gold.general_ledger_posting AS l
@@ -35,8 +35,8 @@ INNER JOIN ref.chart_of_accounts AS c
         AND c.account_code = l.account_code
 WHERE
     l.tenant_id = :tenant_id
-    AND l.posting_date >= :period_start
-    AND l.posting_date < :period_end
+    AND l.posting_date >= CAST(:period_start AS DATE)
+    AND l.posting_date < CAST(:period_end AS DATE)
     AND c.account_class = 'net_revenue'
     AND l.period_status = 'closed'
     AND l.dq_status = 'clean'

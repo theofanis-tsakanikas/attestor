@@ -1,0 +1,7 @@
+tenant_id,account_code,account_class,account_name
+helios,4000,net_revenue,Revenue from contracts with customers
+helios,4100,other_income,Other operating income
+helios,6000,operating_cost,Cost of services
+aegis,4000,net_revenue,Revenue from contracts with customers
+aegis,4100,other_income,Other operating income
+aegis,6000,operating_cost,Cost of goods sold

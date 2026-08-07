@@ -283,12 +283,15 @@ _TABLE = re.compile(r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", r
 #: A bound parameter marker. Matched only where the surrounding text is code.
 _MARKER = re.compile(r":([a-z_][a-z0-9_]*)")
 
-#: The logical schema the committed queries speak in. `queries/` names the *layer* — `gold` —
-#: and the deployment decides where that layer lives, which in this account is `attestor_gold`.
-#: Resolving it here keeps the queries free of an account's naming and keeps lineage recording
-#: the logical name; `tables_in()` reads the original text, so a lineage record still says
+#: The logical schemas the committed queries speak in. `queries/` names a *layer* — `gold` for
+#: the analytical tables, `ref` for reference data — and the deployment decides where each
+#: layer lives. `gold` is the configured database; `ref` is dbt's custom-schema convention,
+#: `<database>_ref`, which is where `+schema: ref` puts the seeds.
+#:
+#: Resolving here keeps the queries free of an account's naming and keeps lineage recording
+#: the logical name: `tables_in()` reads the original text, so a lineage record still says
 #: `gold.electricity_consumption` whatever the database is called.
-_GOLD_SCHEMA = re.compile(r'(?:\bgold|"gold")\s*\.')
+_LAYER_SCHEMA = re.compile(r'(?:\b(gold|ref)|"(gold|ref)")\s*\.')
 
 #: Iceberg snapshot ids are integers. This is the only value in the system that reaches a SQL
 #: statement by substitution rather than by binding — Athena will not take a table-version pin
@@ -396,10 +399,12 @@ def _substitute_outside_literals(
                 out.append(replace(match.group(1)))
                 index = match.end()
                 continue
-            schema = _GOLD_SCHEMA.match(sql, index) if database else None
+            schema = _LAYER_SCHEMA.match(sql, index) if database else None
             if schema:
+                layer = schema.group(1) or schema.group(2)
+                resolved = database if layer == "gold" else f"{database}_{layer}"
                 quoted = schema.group(0).startswith('"')
-                out.append(f'"{database}".' if quoted else f"{database}.")
+                out.append(f'"{resolved}".' if quoted else f"{resolved}.")
                 index = schema.end()
                 continue
             out.append(character)
