@@ -390,9 +390,18 @@ resource "aws_bedrockagent_knowledge_base" "regulatory" {
 resource "aws_bedrockagent_data_source" "tenant" {
   for_each = toset(var.tenants)
 
-  knowledge_base_id    = aws_bedrockagent_knowledge_base.evidence.id
-  name                 = "${var.project}-evidence-${each.value}"
-  data_deletion_policy = "DELETE"
+  knowledge_base_id = aws_bedrockagent_knowledge_base.evidence.id
+  name              = "${var.project}-evidence-${each.value}"
+  # RETAIN, not DELETE. `DELETE` asks Bedrock to walk the index and remove this data source's
+  # vectors before the data source itself goes — and the collection it is walking is being
+  # destroyed in the same run. Destroy `31188800462` died exactly there: `DELETE_UNSUCCESSFUL —
+  # Unable to delete data from vector store`, leaving the collection, the knowledge base and the
+  # whole foundation layer standing and billing.
+  #
+  # Nothing is retained in practice. The collection is destroyed wholesale a few resources
+  # later, and the index inside it with it. `DELETE` was buying a tidy intermediate state that
+  # no one observes, at the price of a teardown that cannot finish.
+  data_deletion_policy = "RETAIN"
 
   data_source_configuration {
     type = "S3"
@@ -427,9 +436,18 @@ resource "aws_bedrockagent_data_source" "tenant" {
 # and returned success, and `search_regulation` answered every query with nothing. Every
 # layer reported healthy and one of the two corpora did not exist.
 resource "aws_bedrockagent_data_source" "regulatory" {
-  knowledge_base_id    = aws_bedrockagent_knowledge_base.regulatory.id
-  name                 = "${var.project}-regulatory"
-  data_deletion_policy = "DELETE"
+  knowledge_base_id = aws_bedrockagent_knowledge_base.regulatory.id
+  name              = "${var.project}-regulatory"
+  # RETAIN, not DELETE. `DELETE` asks Bedrock to walk the index and remove this data source's
+  # vectors before the data source itself goes — and the collection it is walking is being
+  # destroyed in the same run. Destroy `31188800462` died exactly there: `DELETE_UNSUCCESSFUL —
+  # Unable to delete data from vector store`, leaving the collection, the knowledge base and the
+  # whole foundation layer standing and billing.
+  #
+  # Nothing is retained in practice. The collection is destroyed wholesale a few resources
+  # later, and the index inside it with it. `DELETE` was buying a tidy intermediate state that
+  # no one observes, at the price of a teardown that cannot finish.
+  data_deletion_policy = "RETAIN"
 
   data_source_configuration {
     type = "S3"
