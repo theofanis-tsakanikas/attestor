@@ -17,6 +17,6 @@ SELECT
     LOWER(CAST(reading_type AS VARCHAR)) AS reading_type,
     CAST(site_id AS VARCHAR) AS site_id,
     CAST(source_document_id AS VARCHAR) AS source_document_id,
-    CAST(FROM_ISO8601_TIMESTAMP(ingested_at) AS TIMESTAMP) AS ingested_at,
+    CAST(FROM_ISO8601_TIMESTAMP(ingested_at) AS TIMESTAMP(6)) AS ingested_at,
     LOWER(CAST(dq_status AS VARCHAR)) AS upstream_dq_status
 FROM {{ source('raw', 'electricity_consumption') }}
