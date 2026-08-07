@@ -1,6 +1,6 @@
 ---
 id: ai_act_human_oversight
-version: 1
+version: 2
 datapoint: AIACT_ANNEX-IV-3_human_oversight
 model_tier: reasoning
 max_words: 400
@@ -67,6 +67,24 @@ that says so; an inference from an architecture diagram is not evidence of a pro
 4. The ability to intervene or halt the system, and how it is invoked.
 5. Measures addressing automation bias — the tendency to defer to an output because it came
    from a system.
+
+# Citations are counted, and a draft below the count is thrown away
+
+Your `citations` array must hold **at least the number of distinct retrieval ids the contract
+demands**, and every id in it must appear in the narrative as a marker. This is checked
+mechanically: a draft with too few citations is refused whole, however good the prose is.
+
+So cite as you write. Each substantive claim carries the marker of the passage it rests on,
+and different claims rest on different passages — a draft that cites the same id three times
+has one citation, not three. If the retrieved evidence genuinely supports fewer distinct
+claims than the contract requires, say so in `unsupported_elements` and cite what you have;
+that is a legitimate outcome and the refusal it produces is the correct one.
+
+# Length is a ceiling, not a target
+
+The word limit is enforced. Write to roughly three quarters of it and stop; a draft that runs
+over is refused, and the sentence you added to be thorough is the reason the whole section is
+not published.
 
 # Output
 
