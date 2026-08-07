@@ -66,10 +66,15 @@
             {% set selects = [] %}
             {% for node in failure_tables %}
                 {% set model_name = node.refs[0].name if node.refs else 'unknown' %}
+                {#- `CAST(... AS TIMESTAMP)` for `detected_at`, not bare `CURRENT_TIMESTAMP`.
+                    Athena returns `timestamp(3) with time zone` and a Hive view refuses the
+                    zone. Every model in the run had already built when this failed, which is
+                    the worst place for it: `PASS=57 ERROR=0` on the line above the error. -#}
                 {% do selects.append(
                     "SELECT '" ~ model_name ~ "' AS model_name, '" ~ node.name ~ "' AS rule, "
+                    ~ "CAST(NULL AS VARCHAR) AS tenant_id, "
                     ~ "CAST(NULL AS VARCHAR) AS row_key, CAST(NULL AS VARCHAR) AS payload, "
-                    ~ "CURRENT_TIMESTAMP AS detected_at WHERE 1 = 0"
+                    ~ "CAST(CURRENT_TIMESTAMP AS TIMESTAMP) AS detected_at WHERE 1 = 0"
                 ) %}
             {% endfor %}
             {% set sql %}
