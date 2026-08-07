@@ -26,6 +26,8 @@ from pathlib import Path
 
 import yaml
 
+from attestor.policy.tenants import Session, TenantRegistry
+
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "evidence"
 REGULATORY = ROOT / "corpus" / "regulatory"
@@ -58,6 +60,13 @@ def evidence_sidecars() -> dict[Path, str]:
             wanted[sidecar(ROOT / source)] = payload(
                 {
                     "tenant": tenant,
+                    # The period the session is scoped to. `kb.metadata_filter` builds
+                    # `{tenant, period}` and Bedrock ANDs the clauses, so a sidecar without
+                    # this matched nothing: evidence retrieval returned zero passages for
+                    # every narrative datapoint, silently, while the regulatory corpus went on
+                    # answering. A narrative grounded entirely in the standard's own text
+                    # reads perfectly well and cites no evidence at all.
+                    "period": manifest.stem,
                     "document_id": str(document["document_id"]),
                     "document_class": str(document["document_class"]),
                 }
@@ -74,6 +83,29 @@ def regulatory_sidecars() -> dict[Path, str]:
             continue
         wanted[sidecar(note)] = payload({"standard": standard, "datapoint_id": note.stem})
     return wanted
+
+
+def filter_keys_a_session_builds() -> set[str]:
+    """The keys `kb.metadata_filter` will actually send, asked of the code that builds them.
+
+    Read rather than listed, because this is the exact gap that hid the last defect: the
+    filter carried `{tenant, period}`, the sidecars carried `tenant` alone, and Bedrock ANDed
+    a clause nothing satisfied.
+    """
+    keys: set[str] = set()
+    for manifest in sorted(EVIDENCE.glob("*/*.yaml")):
+        tenant = TenantRegistry.load(ROOT)[manifest.parent.name]
+        claims = {
+            "sub": "checker",
+            "iss": tenant.identity.issuer,
+            "aud": tenant.identity.audience,
+            tenant.identity.groups_claim: [next(iter(tenant.identity.role_map))],
+        }
+        session = Session.from_claims(
+            claims=claims, tenant=tenant, session_id="kbcheck", period=manifest.stem
+        )
+        keys |= set(session.retrieval_filter())
+    return keys
 
 
 def main() -> int:
@@ -95,6 +127,16 @@ def main() -> int:
                 problems.append(f"{path.relative_to(ROOT)} disagrees with its manifest")
         else:
             path.write_text(body, encoding="utf-8")
+
+    # Every key the session's filter sends must be an attribute some document carries.
+    required = filter_keys_a_session_builds()
+    for path in sorted(p for p in wanted if "/documents/" in p.as_posix()):
+        attributes = set(json.loads(wanted[path])["metadataAttributes"])
+        for missing in sorted(required - attributes):
+            problems.append(
+                f"{path.relative_to(ROOT)} has no `{missing}` attribute, and the retrieval "
+                "filter sends one. Bedrock ANDs its clauses, so this document is unreachable"
+            )
 
     # A sidecar with no document beside it would filter nothing and confuse the next reader.
     for stray in sorted({*EVIDENCE.rglob("*.metadata.json"), *REGULATORY.glob("*.metadata.json")}):
