@@ -8,6 +8,11 @@
 -- says whose verdict it is. Dropping it would silently promote every row the evidence
 -- pipeline had already marked as suspect.
 
+-- Plain `TIMESTAMP`, because this model is a **view** and a Hive view rejects
+-- `timestamp(6)`: `Invalid column type for column ...: Unsupported Hive type:
+-- timestamp(6)`. The gold models are Iceberg and want the opposite — the precision is
+-- added there, at the layer that stores it. One rule per materialisation, not one rule.
+
 {{ config(materialized='view') }}
 
 SELECT
@@ -17,6 +22,6 @@ SELECT
     LOWER(CAST(reading_type AS VARCHAR)) AS reading_type,
     CAST(site_id AS VARCHAR) AS site_id,
     CAST(source_document_id AS VARCHAR) AS source_document_id,
-    CAST(FROM_ISO8601_TIMESTAMP(ingested_at) AS TIMESTAMP(6)) AS ingested_at,
+    CAST(FROM_ISO8601_TIMESTAMP(ingested_at) AS TIMESTAMP) AS ingested_at,
     LOWER(CAST(dq_status AS VARCHAR)) AS upstream_dq_status
 FROM {{ source('raw', 'electricity_consumption') }}

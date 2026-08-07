@@ -16,7 +16,10 @@ WITH quarantined AS (
 
 SELECT
     s.tenant_id,
-    s.interval_start,
+    -- `TIMESTAMP(6)` here and not in staging: this is the Iceberg table, and Iceberg
+    -- refuses both the zoned `timestamp(3)` Athena produces and the bare Hive
+    -- `timestamp` the view carries.
+    CAST(s.interval_start AS TIMESTAMP(6)) AS interval_start,
     s.kwh,
     CASE
         WHEN q.row_key IS NOT NULL THEN 'quarantined'
