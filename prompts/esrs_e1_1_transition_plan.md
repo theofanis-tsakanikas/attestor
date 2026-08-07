@@ -1,6 +1,6 @@
 ---
 id: esrs_e1_1_transition_plan
-version: 6
+version: 7
 datapoint: ESRS_E1-1_transition_plan
 model_tier: reasoning
 max_words: 400
@@ -130,9 +130,13 @@ Return JSON only:
 Four things are checked mechanically and each one throws the whole draft away. Verify them
 against what you have written, not against what you meant:
 
-1. **Word count.** Count the words in `narrative`. If it is above 400 minus fifty, cut a
-   sentence. Aim for 330. Prose that covers every element in 330 words is a better
-   section than prose that covers them in 413 and is discarded.
+1. **Length, as a sentence budget.** A word count is hard to hold while composing, so count
+   sentences instead: **two sentences per element, five elements, plus one opening sentence —
+   eleven in total.** That lands comfortably inside the ceiling. Three consecutive drafts came
+   back at four hundred and sixty-two words, four hundred and eighty-five and four hundred and
+   thirty-one, each refused whole; the material is not too large for the ceiling, the sentences
+   were too many. If an element needs a third sentence, take one from an element that needed
+   only one.
 2. **Citation count.** Count the *distinct* ids in `citations`. You need three. Each must
    also appear as a marker in the narrative. If you have fewer, you have written assertions
    that rest on nothing — either ground them in another retrieved passage or remove them.
