@@ -8,7 +8,7 @@
 -- would discard what the evidence pipeline knew, and taking only the first would make
 -- the tests decorative.
 
-{{ config(materialized='table', file_format='iceberg') }}
+{{ config(materialized='table', table_type='iceberg') }}
 
 WITH quarantined AS (
     {{ quarantined_keys('stg_model_evaluation_prediction') }}

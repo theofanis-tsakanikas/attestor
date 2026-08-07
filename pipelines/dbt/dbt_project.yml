@@ -22,7 +22,7 @@ test-paths: ["tests"]
 models:
   attestor:
     +materialized: table
-    +file_format: iceberg
+    +table_type: iceberg
     staging:
       # Views: staging is a rename-and-cast layer, and materialising it would double storage
       # for no query anybody runs.

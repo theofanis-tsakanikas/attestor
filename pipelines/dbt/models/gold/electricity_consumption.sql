@@ -8,7 +8,15 @@
 -- would discard what the evidence pipeline knew, and taking only the first would make
 -- the tests decorative.
 
-{{ config(materialized='table', file_format='iceberg') }}
+-- `table_type`, not `file_format`. `file_format` is a Spark config key and dbt-athena
+-- ignores it silently, so every gold table was built as **Hive** while the config said
+-- Iceberg. It looked right for as long as nobody asked for a snapshot: the resolver's
+-- `resolved_snapshot_id` reads `"gold"."<table>$snapshots"`, a metadata relation only
+-- an Iceberg table has, and the live run failed with `TABLE_NOT_FOUND ... $snapshots`.
+--
+-- Claim 4 is a table-format property before it is an application property, and a config
+-- key with a typo in it is not a table format.
+{{ config(materialized='table', table_type='iceberg') }}
 
 WITH quarantined AS (
     {{ quarantined_keys('stg_electricity_consumption') }}
