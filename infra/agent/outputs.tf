@@ -29,6 +29,11 @@ output "memory_ids" {
   value = { for k, v in awscc_bedrockagentcore_memory.tenant : k => v.memory_id }
 }
 
+output "ecr_repository_name" {
+  description = "For `aws ecr` calls, which take a name where docker takes a URL."
+  value       = aws_ecr_repository.agent.name
+}
+
 output "ecr_repository_url" {
   value = aws_ecr_repository.agent.repository_url
 }
