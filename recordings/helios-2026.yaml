@@ -6,7 +6,7 @@ note: Shaped by hand to exercise the resolver's branches. Re-captured against th
   with the run id.
 results:
 - query: esrs/e1_6_gross_scope_1.sql
-  query_digest: 791eac18dd6b1a0100c68210cffae75f646594019a4fb1733af9eae37976fb13
+  query_digest: 62ed5117442257cb1bc7ef27b8c77b7a363cccd194ff250c4e64e3281e212fb6
   parameters:
     tenant_id: helios
     period_start: '2026-01-01'

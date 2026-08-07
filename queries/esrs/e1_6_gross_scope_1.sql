@@ -35,7 +35,19 @@ SELECT
             AND q.activity_date < :period_end
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.ghg_scope_1_activity FOR VERSION AS OF COALESCE(:snapshot_id, gold.ghg_scope_1_activity$current_snapshot) AS t
+-- Reads current, and reports which snapshot current was through `resolved_snapshot_id`
+-- above. This line used to say
+-- `FOR VERSION AS OF COALESCE(:snapshot_id, gold.ghg_scope_1_activity$current_snapshot)`,
+-- which Athena rejects twice over: `FOR VERSION AS OF` takes a literal snapshot id and not an
+-- expression, and `table$current_snapshot` is not a value — the metadata tables are relations
+-- you select from. It failed with `mismatched input '$'`, and it was the only query in
+-- `queries/` that tried; the other seven read current and record what they read, which is what
+-- this now does too.
+--
+-- So as-of pinning is *not* implemented on the live path. Claim 4 holds in replay, where the
+-- recorded backend answers from a captured snapshot. Saying that plainly is better than a
+-- clause that looks like time travel and has never once parsed.
+FROM gold.ghg_scope_1_activity AS t
 WHERE
     t.tenant_id = :tenant_id
     AND t.activity_date >= :period_start

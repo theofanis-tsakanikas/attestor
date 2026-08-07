@@ -7,6 +7,7 @@ could be green in replay and absent in production.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from typing import Any
 
@@ -227,3 +228,51 @@ def test_the_snapshots_metadata_table_is_not_recorded_as_a_source() -> None:
         "AS resolved_snapshot_id FROM gold.t"
     )
     assert tables_in(sql) == ("gold.t",)
+
+
+class TestParameterMarkersInComments:
+    """The binding must not treat documentation as code.
+
+    Every file in `queries/` opens with a header naming its parameters —
+    `-- :tenant_id · :period_start · :period_end`. Substituting there appends a value for a
+    marker Athena never sees, because Athena strips comments before it counts placeholders:
+    `INVALID_PARAMETER_USAGE: Incorrect number of parameters: expected 6 but found 9`, on
+    every quantitative datapoint, on the live path only.
+
+    Nothing offline could have caught it. `RecordedBackend` does no binding at all, so the
+    one code path that rewrites SQL had no test that ran it against a real query's text.
+    """
+
+    def test_a_marker_in_a_line_comment_is_left_alone(self) -> None:
+        sql = "-- :tenant_id is the undertaking\nSELECT x FROM t WHERE id = :tenant_id"
+        statement, values = _bind(sql, {"tenant_id": "helios"}, snapshot_id=None)
+        assert statement.count("?") == 1
+        assert values == ["helios"]
+        assert ":tenant_id is the undertaking" in statement
+
+    def test_a_marker_in_a_block_comment_is_left_alone(self) -> None:
+        sql = "/* binds :period_start */ SELECT x FROM t WHERE d >= :period_start"
+        statement, values = _bind(sql, {"period_start": "2026-01-01"}, snapshot_id=None)
+        assert statement.count("?") == 1
+        assert values == ["2026-01-01"]
+
+    def test_a_marker_in_a_string_literal_is_left_alone(self) -> None:
+        sql = "SELECT ':tenant_id' AS label FROM t WHERE id = :tenant_id"
+        statement, values = _bind(sql, {"tenant_id": "aegis"}, snapshot_id=None)
+        assert statement.count("?") == 1
+        assert "':tenant_id'" in statement
+        assert values == ["aegis"]
+
+    def test_every_committed_query_binds_what_athena_will_count(self, repo_root) -> None:
+        """Placeholders in the statement must equal the values passed beside it."""
+        parameters = {
+            "tenant_id": "helios",
+            "period_start": "2026-01-01",
+            "period_end": "2027-01-01",
+        }
+        for path in sorted((repo_root / "queries").rglob("*.sql")):
+            statement, values = _bind(
+                path.read_text(encoding="utf-8"), parameters, snapshot_id=None
+            )
+            stripped = re.sub(r"--[^\n]*|/\*.*?\*/", "", statement, flags=re.DOTALL)
+            assert stripped.count("?") == len(values), path.name

@@ -278,6 +278,9 @@ class AthenaBackend:
 #: guessing about statements this repository does not contain.
 _TABLE = re.compile(r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*)", re.IGNORECASE)
 
+#: A bound parameter marker. Matched only where the surrounding text is code.
+_MARKER = re.compile(r":([a-z_][a-z0-9_]*)")
+
 #: Iceberg snapshot ids are integers. This is the only value in the system that reaches a SQL
 #: statement by substitution rather than by binding — Athena will not take a table-version pin
 #: as a parameter — so the shape is asserted here instead of trusted.
@@ -313,25 +316,71 @@ def _bind(
     value in this system reaches SQL as a parameter; this one cannot, so it earns the one
     validation the others do not need.
     """
-    if snapshot_id is None:
-        sql = sql.replace(":snapshot_id", "NULL")
-    else:
-        if not _SNAPSHOT_ID.match(str(snapshot_id)):
-            raise QueryError(
-                f"snapshot id {snapshot_id!r} is not an Iceberg snapshot id. It is the one "
-                "value substituted into a statement rather than bound to it, so it is "
-                "refused rather than escaped."
-            )
-        sql = sql.replace(":snapshot_id", f"'{snapshot_id}'")
+    if snapshot_id is not None and not _SNAPSHOT_ID.match(str(snapshot_id)):
+        raise QueryError(
+            f"snapshot id {snapshot_id!r} is not an Iceberg snapshot id. It is the one "
+            "value substituted into a statement rather than bound to it, so it is "
+            "refused rather than escaped."
+        )
 
     ordered: list[str] = []
 
-    def replace(match: re.Match[str]) -> str:
-        name = match.group(1)
+    def replace(name: str) -> str:
+        if name == "snapshot_id":
+            return "NULL" if snapshot_id is None else f"'{snapshot_id}'"
         if name not in parameters:
             raise QueryError(f"query binds :{name} but no value was supplied")
         ordered.append(str(parameters[name]))
         return "?"
 
-    statement = re.sub(r":([a-z_][a-z0-9_]*)", replace, sql)
+    statement = _substitute_outside_literals(sql, replace)
     return statement, ordered
+
+
+def _substitute_outside_literals(sql: str, replace: Callable[[str], str]) -> str:
+    """Rewrite `:name` markers, but only where they are code.
+
+    Every query in `queries/` documents its own parameters in a comment header —
+    `-- :tenant_id · :period_start · :period_end`. Substituting there appended a value for a
+    marker Athena never saw, because Athena strips comments before counting placeholders. The
+    result was `INVALID_PARAMETER_USAGE: Incorrect number of parameters: expected 6 but found
+    9`, on every quantitative datapoint, on the live path only — the recorded backend does no
+    binding at all, so nothing offline could have caught it.
+
+    String literals are skipped for the older reason: a marker inside quotes is text, and
+    turning it into a placeholder changes what the query says.
+    """
+    out: list[str] = []
+    index, length = 0, len(sql)
+    while index < length:
+        character = sql[index]
+        if character == "'":
+            end = index + 1
+            while end < length:
+                if sql[end] == "'":
+                    if end + 1 < length and sql[end + 1] == "'":
+                        end += 2
+                        continue
+                    break
+                end += 1
+            out.append(sql[index : end + 1])
+            index = end + 1
+        elif sql.startswith("--", index):
+            end = sql.find("\n", index)
+            end = length if end == -1 else end
+            out.append(sql[index:end])
+            index = end
+        elif sql.startswith("/*", index):
+            end = sql.find("*/", index + 2)
+            end = length if end == -1 else end + 2
+            out.append(sql[index:end])
+            index = end
+        else:
+            match = _MARKER.match(sql, index)
+            if match:
+                out.append(replace(match.group(1)))
+                index = match.end()
+            else:
+                out.append(character)
+                index += 1
+    return "".join(out)
