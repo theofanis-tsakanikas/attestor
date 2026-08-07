@@ -323,6 +323,11 @@ CITATION_MARKER = re.compile(r"\[ev:[0-9a-z]+\]")
 #: replaces it with a value carrying its own lineage; until then it is an identifier, not prose.
 DATAPOINT_PLACEHOLDER = re.compile(r"\{\{dp:[A-Za-z0-9_.-]+\}\}")
 
+#: How much of the offending prose a refusal shows, and how many places. Enough to read
+#: what went wrong; not so much that a refusal reproduces the draft it refused.
+EXCERPT_CONTEXT = 30
+EXCERPT_LIMIT = 3
+
 
 @dataclass(frozen=True, slots=True)
 class DraftCheck:
@@ -369,7 +374,21 @@ def check_draft(
     # digits inside it. A model doing exactly as instructed was told it had broken the rule.
     prose = DATAPOINT_PLACEHOLDER.sub(" ", CITATION_MARKER.sub(" ", text))
     if any(char.isdigit() for char in prose):
-        digits = sorted({c for c in prose if c.isdigit()})
-        problems.append(f"contains digits {digits} — a model never places a figure")
+        # The excerpt is the whole point. "contains digits ['1', '2', '3']" is true and
+        # useless: it cannot distinguish a fabricated total from a numbered list marker from a
+        # section reference, and each of those has a different remedy. Showing where the digit
+        # is turns a guess into a reading.
+        offenders = sorted({c for c in prose if c.isdigit()})
+        excerpts = []
+        for match in re.finditer(r"\S*\d\S*", prose):
+            start = max(0, match.start() - EXCERPT_CONTEXT)
+            excerpts.append(
+                "…" + " ".join(prose[start : match.end() + EXCERPT_CONTEXT].split()) + "…"
+            )
+            if len(excerpts) == EXCERPT_LIMIT:
+                break
+        problems.append(
+            f"contains digits {offenders} — a model never places a figure. " + " ".join(excerpts)
+        )
 
     return DraftCheck(ok=not problems, problems=tuple(problems))
