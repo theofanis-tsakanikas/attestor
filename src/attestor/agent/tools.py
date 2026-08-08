@@ -231,8 +231,18 @@ class Toolbox:
         record = results.ledger.get(datapoint_id)
         if record is None:
             outcome = results.get(datapoint_id)
+            # The detail, not only the code. `E_RESOLVER_ERROR` on its own is a category, and
+            # the thing a caller needs is the sentence underneath it — live, that sentence was
+            # an Athena permission this role was missing, and the tool reported a bare code
+            # while a check upstream read the word "lineage" in `"lineage": null` and passed.
             reason = outcome.reason_code if isinstance(outcome, Abstained) else "unresolved"
-            return {"datapoint": datapoint_id, "lineage": None, "reason": reason}
+            detail = outcome.detail if isinstance(outcome, Abstained) else ""
+            return {
+                "datapoint": datapoint_id,
+                "lineage": None,
+                "reason": reason,
+                "detail": detail,
+            }
 
         return {
             "datapoint": datapoint_id,
