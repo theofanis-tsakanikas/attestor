@@ -420,3 +420,37 @@ def test_a_gateway_call_gets_past_the_tool_lookup(repo_root, monkeypatch) -> Non
         _GatewayContext("attestor-tools___read_lineage"),
     )
     assert "unknown tool" not in str(response["body"]), response["body"]
+
+
+def test_a_gateway_event_is_read_as_one_big_argument_object(repo_root) -> None:
+    """AgentCore invokes a Lambda target with the tool input *as* the event.
+
+    Our tests and the runtime's HTTP surface nest arguments under `arguments`; the Gateway does
+    not, and the live estate answered `read_lineage requires argument(s) datapoint_id` to a call
+    that supplied exactly that.
+    """
+    assert handler._arguments({"datapoint_id": "ESRS_E1-6_gross_scope_1"}) == {
+        "datapoint_id": "ESRS_E1-6_gross_scope_1"
+    }
+    assert handler._arguments({"arguments": {"datapoint_id": "x"}, "tool": "t"}) == {
+        "datapoint_id": "x"
+    }
+    # The keys this handler owns are never mistaken for arguments — including the ones a caller
+    # is forbidden from sending, which on this path would otherwise look entirely legitimate.
+    assert handler._arguments({"tool": "t", "tenant_id": "aegis", "period": "2026"}) == {}
+
+
+def test_the_tenant_is_decided_by_who_signed_the_token(repo_root, monkeypatch) -> None:
+    """Not named by the caller. On a gateway call there is nobody to name it, and deriving it
+    is stronger anyway: one pool per tenant, one gateway per pool, so the issuer is the tenant.
+    """
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setenv("ATTESTOR_ISSUER_HELIOS", "https://issuer.example/helios")
+    monkeypatch.setenv("ATTESTOR_ISSUER_AEGIS", "https://issuer.example/aegis")
+
+    assert handler._tenant_from_issuer({"iss": "https://issuer.example/helios"}) == "helios"
+    assert handler._tenant_from_issuer({"iss": "https://issuer.example/aegis"}) == "aegis"
+    # A token from a provider this deployment does not know names no tenant, and an unnamed
+    # tenant is refused rather than defaulted.
+    assert handler._tenant_from_issuer({"iss": "https://issuer.example/somebody-else"}) == ""
+    assert handler._tenant_from_issuer({}) == ""
