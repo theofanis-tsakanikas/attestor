@@ -298,6 +298,14 @@ CHECKS: list[Check] = [
         "session binding held, but one tenant served and the rest locked out by iteration order.",
     ),
     Check(
+        "correctness",
+        "VPC endpoints",
+        [sys.executable, "scripts/check_vpc_endpoints.py"],
+        "Everything reached from inside the VPC has a way out of it. Egress is the VPC and "
+        "nothing else, so a service with no endpoint does not fail — it hangs. Memory did, for "
+        "180 seconds; the runtime could never pull its own image and reported READY throughout.",
+    ),
+    Check(
         "deployability",
         "AgentCore names",
         [sys.executable, "scripts/check_agentcore_names.py"],

@@ -279,6 +279,17 @@ resource "aws_vpc_endpoint" "interface" {
     # about a call that had already succeeded. Fail-open is only fail-open when the failure
     # arrives; a hang is neither open nor closed.
     "bedrock-agentcore",
+    # ECR, both halves, or the AgentCore Runtime cannot fetch the image it is made of. The
+    # control plane reported the runtime `READY` — which means the resource exists, not that
+    # anything runs — while its logs said, every few seconds, `failed to resolve image ...
+    # dial tcp 3.121.190.14:443: i/o timeout`. It had never once started, on any deploy, and
+    # nothing noticed because nothing called it.
+    #
+    # `ecr.api` authenticates and `ecr.dkr` serves the layers; the manifest and blobs come from
+    # S3, which already has a gateway endpoint. All three are needed and none of them was
+    # reachable from a subnet whose egress is the VPC and nothing else.
+    "ecr.api",
+    "ecr.dkr",
   ])
 
   vpc_id              = aws_vpc.main.id
