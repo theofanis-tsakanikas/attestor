@@ -339,7 +339,14 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
         if missing:
             raise Rejected(f"{tool} requires argument(s) {', '.join(missing)}")
 
-        session = build_session(claims, tenant_id=tenant_id, period=period, session_id=request_id)
+        # Two doors, two ways to be who you are. Through the gateway there are no claims to
+        # map, so the session comes from what AgentCore asserts (the tenant) and what Terraform
+        # declares (the role). Through the runtime's HTTP surface the claims are verified and
+        # forwarded, and the registry's issuer and audience binding decides which undertaking
+        # they speak for.
+        session = _gateway_session(context, period=period, session_id=request_id) or build_session(
+            claims, tenant_id=tenant_id, period=period, session_id=request_id
+        )
         toolbox = build_toolbox(session)
         handler = getattr(toolbox, tool, None)
         if handler is None:  # pragma: no cover — SPECS and Toolbox are cross-checked in tests
