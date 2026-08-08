@@ -24,6 +24,9 @@ Needs credentials. Read-only against the estate: it authenticates, calls tools, 
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import hmac
 import json
 import shutil
 import subprocess
@@ -64,6 +67,12 @@ def token_for(tenant: str, secret_name: str, region: str) -> str:
     `ADMIN_USER_PASSWORD_AUTH` against a user in a real group, not a client-credentials grant.
     Only a user token carries `cognito:groups`, which is what the handler maps onto a role —
     a machine token would exercise a code path no person ever takes.
+
+    Through the tenant's *own* app client, the one its people sign in with. That costs the
+    SECRET_HASH below and buys two things: the token carries the same `aud` a person's does,
+    and the gateway's authorizer never has to list a second client. Listing one is an update
+    to the gateway, and Cloud Control answers an update by sending the whole authorizer back
+    with `AllowedAudience: []`, which the model rejects.
     """
     secret = json.loads(
         aws(
@@ -77,6 +86,14 @@ def token_for(tenant: str, secret_name: str, region: str) -> str:
             "text",
         )
     )
+    secret_hash = base64.b64encode(
+        hmac.new(
+            secret["client_secret"].encode(),
+            (secret["username"] + secret["client_id"]).encode(),
+            hashlib.sha256,
+        ).digest()
+    ).decode()
+
     response = json.loads(
         aws(
             "cognito-idp",
@@ -90,7 +107,8 @@ def token_for(tenant: str, secret_name: str, region: str) -> str:
             "--auth-flow",
             "ADMIN_USER_PASSWORD_AUTH",
             "--auth-parameters",
-            f"USERNAME={secret['username']},PASSWORD={secret['password']}",
+            f"USERNAME={secret['username']},PASSWORD={secret['password']},"
+            f"SECRET_HASH={secret_hash}",
             "--output",
             "json",
         )

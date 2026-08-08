@@ -152,10 +152,7 @@ locals {
   # ordinary, which is why the check accepts a set rather than a single value.
   tenant_audiences = {
     for tenant, pool in aws_cognito_user_pool.tenant :
-    "ATTESTOR_AUDIENCE_${upper(tenant)}" => join(",", [
-      aws_cognito_user_pool_client.tenant[tenant].id,
-      aws_cognito_user_pool_client.verification[tenant].id,
-    ])
+    "ATTESTOR_AUDIENCE_${upper(tenant)}" => aws_cognito_user_pool_client.tenant[tenant].id
   }
 
   # The memory each tenant's events are written to. One resource per tenant rather than one
@@ -193,6 +190,16 @@ resource "aws_cognito_user_pool_client" "tenant" {
   callback_urls                        = var.callback_urls
   supported_identity_providers         = ["COGNITO"]
 
+  # The code flow is how a person signs in and is unchanged. `ADMIN_USER_PASSWORD_AUTH` is how
+  # the deploy signs in as the verification principal — through this same application, which
+  # makes the token it gets the same shape a person's is, down to the `aud` claim the gateway
+  # matches on. Admin-initiated, so it is reachable only by a caller that can already call the
+  # Cognito control plane; it is not a password grant exposed to the internet.
+  explicit_auth_flows = [
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH",
+  ]
+
   # Short access tokens. A session carries authority over a tenant's reporting data; an
   # eight-hour token turns a stolen browser into an eight-hour engagement.
   access_token_validity  = 15
@@ -224,30 +231,6 @@ resource "aws_cognito_user_pool_domain" "tenant" {
 
   domain       = "${var.project}-${each.key}-${data.aws_caller_identity.current.account_id}"
   user_pool_id = each.value.id
-}
-
-# Separate from the human client, which keeps its secret and its code flow untouched. This one
-# has no secret because `AdminInitiateAuth` with one requires a SECRET_HASH, and a verification
-# step that has to reimplement an HMAC to ask a question is a step that will be skipped.
-resource "aws_cognito_user_pool_client" "verification" {
-  for_each = aws_cognito_user_pool.tenant
-
-  name            = "${var.project}-${each.key}-verification"
-  user_pool_id    = each.value.id
-  generate_secret = false
-  explicit_auth_flows = [
-    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
-    "ALLOW_REFRESH_TOKEN_AUTH",
-  ]
-
-  access_token_validity  = 15
-  id_token_validity      = 15
-  refresh_token_validity = 1
-  token_validity_units {
-    access_token  = "minutes"
-    id_token      = "minutes"
-    refresh_token = "hours"
-  }
 }
 
 # Never in the repository and never in a log. It exists so a workflow can prove the tenant
@@ -296,10 +279,14 @@ resource "aws_secretsmanager_secret_version" "verification" {
 
   secret_id = aws_secretsmanager_secret.verification[each.key].id
   secret_string = jsonencode({
-    username  = "${var.project}-verification"
-    password  = random_password.verification[each.key].result
-    client_id = aws_cognito_user_pool_client.verification[each.key].id
-    pool_id   = each.value.id
+    username = "${var.project}-verification"
+    password = random_password.verification[each.key].result
+    # The client has a secret, so `AdminInitiateAuth` requires SECRET_HASH — an HMAC over
+    # username+client_id. `scripts/verify_agentcore.py` computes it; five lines there buys a
+    # gateway authorizer that never has to change.
+    client_id     = aws_cognito_user_pool_client.tenant[each.key].id
+    client_secret = aws_cognito_user_pool_client.tenant[each.key].client_secret
+    pool_id       = each.value.id
   })
 }
 
@@ -739,13 +726,16 @@ resource "awscc_bedrockagentcore_gateway" "tenant" {
       # Exactly one client: this tenant's. Listing every tenant's app client against one
       # issuer's keys is what made the previous configuration look multi-tenant while
       # admitting one tenant and locking out the rest.
-      # This tenant's clients, and only this tenant's. The verification client is here for
-      # the same reason it exists: a control nothing has ever exercised is a control nobody
-      # can vouch for, and the deploy now calls this gateway with a real token from it.
-      allowed_clients = [
-        aws_cognito_user_pool_client.tenant[each.key].id,
-        aws_cognito_user_pool_client.verification[each.key].id,
-      ]
+      # Exactly one client: this tenant's. Listing every tenant's app client against one
+      # issuer's keys is what made the previous configuration look multi-tenant while
+      # admitting one tenant and locking out the rest.
+      #
+      # It stays one for a second reason now. Adding a client here is an *update* to the
+      # gateway, and Cloud Control sends the whole authorizer back — including
+      # `AllowedAudience: []`, which the model rejects with "0 subschemas matched". So the
+      # verification principal signs in through this same client, which is the more faithful
+      # test anyway: it is the application a person uses.
+      allowed_clients = [aws_cognito_user_pool_client.tenant[each.key].id]
     }
   }
 
