@@ -147,3 +147,30 @@ def test_the_environment_variable_is_the_one_terraform_sets(monkeypatch, tenant)
     """
     monkeypatch.setenv(f"ATTESTOR_MEMORY_{tenant.upper()}", f"mem-{tenant}")
     assert memory.memory_id(tenant) == f"mem-{tenant}"
+
+
+def test_the_client_is_built_with_a_deadline(monkeypatch) -> None:
+    """Fail-open with no timeout is not fail-open.
+
+    A call with nowhere to go does not raise — it hangs. Deployed into a VPC whose egress is the
+    VPC and nothing else, before `bedrock-agentcore` had an endpoint there, this sat inside
+    `create_event` until Lambda killed the invocation at 180 seconds, and the caller was told an
+    internal error had occurred about work that had already succeeded.
+    """
+    captured: dict = {}
+
+    class _Boto:
+        @staticmethod
+        def client(service, **kwargs):
+            captured.update({"service": service, **kwargs})
+            return object()
+
+    monkeypatch.setitem(__import__("sys").modules, "boto3", _Boto)
+
+    memory._client()
+
+    assert captured["service"] == "bedrock-agentcore"
+    config = captured["config"]
+    assert config.connect_timeout <= 5
+    assert config.read_timeout <= 5
+    assert config.retries["max_attempts"] == 1

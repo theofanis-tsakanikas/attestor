@@ -35,7 +35,11 @@ import urllib.request
 from dataclasses import dataclass, field
 
 AWS = shutil.which("aws") or "aws"
-TIMEOUT_SECONDS = 90
+#: Longer than the Lambda's own 180s, on purpose. A client that gives up before the server does
+#: turns a slow answer into a traceback here and leaves the real outcome unknown — which is what
+#: happened at 90: the tool was still resolving through Athena and this raised instead of
+#: waiting. The server's limit is the one that should decide.
+TIMEOUT_SECONDS = 240
 
 #: The gateway target every tool is namespaced under. AgentCore's separator, three
 #: underscores, not ours.
@@ -186,6 +190,12 @@ class Mcp:
                 return response.status, dict(response.headers), _parse(response.read().decode())
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers), _parse(exc.read().decode() or "{}")
+        except (TimeoutError, urllib.error.URLError, OSError) as exc:
+            # Reported, never raised. A probe that dies on a slow call reports nothing at all —
+            # including the checks that already passed — and this file has now been corrected
+            # for that twice. The status is one nothing else returns, so it cannot be confused
+            # for an answer the gateway gave.
+            return 0, {}, {"error": f"no answer from the gateway: {exc}"}
 
     def open(self) -> tuple[int, dict]:
         status, headers, body = self._post(

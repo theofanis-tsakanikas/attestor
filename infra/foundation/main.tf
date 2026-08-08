@@ -269,6 +269,16 @@ resource "aws_vpc_endpoint" "interface" {
     "logs",
     "sts",
     "athena",
+    # AgentCore's *data* plane, which is how the tool handler writes an analyst's question to
+    # its tenant's memory. Without it that call has nowhere to go: this security group's egress
+    # is the VPC and nothing else, so a service with no endpoint does not fail — it hangs, with
+    # no packet refused and no error raised, until the Lambda's timeout kills it.
+    #
+    # That is exactly what happened. The tool resolved its answer in seconds and then sat for
+    # the full 180s inside `create_event`, and the caller was told "An internal error occurred"
+    # about a call that had already succeeded. Fail-open is only fail-open when the failure
+    # arrives; a hang is neither open nor closed.
+    "bedrock-agentcore",
   ])
 
   vpc_id              = aws_vpc.main.id
