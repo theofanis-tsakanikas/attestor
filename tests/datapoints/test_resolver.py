@@ -19,7 +19,7 @@ from attestor.contracts.model import Standard
 from attestor.contracts.overrides import Outcome
 from attestor.datapoints import resolver as resolver_module
 from attestor.datapoints.backends import RecordedBackend, StaleRecording
-from attestor.datapoints.evidence import EvidenceIndex
+from attestor.datapoints.evidence import EvidenceDocument, EvidenceIndex
 from attestor.datapoints.resolver import (
     Abstained,
     NarrativeDraft,
@@ -58,6 +58,32 @@ def _resolver(repo_root: Path, contract_set: ContractSet, tenant: str, **kwargs)
     return Resolver(**{**defaults, **kwargs})
 
 
+def _complete_evidence(repo_root: Path, tenant: str = "helios") -> EvidenceIndex:
+    """This tenant's corpus with the boundary gap filled in.
+
+    `helios` is deliberately one logistics manifest short: its committed override accepts
+    `E_PARTIAL_BOUNDARY` on Category 4, and the corpus tells that story so the acceptance is a
+    real acceptance rather than a dormant entry. Tests about arithmetic — a total being the sum
+    of its components, an intensity carrying a compound unit — are not about that gap, and
+    borrowing a corpus shaped by somebody else's scenario is how they broke when it changed.
+    """
+    return EvidenceIndex(
+        [
+            *EvidenceIndex.for_tenant(repo_root, tenant),
+            EvidenceDocument(
+                document_id="LOGI-TEST-2026",
+                tenant=tenant,
+                document_class="logistics_manifest",
+                covers_from=dt.date(2026, 1, 1),
+                covers_to=dt.date(2026, 12, 31),
+                content_sha256="0" * 64,
+                source_uri="s3://test/logistics.parquet",
+            ),
+        ],
+        tenant=tenant,
+    )
+
+
 def _narrative(_contract, _context) -> NarrativeDraft:
     return NarrativeDraft(
         text="The undertaking has a board-approved transition plan. [ev:7f3a]",
@@ -68,7 +94,21 @@ def _narrative(_contract, _context) -> NarrativeDraft:
 
 @pytest.fixture
 def helios(repo_root: Path, contract_set: ContractSet) -> Resolver:
-    return _resolver(repo_root, contract_set, "helios", narrative_provider=_narrative)
+    """`helios` with its Category 4 boundary gap filled in.
+
+    The committed corpus is one logistics manifest short on purpose, so the override that
+    accepts `E_PARTIAL_BOUNDARY` is a real acceptance rather than a dormant entry. Most tests in
+    this file are about arithmetic and lineage rather than about that gap, and the ones that are
+    about it — `test_a_live_override_turns_a_block_into_a_declared_limitation` and its
+    neighbour — build their own evidence anyway.
+    """
+    return _resolver(
+        repo_root,
+        contract_set,
+        "helios",
+        narrative_provider=_narrative,
+        evidence=_complete_evidence(repo_root),
+    )
 
 
 @pytest.fixture

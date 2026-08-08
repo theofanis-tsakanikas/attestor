@@ -78,7 +78,7 @@ extractions:
 - document_id: INV-HEL-2026-0009
   tenant: helios
   document_class: supplier_attestation
-  content_sha256: f63335667e50de6b322d3097cbdb0f007e5a883619c5499e9dcfb3e1d9f99d44
+  content_sha256: 62971a121c1cda25227276cb07f9e739c96450696fa6a5c56a891b012ad06ae1
   pages: 2
   fields:
   - name: supplier

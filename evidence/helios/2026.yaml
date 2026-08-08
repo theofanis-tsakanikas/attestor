@@ -160,11 +160,16 @@ documents:
     document_class: supplier_attestation
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: f63335667e50de6b322d3097cbdb0f007e5a883619c5499e9dcfb3e1d9f99d44
-    source_uri: s3://attestor-evidence-helios/suppliers/attestation-009-scanned.pdf
-    # Flagged by the injection scanner: the scanned PDF contains white-on-white text
-    # addressed to the reporting system. The document still counts as evidence — the
-    # metadata above is ours and is trustworthy — but its text is never an instruction.
+    content_sha256: 62971a121c1cda25227276cb07f9e739c96450696fa6a5c56a891b012ad06ae1
+    source_uri: evidence/helios/documents/INV-HEL-2026-0009.md
+    # Flagged by the injection scanner: the document carries text addressed to the reporting
+    # system rather than to a reader. It still counts as evidence — the metadata above is ours
+    # and is trustworthy — but its text is never an instruction.
+    #
+    # Present on disk, and that is the point. It was declared here and stored nowhere, so it was
+    # never indexed, never retrieved, and never reached a model. Claim 1's own detection layers
+    # were argued entirely in `evals/injection` and had never once run on the live path. A
+    # control with nothing to catch proves nothing, and this corpus had nothing to catch.
     flagged_injection: true
 
   - document_id: PROC-HEL-2026-FY
@@ -175,13 +180,20 @@ documents:
     content_sha256: 25e30452061b7fde8587c5560e9f6ea09537af7cfdf1d34d79892580b761c2ff
     source_uri: s3://attestor-evidence-helios/procurement/2026-ledger.parquet
 
-  - document_id: LOGI-HEL-2026-FY
-    tenant: helios
-    document_class: logistics_manifest
-    covers_from: 2026-01-01
-    covers_to: 2026-12-31
-    content_sha256: a9d92959db3cead7a0ec6681e73df0e2d49e0f9ed978abba235e6cc41a03fd80
-    source_uri: s3://attestor-evidence-helios/logistics/2026-manifests.parquet
+  # No annual logistics manifest for 2026, and that absence is the point.
+  #
+  # The committed override for `ESRS_E1-6_gross_scope_3` accepts `E_PARTIAL_BOUNDARY` and its
+  # justification describes exactly this: Category 4 covered by supplier attestations for 82% of
+  # spend, three subcontracted hauliers unresponsive within the reporting window. The corpus used
+  # to contradict that story by being complete — five documents against a contract demanding
+  # five — so the acceptance never once fired, and the doctrine it exists to demonstrate was
+  # argued only in unit tests.
+  #
+  # With the manifest absent the story and the evidence agree. `helios` issues with three
+  # declared limitations instead of nine clean figures, and the statement carries the sentence
+  # this whole system is built around: "Material limitation ... Accepted under a recorded
+  # override (E_PARTIAL_BOUNDARY) approved by M. Andreadis (head_of_sustainability), expiring
+  # 2026-09-15."
 
   # ── Finance ───────────────────────────────────────────────────────────────
   - document_id: FIN-HEL-2026-AR

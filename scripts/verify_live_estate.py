@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parents[1]
 #: misses its own cross-check by more than tolerance, and a run that issued it anyway would
 #: mean the tolerance was decorative.
 EXPECTED = {
+    # Issues, and declares. `helios` has three material limitations under a signed, expiring
+    # override — `E_PARTIAL_BOUNDARY` on Category 4, inherited by the two figures derived from
+    # it — and the acceptance prints on the face of the statement. That is doctrine rules 3, 4
+    # and 5 on a shipped artefact rather than in a unit test, and it is the thing the corpus
+    # used to contradict by being quietly complete.
     "helios": {"issued": True, "reasons": set()},
     "aegis": {"issued": False, "reasons": {"E_OUT_OF_TOLERANCE", "E_UPSTREAM_QUARANTINE"}},
     "lumen": {"issued": True, "reasons": set()},
@@ -350,6 +355,11 @@ def check_overrides_are_live(report: Report, records: dict[str, dict]) -> None:
         if (datapoint, reason) in outcomes:
             fired.append(f"{tenant}/{datapoint}:{reason}")
 
+    report.check(
+        "the accepted defect is a defect this run produced",
+        bool(fired),
+        f"fired: {fired}" if fired else "no override fired; the doctrine is untested here",
+    )
     report.check(
         "every override names a datapoint its tenant reports",
         bool(entries) and not unreachable,

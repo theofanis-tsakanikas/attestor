@@ -138,9 +138,27 @@ def load_scenarios(path: Path | str) -> tuple[Scenario, ...]:
     return tuple(scenarios)
 
 
+#: A logistics manifest `helios` deliberately does not have. Its committed corpus is one short
+#: so the override accepting `E_PARTIAL_BOUNDARY` on Category 4 is a real acceptance rather than
+#: a dormant entry — and this eval measures *exactly N refusals for N deliberate gaps*, which a
+#: pre-existing gap corrupts in every scenario at once. The baseline is completed here so each
+#: scenario's damage is the only damage.
+_BOUNDARY_FILLER = EvidenceDocument(
+    document_id="LOGI-BASELINE-2026",
+    tenant="helios",
+    document_class="logistics_manifest",
+    covers_from=dt.date(2026, 1, 1),
+    covers_to=dt.date(2026, 12, 31),
+    content_sha256="0" * 64,
+    source_uri="s3://baseline/logistics.parquet",
+)
+
+
 def _corpus(root: Path, scenario: Scenario) -> EvidenceIndex:
-    """Apply the scenario's damage to a real corpus."""
+    """Apply the scenario's damage to a real corpus, complete before the damage."""
     documents = list(EvidenceIndex.for_tenant(root, scenario.tenant))
+    if scenario.tenant == "helios":
+        documents.append(_BOUNDARY_FILLER)
 
     if scenario.withhold_classes:
         withheld = set(scenario.withhold_classes)
