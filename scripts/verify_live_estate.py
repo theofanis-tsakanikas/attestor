@@ -211,6 +211,85 @@ def check_reproducible(report: Report, first: dict[str, dict], second: dict[str,
         )
 
 
+def check_every_indexed_document_is_governed(report: Report) -> None:
+    """Nothing is in the index that no tenant attribute governs.
+
+    Bedrock filters on attributes it reads from a `.metadata.json` beside each object, so a
+    document without one carries no `tenant` and is matched by no filtered query. That reads
+    like a safe failure and mostly is — `kb.search` refuses to run without a filter, so the
+    document is unreachable rather than leaked. It is still an object sitting in an index
+    shared by three tenants that no policy governs, which is one missing filter away from the
+    single thing this system exists not to do.
+
+    Found by this statistic and by nothing else: helios and lumen each reported 5 documents
+    indexed against 4 metadata documents scanned, and `aegis` reported 1 against 0. The extra
+    was `evidence/<tenant>/2026.yaml` — the manifest, swept into the data source's inclusion
+    prefix by an `s3 sync` of the whole directory. A catalogue of one tenant's documents, ids
+    and hashes, unlabelled, in the neighbours' index.
+
+    Every ingestion job says this plainly and no one was reading it.
+    """
+    knowledge_bases = json.loads(
+        aws(
+            "bedrock-agent",
+            "list-knowledge-bases",
+            "--query",
+            "knowledgeBaseSummaries[].knowledgeBaseId",
+            "--output",
+            "json",
+        )
+        or "[]"
+    )
+    ungoverned: list[str] = []
+    seen = 0
+    for kb in knowledge_bases:
+        sources = json.loads(
+            aws(
+                "bedrock-agent",
+                "list-data-sources",
+                "--knowledge-base-id",
+                kb,
+                "--query",
+                "dataSourceSummaries[].[dataSourceId,name]",
+                "--output",
+                "json",
+            )
+            or "[]"
+        )
+        for source_id, name in sources:
+            stats = json.loads(
+                aws(
+                    "bedrock-agent",
+                    "list-ingestion-jobs",
+                    "--knowledge-base-id",
+                    kb,
+                    "--data-source-id",
+                    source_id,
+                    "--query",
+                    "ingestionJobSummaries[0].statistics",
+                    "--output",
+                    "json",
+                )
+                or "{}"
+            )
+            if not stats:
+                continue
+            seen += 1
+            indexed = stats.get("numberOfNewDocumentsIndexed", 0)
+            described = stats.get("numberOfMetadataDocumentsScanned", 0)
+            failed = stats.get("numberOfDocumentsFailed", 0)
+            if failed:
+                ungoverned.append(f"{name}: {failed} failed")
+            if indexed > described:
+                ungoverned.append(f"{name}: {indexed} indexed, {described} described")
+
+    report.check(
+        "every indexed document carries a sidecar, and none failed",
+        seen > 0 and not ungoverned,
+        "; ".join(ungoverned) if ungoverned else f"{seen} data source(s)",
+    )
+
+
 def check_isolation(report: Report, evidence_kb: str) -> None:
     """Claim 2, against the live index rather than against a mock.
 
@@ -527,6 +606,7 @@ def main() -> int:
     check_lineage(report, records, ROOT / arguments.reports)
     if arguments.against:
         check_reproducible(report, records, run_records(ROOT / arguments.against))
+    check_every_indexed_document_is_governed(report)
     check_isolation(report, arguments.evidence_kb)
     check_the_attacker_gets_nothing(report, arguments.evidence_kb)
     check_gold_is_iceberg(report, arguments.database)
