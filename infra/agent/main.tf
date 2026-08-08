@@ -16,8 +16,13 @@
 terraform {
   required_version = ">= 1.9"
   required_providers {
-    aws    = { source = "hashicorp/aws", version = "~> 5.70" }
-    awscc  = { source = "hashicorp/awscc", version = "~> 1.20" }
+    aws = { source = "hashicorp/aws", version = "~> 5.70" }
+    # Pinned to the minor, not floated. awscc 1.96.0 began writing `protocol_type` on the
+    # gateway, which turns every subsequent apply into an UpdateResource — and Cloud Control
+    # answers an update by sending the whole authorizer back with `AllowedAudience: []`, which
+    # the model rejects. Two deploys died there, and neither had anything to do with the change
+    # being deployed: a `terraform init -upgrade` run for an unrelated provider moved it.
+    awscc  = { source = "hashicorp/awscc", version = "~> 1.95.0" }
     random = { source = "hashicorp/random", version = "~> 3.6" }
   }
   backend "s3" { key = "agent/terraform.tfstate" }
