@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 import typer
@@ -33,6 +34,7 @@ from attestor.documents.template import Template, TemplateError
 from attestor.gates import abstention, provenance
 from attestor.observability import dashboard as dashboard_module
 from attestor.observability import run_record
+from attestor.observability.cost import CostMeter
 from attestor.policy import cedar
 from attestor.policy.tenants import Session, TenantRegistry
 from attestor.retrieval import bakeoff
@@ -138,7 +140,18 @@ def _narrative_provider(tenant: str, root: Path):
     return narrative.build(root, session=session)
 
 
-def _resolver(tenant: str, root: Path) -> Resolver:
+def _resolver(tenant: str, root: Path, *, cost_meter: CostMeter | None = None) -> Resolver:
+    """The resolver for one tenant, metered.
+
+    `cost_meter` was optional and nobody ever passed one. `Resolver._meter` returns immediately
+    when it is `None`, so every Athena scan and every model token was priced, attributed to a
+    tenant and an operation, and thrown away — and every live run wrote `cost_eur = 0.0000`
+    after querying a real lakehouse and drafting against a real model.
+
+    `€/report` and `€/tenant` are named in the project's own description as a first-class
+    metric rather than an afterthought. A first-class metric that is always zero is an
+    afterthought with a nicer sentence in front of it.
+    """
     return Resolver(
         contracts=_contracts_for(tenant, root),
         backend=_backend(root),
@@ -146,11 +159,14 @@ def _resolver(tenant: str, root: Path) -> Resolver:
         override_register=overrides.load_register(root),
         root=root,
         narrative_provider=_narrative_provider(tenant, root),
+        cost_meter=cost_meter,
     )
 
 
-def _resolve(tenant: str, root: Path, *, as_of: dt.date = REPORT_DATE):
-    return _resolver(tenant, root).resolve_all(
+def _resolve(
+    tenant: str, root: Path, *, as_of: dt.date = REPORT_DATE, cost_meter: CostMeter | None = None
+):
+    return _resolver(tenant, root, cost_meter=cost_meter).resolve_all(
         ResolutionContext(
             tenant=tenant,
             period="2026",
@@ -469,7 +485,8 @@ def run_report(
     registry = TenantRegistry.load(root)
     tenant_config = registry[tenant]
     contracts = _contracts_for(tenant, root)
-    results = _resolve(tenant, root)
+    meter = CostMeter()
+    results = _resolve(tenant, root, cost_meter=meter)
 
     record = run_record.build(
         run_id=run_id,
@@ -480,6 +497,7 @@ def run_report(
         started_at=started,
         results=results,
         contracts=contracts,
+        cost_meter=meter,
     )
 
     if results.can_issue:
@@ -565,12 +583,50 @@ def build_dashboard(
 
 
 @app.command("cost")
-def cost_status() -> None:
-    """What the estate is costing. Requires a live estate; absent by design offline."""
-    console.print(
-        "No estate is standing. Cost telemetry is collected per session while one runs — "
-        "see src/attestor/observability/cost.py."
-    )
+def cost_status(
+    out: Path = typer.Option(Path("out"), "--out"),
+) -> None:
+    """What the reports on disk cost, per tenant and per operation.
+
+    Read from the run records rather than from a billing API, and the distinction matters: this
+    is what *this system* charged the tenant it was working for, priced per meter at list, and
+    attributed to the step that incurred it. A monthly invoice tells you the account spent
+    money; this tells you which undertaking's report spent it and on what.
+
+    It used to print "No estate is standing" unconditionally — including with an estate
+    standing, which is how it was found. There was nothing behind it to print: the resolver was
+    never handed a meter, so every record said `0.0000`.
+    """
+    records = run_record.RunRecord.load_all(out / "runs")
+    if not records:
+        _fail(f"no run records under {out / 'runs'}; run `attestor run --tenant <id>` first")
+
+    total = sum(Decimal(record.cost_eur) for record in records)
+    issued = sum(1 for record in records if record.issued)
+
+    by_operation: dict[str, Decimal] = {}
+    for record in records:
+        for operation, amount in record.cost_by_operation.items():
+            by_operation[operation] = by_operation.get(operation, Decimal(0)) + Decimal(amount)
+
+    console.print(f"total: EUR {total:.6f} over {len(records)} run(s), {issued} issued")
+    console.print("")
+    console.print("per tenant:")
+    for record in sorted(records, key=lambda r: r.tenant):
+        verdict = "issued" if record.issued else "blocked"
+        console.print(f"  {record.tenant}: EUR {Decimal(record.cost_eur):.6f}  ({verdict})")
+
+    if by_operation:
+        console.print("")
+        console.print("per operation:")
+        for operation, amount in sorted(by_operation.items(), key=lambda item: -item[1]):
+            console.print(f"  {operation}: EUR {amount:.6f}")
+
+    # A blocked run costs money too — it queried the lakehouse and drafted prose before it
+    # refused — so the denominator is every run, and the number is what a report costs whether
+    # or not one comes out the other end.
+    console.print("")
+    console.print(f"per run: EUR {(total / len(records)):.6f}")
 
 
 def main() -> int:

@@ -522,10 +522,23 @@ class Resolver:
         ):
             tokens = usage.get(key)
             if isinstance(tokens, int) and tokens > 0:
-                self._meter(meter, Decimal(tokens) / 1000, context)
+                self._meter(meter, Decimal(tokens) / 1000, context, operation="draft_narrative")
 
-    def _meter(self, meter: Meter, quantity: Decimal, context: ResolutionContext) -> None:
-        """Attribute a charge to the tenant that incurred it, at the moment it is incurred."""
+    def _meter(
+        self,
+        meter: Meter,
+        quantity: Decimal,
+        context: ResolutionContext,
+        operation: str = "resolve_datapoint",
+    ) -> None:
+        """Attribute a charge to the tenant that incurred it, at the moment it is incurred.
+
+        `operation` exists so a spike can be traced to a step rather than to a day — that is
+        what `Charge.operation` documents itself as being for. It was hardcoded, so every model
+        token in every narrative was filed under `resolve_datapoint` and the breakdown had one
+        line in it. A report whose cost is all in one bucket cannot tell you whether the drafting
+        or the querying is what got expensive.
+        """
         if self._cost is None or quantity <= 0:
             return
         self._cost.record(
@@ -533,7 +546,7 @@ class Resolver:
             quantity,
             tenant=context.tenant,
             session_id=context.run_id or "unattributed",
-            operation="resolve_datapoint",
+            operation=operation,
         )
 
     def _read_query(self, relative: str) -> str:
