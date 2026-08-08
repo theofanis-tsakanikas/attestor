@@ -425,10 +425,26 @@ resource "aws_iam_role_policy" "tools" {
       },
       {
         Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject"]
+        # `ListBucket` and `GetBucketLocation` are not padding. Athena resolves a table's
+        # location and writes its result set before it runs anything, and without them
+        # `StartQueryExecution` fails immediately — the tool answered in 809 ms with
+        # `E_RESOLVER_ERROR`, far too fast for a query to have been attempted. The deploy role
+        # is PowerUser, so the same code runs fine from a runner and only fails here.
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+        ]
         Resource = [
+          # Both forms: the bucket itself for the list and location calls, and its contents
+          # for the object calls. A policy with only the second is why this failed.
+          "arn:aws:s3:::${local.foundation.evidence_bucket}",
           "arn:aws:s3:::${local.foundation.evidence_bucket}/*",
+          "arn:aws:s3:::${local.foundation.reports_bucket}",
           "arn:aws:s3:::${local.foundation.reports_bucket}/*",
+          "arn:aws:s3:::${local.foundation.lake_bucket}",
           "arn:aws:s3:::${local.foundation.lake_bucket}/*",
         ]
       },

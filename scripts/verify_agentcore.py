@@ -232,6 +232,27 @@ class Mcp:
         return status, body
 
 
+def _tool_body(result: dict) -> dict:
+    """The tool's own answer, out from under two layers of envelope.
+
+    MCP wraps it in `result.content[].text`, and the handler's answer is itself a JSON document
+    with its own `statusCode`. Both have to be opened, and the reason is a check that passed on
+    a failure: it looked for the word "lineage" in the text and `{"lineage": null, "reason":
+    "E_RESOLVER_ERROR"}` contains it. HTTP 200, `isError: false`, and a resolver that had failed.
+
+    That is the fourth time in this repository a check has read the envelope instead of the
+    answer. There is no cleverness that prevents it — only opening the thing and asserting on
+    what is actually inside.
+    """
+    for item in result.get("content", []):
+        if item.get("type") == "text":
+            try:
+                return json.loads(item.get("text", "{}"))
+            except json.JSONDecodeError:
+                return {"raw": item.get("text", "")[:300]}
+    return {}
+
+
 def _parse(raw: str) -> dict:
     """MCP over HTTP may answer as JSON or as a single SSE frame."""
     text = raw.strip()
@@ -291,14 +312,14 @@ def main() -> int:
     #    on `{"__type": "UnknownOperationException"}` inside a 200.
     status, body = session.call("read_lineage", {"datapoint_id": "ESRS_E1-6_gross_scope_1"})
     result = body.get("result", {})
-    answered = str(result.get("content", ""))
+    answer = _tool_body(result)
     report.check(
         "helios: a permitted tool answers through the gateway",
         status == HTTP_OK
         and not result.get("isError", True)
-        and "error" not in answered
-        and "lineage" in answered.lower(),
-        f"HTTP {status} {json.dumps(body)[:260]}",
+        and answer.get("statusCode") == HTTP_OK
+        and bool((answer.get("body") or {}).get("lineage")),
+        f"HTTP {status} {json.dumps(body)[:300]}",
     )
 
     # 4. Doctrine rule 2, enforced rather than read. This had only ever been confirmed by
