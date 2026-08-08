@@ -306,6 +306,14 @@ CHECKS: list[Check] = [
         "180 seconds; the runtime could never pull its own image and reported READY throughout.",
     ),
     Check(
+        "correctness",
+        "surface roles agree",
+        [sys.executable, "scripts/check_surface_roles_agree.py"],
+        "The Lambda and the runtime run identical handlers under separate roles, and separate "
+        "roles drift. Both failed Athena on the same missing `s3:GetBucketLocation`, months "
+        "apart, because only one of them had ever been called.",
+    ),
+    Check(
         "deployability",
         "AgentCore names",
         [sys.executable, "scripts/check_agentcore_names.py"],

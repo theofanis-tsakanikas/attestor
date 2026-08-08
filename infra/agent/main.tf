@@ -383,7 +383,12 @@ resource "aws_iam_role_policy" "tools" {
       },
       {
         Effect = "Allow"
-        Action = ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate"]
+        # `Retrieve` only. `RetrieveAndGenerate` asks Bedrock to *answer* from the corpus,
+        # which is the one thing this architecture does not do: retrieval returns passages and
+        # the narrative is drafted under our own prompt, our own guardrail and our own citation
+        # rules. The grant was never used by any code path — found by comparing this role
+        # against the runtime's, which had never had it and had never missed it.
+        Action = ["bedrock:Retrieve"]
         Resource = [
           "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.evidence_kb_id}",
           "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.regulatory_kb_id}",
@@ -1134,11 +1139,24 @@ resource "aws_iam_role_policy" "runtime" {
       },
       {
         Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListBucket",
+          # The one the tools role was missing too, and the same symptom both times: Athena
+          # resolves a table's location and prepares its result set before it runs anything, so
+          # `StartQueryExecution` answers `Unable to verify/create output bucket` and nothing is
+          # attempted. Two roles serving the same six tools drifted apart because only one of
+          # them had ever been called.
+          "s3:GetBucketLocation",
+        ]
         Resource = [
           "arn:aws:s3:::${local.foundation.lake_bucket}",
           "arn:aws:s3:::${local.foundation.lake_bucket}/*",
+          "arn:aws:s3:::${local.foundation.evidence_bucket}",
           "arn:aws:s3:::${local.foundation.evidence_bucket}/*",
+          "arn:aws:s3:::${local.foundation.reports_bucket}",
           "arn:aws:s3:::${local.foundation.reports_bucket}/*",
         ]
       },
