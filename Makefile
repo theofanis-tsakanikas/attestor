@@ -177,7 +177,7 @@ package: ## Vendor the library into the Lambda source dir so terraform can zip i
 
 .PHONY: cost
 cost: ## Print the current estate's running cost and time-to-expiry
-	$(PY) -m attestor.cli.main cost status
+	$(PY) -m attestor.cli.main cost
 
 .PHONY: preflight
 preflight: ## Everything that must be true before the estate is stood up

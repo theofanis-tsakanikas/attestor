@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from attestor.contracts.loader import ContractSet
 from attestor.datapoints.resolver import Abstained, ResolutionSet, Resolved
+from attestor.observability.cost import CostMeter
 
 SCHEMA_VERSION = 1
 
@@ -126,7 +127,7 @@ class RunRecord(BaseModel):
     artefacts: list[ArtefactRecord] = Field(default_factory=list)
     gates: list[GateRecord] = Field(default_factory=list)
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
-    cost_eur: str = "0.0000"
+    cost_eur: str = "0.000000"
     cost_by_operation: dict[str, str] = Field(default_factory=dict)
 
     # ── Derived ──────────────────────────────────────────────────────────────
@@ -243,6 +244,7 @@ def build(
     started_at: dt.datetime,
     results: ResolutionSet,
     contracts: ContractSet,
+    cost_meter: CostMeter | None = None,
 ) -> RunRecord:
     """Turn a resolution into a record. Artefacts and gates are attached by the caller."""
     record = RunRecord(
@@ -281,6 +283,20 @@ def build(
     for outcome in sorted(results.abstentions, key=lambda a: a.datapoint_id):
         entry = _omission(outcome, contracts)
         (record.blockers if outcome.blocks_report else record.limitations).append(entry)
+
+    # What this one report cost, priced per meter and attributed per operation. It was always
+    # measured — the resolver records a charge for every Athena scan and every model token —
+    # and never carried anywhere, because nothing handed the resolver a meter to record into.
+    # Every live run wrote `0.0000` after querying a real lakehouse.
+    if cost_meter is not None:
+        # Six places, not four. An Athena scan over a few megabytes is genuinely worth a
+        # fraction of a cent, and rounding it to `0.0000` reports a run that queried a lakehouse
+        # as having cost nothing. `Charge.amount` already quantizes here; the record should not
+        # throw away what the meter kept.
+        record.cost_eur = f"{cost_meter.total:.6f}"
+        record.cost_by_operation = {
+            operation: f"{amount:.6f}" for operation, amount in cost_meter.by_operation().items()
+        }
 
     return record
 

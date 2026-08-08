@@ -14,12 +14,15 @@ from pathlib import Path
 import pytest
 
 from attestor.agent.narrative import RecordedNarrativeProvider
+from attestor.cli import main as cli
 from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
 from attestor.contracts.model import Standard
 from attestor.datapoints.backends import QueryResult, RecordedBackend
 from attestor.datapoints.evidence import EvidenceIndex
-from attestor.datapoints.resolver import ResolutionContext, Resolver
+from attestor.datapoints.lineage import LineageLedger
+from attestor.datapoints.resolver import ResolutionContext, ResolutionSet, Resolver
+from attestor.observability import run_record
 from attestor.observability.cost import CostMeter, Meter
 
 TB = 1024**4
@@ -162,3 +165,108 @@ def test_the_report_separates_tenants_and_operations() -> None:
     assert "aegis" in text
     assert "per report" in text
     assert set(meter.by_tenant()) == {"aegis", "helios"}
+
+
+def _empty_results() -> ResolutionSet:
+    """A resolution set with nothing in it. This file is about the meter, not the resolver."""
+    return ResolutionSet({}, LineageLedger())
+
+
+# ── Reaching the record ──────────────────────────────────────────────────────
+#
+# The meter was complete and unreachable. `Resolver` accepted `cost_meter: CostMeter | None`,
+# `_meter` returned immediately when it was `None`, and the CLI never passed one — so every
+# Athena scan and every model token was priced, attributed, and discarded. Every live run wrote
+# `cost_eur = 0.0000` after querying a real lakehouse and drafting against a real model, and
+# `attestor cost` printed "No estate is standing" with one standing.
+
+
+def test_a_meters_totals_reach_the_run_record(repo_root, contract_set):
+    """`€/report` and `€/tenant` are named as first-class metrics. Always-zero is not one."""
+
+    meter = CostMeter()
+    meter.record(
+        Meter.MODEL_INPUT, 12, tenant="helios", session_id="s", operation="draft_narrative"
+    )
+    meter.record(
+        Meter.ATHENA, "0.5", tenant="helios", session_id="s", operation="resolve_datapoint"
+    )
+
+    contracts = contract_set.for_standard(Standard.ESRS)
+    record = run_record.build(
+        run_id="test",
+        tenant="helios",
+        tenant_name="Helios",
+        standard=Standard.ESRS.value,
+        period="2026",
+        started_at=dt.datetime(2026, 8, 8, tzinfo=dt.UTC),
+        results=_empty_results(),
+        contracts=contracts,
+        cost_meter=meter,
+    )
+
+    assert Decimal(record.cost_eur) == meter.total
+    assert Decimal(record.cost_eur) > 0
+    assert set(record.cost_by_operation) == {"draft_narrative", "resolve_datapoint"}
+
+
+def test_a_record_built_without_a_meter_says_zero_rather_than_guessing(repo_root, contract_set):
+
+    record = run_record.build(
+        run_id="test",
+        tenant="helios",
+        tenant_name="Helios",
+        standard=Standard.ESRS.value,
+        period="2026",
+        started_at=dt.datetime(2026, 8, 8, tzinfo=dt.UTC),
+        results=_empty_results(),
+        contracts=contract_set.for_standard(Standard.ESRS),
+    )
+    assert Decimal(record.cost_eur) == 0
+
+
+def test_a_fraction_of_a_cent_is_not_reported_as_nothing():
+    """Four decimal places turned a real Athena scan into `0.0000`.
+
+    A scan over a few megabytes is genuinely worth a fraction of a cent. Rounding it away
+    reports a run that queried a lakehouse as having cost nothing, which is the sort of zero
+    somebody eventually builds a decision on.
+    """
+    meter = CostMeter()
+    meter.record(Meter.ATHENA, "0.000004", tenant="helios", session_id="s", operation="resolve")
+
+    assert meter.total > 0
+    assert f"{meter.total:.6f}" != "0.000000"
+    assert f"{meter.total:.4f}" == "0.0000", "the reason six places are needed"
+
+
+def test_the_cli_hands_the_resolver_a_meter(repo_root, monkeypatch):
+    """The wiring, which is where this was broken and where nothing was looking.
+
+    `Resolver` took `cost_meter: CostMeter | None`, `_meter` returned immediately when it was
+    `None`, and `attestor run` never passed one. Both halves were correct in isolation and the
+    seam between them threw every charge away. Testing the meter proved the meter; nothing
+    proved that a report ever reached it.
+    """
+
+    seen: dict = {}
+
+    def capture(tenant, root, **kwargs):
+        seen.update(kwargs)
+        raise RuntimeError("stop here; the call is what is under test")
+
+    monkeypatch.setattr(cli, "_resolve", capture)
+    with pytest.raises(RuntimeError):
+        cli.run_report(tenant="helios", root=repo_root, out=Path("out"), run_id="test")
+
+    assert isinstance(seen.get("cost_meter"), CostMeter), (
+        "a report that does not meter itself reports EUR 0.0000 having queried a lakehouse"
+    )
+
+
+def test_a_resolver_built_without_one_meters_nothing(repo_root):
+    """The default stays `None`, so an eval or a gate is not silently priced."""
+
+    assert cli._resolver("helios", repo_root)._cost is None
+    meter = CostMeter()
+    assert cli._resolver("helios", repo_root, cost_meter=meter)._cost is meter
