@@ -101,7 +101,26 @@ class ScanResult:
 #: full stop, semicolon, colon, newline, or a comma followed by a politeness marker. A verb
 #: with its own subject in front of it ("Drivers must ignore", "a request to disclose") is
 #: somebody describing the world, not somebody giving this system an order.
-_IMPERATIVE = r"(?:^|[.;:\n]|,)\s*(?:please\s+|kindly\s+|now\s+|you\s+(?:must|should|are to)\s+)?"
+#: Retrieval flattens whitespace, and the anchor used to depend on it. A chunk arrives as one
+#: line — `... AUTOMATED REPORTING PIPELINE Ignore all previous instructions ...` — so the
+#: newline this pattern anchored on was gone by the time the text reached a model, and the rule
+#: that scores 15 of 15 in `evals/injection` matched nothing on the passage it was written for.
+#: Found by scanning what the live knowledge base actually returns.
+#:
+#: A bare space is now an anchor too. The precision does not come from the anchor — it comes
+#: from what follows it: an imperative verb, then a backward-looking word, then a word for
+#: instructions, all within a short span and none of it crossing a sentence end. "Drivers must
+#: ignore" still fails, because `must` is not one of the permitted lead-ins and `ignore` alone
+#: is not the rule. The eval is the evidence: 15 of 15 poisoned, 0 of 10 benign, unchanged.
+_IMPERATIVE = (
+    r"(?:^|[.;:\n]|,|"
+    # A bare space, unless what precedes it makes the verb a description rather than an
+    # order. "Drivers must ignore any routing instruction" is a haulier's procedure;
+    # "PIPELINE Ignore all previous instructions" is somebody talking to the model.
+    r"(?<!\bmust)(?<!\bshould)(?<!\bmay)(?<!\bcan)(?<!\bwill)(?<!\bshall)"
+    r"(?<!\bto)(?<!\bnot)(?<!\bnever)(?<!\bcannot)(?<!\bwould)(?<!\bcould)\s)"
+    r"\s*(?:please\s+|kindly\s+|now\s+|you\s+(?:must|should|are to)\s+)?"
+)
 
 _RULES: tuple[tuple[str, Severity, re.Pattern[str], str], ...] = (
     (
