@@ -35,7 +35,11 @@ import urllib.request
 from dataclasses import dataclass, field
 
 AWS = shutil.which("aws") or "aws"
-TIMEOUT_SECONDS = 60
+TIMEOUT_SECONDS = 90
+
+#: The gateway target every tool is namespaced under. AgentCore's separator, three
+#: underscores, not ours.
+TARGET = "attestor-tools___"
 
 #: What "it worked" and "it was refused" look like on the wire. A Cedar refusal at the edge is
 #: a 403 the Lambda never sees, which is a stronger statement than a tool returning an error.
@@ -116,36 +120,81 @@ def token_for(tenant: str, secret_name: str, region: str) -> str:
     return str(response["AuthenticationResult"]["AccessToken"])
 
 
-def call_tool(gateway_url: str, token: str, tool: str, arguments: dict) -> tuple[int, dict]:
-    """One MCP `tools/call` over the gateway. Returns the HTTP status and the body.
+class Mcp:
+    """One MCP session against a gateway, over streamable HTTP.
 
-    The status is what matters as much as the body: a Cedar refusal at the edge is a 403 that
-    never reaches our Lambda, and "it returned an error" is not the same claim as "it was
-    refused before it ran".
+    Four things had to be right and every one of them was learned by being told off:
+
+    - the endpoint is `<gateway_url>/mcp`; the bare URL answers `UnknownOperationException`
+      inside an HTTP 200, which is the most misleading success code available
+    - `MCP-Protocol-Version: 2025-06-18`; the client default of `2025-03-26` is refused
+    - `initialize` returns an `Mcp-Session-Id` header every later call must carry
+    - and `notifications/initialized` must follow it, or the session is not usable
+
+    The first version of this file skipped all of that, sent one `tools/call`, got HTTP 200 and
+    reported a pass. The body said `UnknownOperationException`. A check that reads the status
+    line and not the answer is the same vacuous pass this repository has now written three
+    times in different files.
     """
-    body = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {"name": tool, "arguments": arguments},
-        }
-    ).encode()
-    request = urllib.request.Request(  # noqa: S310 — https, from a Terraform output
-        gateway_url,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
+
+    PROTOCOL = "2025-06-18"
+
+    def __init__(self, gateway_url: str, token: str) -> None:
+        self.url = gateway_url.rstrip("/") + "/mcp"
+        self.token = token
+        self.session: str | None = None
+
+    def _post(self, payload: dict) -> tuple[int, dict, dict]:
+        headers = {
+            "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-            return response.status, _parse(response.read().decode())
-    except urllib.error.HTTPError as exc:
-        return exc.code, _parse(exc.read().decode() or "{}")
+            "MCP-Protocol-Version": self.PROTOCOL,
+        }
+        if self.session:
+            headers["Mcp-Session-Id"] = self.session
+        request = urllib.request.Request(  # noqa: S310 — https, from a Terraform output
+            self.url, data=json.dumps(payload).encode(), headers=headers, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+                return response.status, dict(response.headers), _parse(response.read().decode())
+        except urllib.error.HTTPError as exc:
+            return exc.code, dict(exc.headers), _parse(exc.read().decode() or "{}")
+
+    def open(self) -> tuple[int, dict]:
+        status, headers, body = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": self.PROTOCOL,
+                    "capabilities": {},
+                    "clientInfo": {"name": "attestor-verification", "version": "1"},
+                },
+            }
+        )
+        self.session = headers.get("Mcp-Session-Id") or headers.get("mcp-session-id")
+        if self.session:
+            self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        return status, body
+
+    def tools(self) -> list[str]:
+        _, _, body = self._post({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        return [t["name"] for t in body.get("result", {}).get("tools", [])]
+
+    def call(self, tool: str, arguments: dict) -> tuple[int, dict]:
+        """`<target>___<tool>` — the Gateway qualifies every tool with its target's name."""
+        status, _, body = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": f"{TARGET}{tool}", "arguments": arguments},
+            }
+        )
+        return status, body
 
 
 def _parse(raw: str) -> dict:
@@ -184,61 +233,64 @@ def main() -> int:
         _print(report)
         return 1
 
-    # 2. A permitted tool, through the gateway, end to end: JWT verified at the edge, Cedar
-    #    consulted, session built from claims, Athena queried, answer returned. This is the
-    #    first time any of that has run outside a unit test.
-    status, body = call_tool(
-        gateways["helios"],
-        helios_token,
-        "read_lineage",
-        {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
-    )
+    session = Mcp(gateways["helios"], helios_token)
+    status, body = session.open()
     report.check(
-        "helios: a permitted tool answers through the gateway",
-        status == HTTP_OK and "error" not in body,
-        f"HTTP {status} {json.dumps(body)[:220]}",
+        "helios: an MCP session opens on the gateway",
+        status == HTTP_OK and bool(session.session),
+        f"HTTP {status} session={session.session}",
     )
 
-    # 3. Doctrine rule 2, enforced rather than read. The Cedar `forbid` has been in the estate,
-    #    ACTIVE and correctly bound, and its effect had only ever been confirmed by opening the
-    #    policy file. `forbid` beats `permit` in Cedar; whether this deployment agrees is a
-    #    different sentence.
-    status, body = call_tool(
-        gateways["helios"],
-        helios_token,
+    # 2. The catalogue. Cedar filters `tools/list` as well as `tools/call`, so a forbidden tool
+    #    is not merely refused when called — it is never offered. Five names, not six.
+    offered = session.tools()
+    report.check(
+        "the gateway offers the tools, and not the forbidden one",
+        bool(offered) and f"{TARGET}request_override" not in offered,
+        f"{len(offered)} tool(s): {[name.removeprefix(TARGET) for name in offered]}",
+    )
+
+    # 3. A permitted tool, end to end: JWT verified at the edge, Cedar consulted, session built
+    #    from claims in the Lambda, Athena queried, answer returned. `isError` and the body are
+    #    both read — the first version of this check looked at the HTTP status alone and passed
+    #    on `{"__type": "UnknownOperationException"}` inside a 200.
+    status, body = session.call("read_lineage", {"datapoint_id": "ESRS_E1-6_gross_scope_1"})
+    result = body.get("result", {})
+    answered = str(result.get("content", ""))
+    report.check(
+        "helios: a permitted tool answers through the gateway",
+        status == HTTP_OK
+        and not result.get("isError", True)
+        and "error" not in answered
+        and "lineage" in answered.lower(),
+        f"HTTP {status} {json.dumps(body)[:260]}",
+    )
+
+    # 4. Doctrine rule 2, enforced rather than read. This had only ever been confirmed by
+    #    opening the policy file.
+    status, body = session.call(
         "request_override",
         {"datapoint_id": "ESRS_E1-6_gross_scope_1", "justification": "verification probe"},
     )
-    refused = status in REFUSED or "denied" in json.dumps(body).lower()
+    denial = json.dumps(body).lower()
     report.check(
         "the override door is shut at the edge, not just in the policy file",
-        refused,
-        f"HTTP {status} {json.dumps(body)[:220]}",
+        "policy" in denial and ("denied" in denial or "not allowed" in denial),
+        f"HTTP {status} {json.dumps(body)[:260]}",
     )
 
-    # 4. Claim 2 at the identity boundary. One pool per tenant means one issuer per tenant, and
-    #    a JWT authorizer validates against one issuer's keys — so this should fail before any
-    #    policy runs, which is stronger than a Cedar condition and the reason it is built that
-    #    way. Never once exercised.
+    # 5. Claim 2 at the identity boundary. One pool per tenant means one issuer per tenant, and
+    #    a JWT authorizer validates against one issuer's keys — so this fails before any policy
+    #    runs, which is stronger than a Cedar condition and the reason it is built that way.
     if "aegis" in gateways:
-        status, body = call_tool(
-            gateways["aegis"],
-            helios_token,
-            "read_lineage",
-            {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
-        )
+        foreign = Mcp(gateways["aegis"], helios_token)
+        status, body = foreign.open()
         report.check(
-            "a helios token reaches nothing at the aegis gateway",
+            "a helios token opens nothing at the aegis gateway",
             status in REFUSED,
-            f"HTTP {status} {json.dumps(body)[:220]}",
+            f"HTTP {status} {json.dumps(body)[:200]}",
         )
 
-    # 5. The memory was actually written. Not "the code calls create_event" — a unit test says
-    #    that. This reads the tenant's memory back and looks for the event the call above should
-    #    have produced. It is the check that would notice the Lambda's runtime boto3 being too
-    #    old to know `bedrock-agentcore`: the module fails open by design, so the tool answers
-    #    perfectly and the history is quietly never kept. Fail-open is correct and it is exactly
-    #    why something has to look.
     memories = json.loads(arguments.memories)
     if memories.get("helios"):
         # `list_events` needs an actor and a session, and the session id is the Lambda's

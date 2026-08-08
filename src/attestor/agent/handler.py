@@ -140,6 +140,29 @@ def _retrieval():
     )
 
 
+#: How AgentCore Gateway names the tool it is invoking. Not in the event — in the Lambda client
+#: context, prefixed with the gateway target: `attestor-tools___read_lineage`.
+#:
+#: This cost a live call to discover and could not have cost less. The handler read
+#: `event["tool"]`, which is what our own tests send and what the runtime's HTTP surface sends,
+#: and the Gateway sends neither — so every tool call through the gateway was answered
+#: `unknown tool ''`. Offline the contract looked complete from both sides; the two sides had
+#: simply never been introduced.
+GATEWAY_TOOL_CONTEXT_KEY = "bedrockAgentCoreToolName"
+
+#: The Gateway qualifies every tool with its target name. `attestor-tools___read_lineage` is
+#: one tool, not a namespace to resolve — and the separator is three underscores, which is
+#: AgentCore's, not ours.
+TARGET_SEPARATOR = "___"
+
+
+def _tool_from_context(context: Any) -> str:
+    """The tool name the Gateway put in the client context, unqualified."""
+    custom = getattr(getattr(context, "client_context", None), "custom", None) or {}
+    qualified = str(custom.get(GATEWAY_TOOL_CONTEXT_KEY, ""))
+    return qualified.rsplit(TARGET_SEPARATOR, 1)[-1] if qualified else ""
+
+
 def _remember_refusal(
     event: dict[str, Any], request_id: str, tool: str, outcome: str, detail: str
 ) -> None:
@@ -169,7 +192,7 @@ def _remember_refusal(
 def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     """Gateway → tool. Returns a JSON body; never raises past this boundary."""
     started = dt.datetime.now(dt.UTC)
-    tool = str(event.get("tool") or event.get("operationId") or "")
+    tool = str(event.get("tool") or event.get("operationId") or "") or _tool_from_context(context)
     arguments = dict(event.get("arguments") or {})
     claims = dict(event.get("claims") or {})
     # Not "local". A `Session` requires at least six characters, so the old default could not
