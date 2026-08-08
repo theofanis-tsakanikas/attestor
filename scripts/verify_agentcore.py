@@ -300,6 +300,7 @@ def _parse(raw: str) -> dict:
 
 
 def check_runtimes(report: Report, runtimes: dict, token: str, region: str) -> None:
+    own_answered = False
     # 6. The runtime, which until now had never been called by anything at all. One per tenant
     #    now, for the same reason there is one gateway per tenant: a JWT authorizer validates
     #    against exactly one issuer. The shared runtime this replaces pointed at
@@ -312,13 +313,20 @@ def check_runtimes(report: Report, runtimes: dict, token: str, region: str) -> N
             region,
             {"tool": "read_lineage", "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"}},
         )
+        # The runtime answers with the tool's body directly: `server.py` uses the handler's
+        # `statusCode` as the HTTP status and its `body` as the payload. The gateway wraps the
+        # same answer twice over — MCP `content[].text`, then the handler's own envelope — so
+        # the two surfaces need different unwrapping for identical output.
+        own_answered = status == HTTP_OK and bool(body.get("lineage"))
         report.check(
             "helios: the runtime answers its own tenant's token",
-            status == HTTP_OK and bool((body.get("body") or {}).get("lineage")),
+            own_answered,
             f"HTTP {status} {json.dumps(body)[:220]}",
         )
 
-    if runtimes.get("aegis"):
+    # The same control. A refusal at the neighbour's runtime means something only when our own
+    # answered; otherwise the whole service is refusing and this reads as isolation.
+    if runtimes.get("aegis") and own_answered:
         status, body = invoke_runtime(
             runtimes["aegis"],
             token,
@@ -330,6 +338,88 @@ def check_runtimes(report: Report, runtimes: dict, token: str, region: str) -> N
             status in REFUSED,
             f"HTTP {status} {json.dumps(body)[:220]}",
         )
+
+
+def check_memory(report: Report, memories: dict, region: str) -> None:
+
+    if memories.get("helios"):
+        # `list_events` needs an actor and a session, and the session id is the Lambda's request
+        # id — not knowable from out here. So this walks down: which actors has this memory ever
+        # heard from, and did any of them leave an event. An empty actor list is a specific
+        # finding, not an absence of one: nothing has ever written here.
+        #
+        # Tolerant calls, because these run last. When they raised, a runner CLI that did not
+        # know `bedrock-agentcore` ended the script with a traceback and discarded five
+        # assertions that had already passed.
+        raw_actors = aws_or_none(
+            "bedrock-agentcore",
+            "list-actors",
+            "--region",
+            region,
+            "--memory-id",
+            memories["helios"],
+            "--query",
+            "actorSummaries[].actorId",
+            "--output",
+            "json",
+        )
+        if raw_actors is None:
+            report.check(
+                "helios: this tenant's memory can be read at all",
+                False,
+                "bedrock-agentcore list-actors failed; the data plane is unreachable from here",
+            )
+        else:
+            actors = json.loads(raw_actors or "[]")
+            report.check(
+                "helios: something has written to this tenant's memory",
+                bool(actors),
+                f"actor(s) {actors[:3]}" if actors else "no actor has written; memory is inert",
+            )
+
+            events: list = []
+            for actor in actors[:3]:
+                raw_sessions = aws_or_none(
+                    "bedrock-agentcore",
+                    "list-sessions",
+                    "--region",
+                    region,
+                    "--memory-id",
+                    memories["helios"],
+                    "--actor-id",
+                    actor,
+                    "--query",
+                    "sessionSummaries[].sessionId",
+                    "--output",
+                    "json",
+                )
+                for session_id in json.loads(raw_sessions or "[]")[:3]:
+                    raw_events = aws_or_none(
+                        "bedrock-agentcore",
+                        "list-events",
+                        "--region",
+                        region,
+                        "--memory-id",
+                        memories["helios"],
+                        "--actor-id",
+                        actor,
+                        "--session-id",
+                        session_id,
+                        "--max-results",
+                        "10",
+                        "--query",
+                        "events[].eventId",
+                        "--output",
+                        "json",
+                    )
+                    events += json.loads(raw_events or "[]")
+
+            if actors:
+                report.check(
+                    "helios: the tool invocation itself was recorded",
+                    bool(events),
+                    f"{len(events)} event(s)" if events else "an actor exists but left no event",
+                )
 
 
 def main() -> int:
@@ -404,7 +494,13 @@ def main() -> int:
     # 5. Claim 2 at the identity boundary. One pool per tenant means one issuer per tenant, and
     #    a JWT authorizer validates against one issuer's keys — so this fails before any policy
     #    runs, which is stronger than a Cedar condition and the reason it is built that way.
-    if "aegis" in gateways:
+    #
+    #    Only asked when helios's own session opened. A refusal proves the boundary held; it
+    #    proves nothing if *everything* is refusing. One run had every AgentCore endpoint answer
+    #    an HTML 403 — a rate limit against the runner, unrelated to us — and this line passed
+    #    through it, reporting that isolation held when nothing had been let through to isolate.
+    own_surface_answered = bool(session.session)
+    if "aegis" in gateways and own_surface_answered:
         foreign = Mcp(gateways["aegis"], helios_token)
         status, body = foreign.open()
         report.check(
@@ -412,88 +508,16 @@ def main() -> int:
             status in REFUSED,
             f"HTTP {status} {json.dumps(body)[:200]}",
         )
+    elif "aegis" in gateways:
+        report.check(
+            "a helios token opens nothing at the aegis gateway",
+            False,
+            "not asked: helios's own session did not open, so a refusal here would prove nothing",
+        )
 
     check_runtimes(report, json.loads(arguments.runtimes), helios_token, arguments.region)
 
-    memories = json.loads(arguments.memories)
-    if memories.get("helios"):
-        # `list_events` needs an actor and a session, and the session id is the Lambda's request
-        # id — not knowable from out here. So this walks down: which actors has this memory ever
-        # heard from, and did any of them leave an event. An empty actor list is a specific
-        # finding, not an absence of one: nothing has ever written here.
-        #
-        # Tolerant calls, because these run last. When they raised, a runner CLI that did not
-        # know `bedrock-agentcore` ended the script with a traceback and discarded five
-        # assertions that had already passed.
-        raw_actors = aws_or_none(
-            "bedrock-agentcore",
-            "list-actors",
-            "--region",
-            arguments.region,
-            "--memory-id",
-            memories["helios"],
-            "--query",
-            "actorSummaries[].actorId",
-            "--output",
-            "json",
-        )
-        if raw_actors is None:
-            report.check(
-                "helios: this tenant's memory can be read at all",
-                False,
-                "bedrock-agentcore list-actors failed; the data plane is unreachable from here",
-            )
-        else:
-            actors = json.loads(raw_actors or "[]")
-            report.check(
-                "helios: something has written to this tenant's memory",
-                bool(actors),
-                f"actor(s) {actors[:3]}" if actors else "no actor has written; memory is inert",
-            )
-
-            events: list = []
-            for actor in actors[:3]:
-                raw_sessions = aws_or_none(
-                    "bedrock-agentcore",
-                    "list-sessions",
-                    "--region",
-                    arguments.region,
-                    "--memory-id",
-                    memories["helios"],
-                    "--actor-id",
-                    actor,
-                    "--query",
-                    "sessionSummaries[].sessionId",
-                    "--output",
-                    "json",
-                )
-                for session_id in json.loads(raw_sessions or "[]")[:3]:
-                    raw_events = aws_or_none(
-                        "bedrock-agentcore",
-                        "list-events",
-                        "--region",
-                        arguments.region,
-                        "--memory-id",
-                        memories["helios"],
-                        "--actor-id",
-                        actor,
-                        "--session-id",
-                        session_id,
-                        "--max-results",
-                        "10",
-                        "--query",
-                        "events[].eventId",
-                        "--output",
-                        "json",
-                    )
-                    events += json.loads(raw_events or "[]")
-
-            if actors:
-                report.check(
-                    "helios: the tool invocation itself was recorded",
-                    bool(events),
-                    f"{len(events)} event(s)" if events else "an actor exists but left no event",
-                )
+    check_memory(report, json.loads(arguments.memories), arguments.region)
 
     _print(report)
     return 1 if report.failed else 0
