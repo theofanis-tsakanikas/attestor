@@ -14,7 +14,16 @@ WORKDIR /build
 # point where a laptop could have told us.
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN pip install --no-cache-dir --target /install .
+# `.[cloud]`, not `.`. The cloud clients are an optional extra on purpose — the whole suite,
+# every eval and every gate run without them, which is what makes "offline is the default" true
+# rather than aspirational. This image is the one place that is *only* ever online: it exists to
+# talk to Athena, Bedrock and AgentCore Memory.
+#
+# Installed as `.` it started, answered `/ping`, served a tool call, and returned
+# `E_RESOLVER_ERROR: ModuleNotFoundError: No module named 'boto3'`. Which is the resolver doing
+# exactly the right thing with a broken dependency — abstaining rather than guessing — and a
+# container that cannot reach anything is not much of an agent.
+RUN pip install --no-cache-dir --target /install ".[cloud]"
 
 FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:3.12-slim
 

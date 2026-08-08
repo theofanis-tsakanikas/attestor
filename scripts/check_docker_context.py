@@ -27,7 +27,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COPY = re.compile(r"^COPY\s+(?:--from=\S+\s+)?(.+)$", re.MULTILINE)
-INSTALL = re.compile(r"^RUN\s+.*\bpip install\b.*\s\.\s*$", re.MULTILINE)
+#: The install stage, with or without an extra. `.[cloud]` is what ships — the pattern accepts
+#: both so this check keeps working while `_installs_the_cloud_extra` is the one that insists.
+INSTALL = re.compile(r"""RUN pip install[^\n]*?["']?\.(\[[a-z,]+\])?["']?(\s|$)""")
 
 
 def ignored(path: Path) -> bool:
@@ -59,6 +61,23 @@ def packaging_inputs() -> dict[str, str]:
     return named
 
 
+def _installs_the_cloud_extra() -> str | None:
+    """The image must install `.[cloud]`, or it starts and can reach nothing.
+
+    Deployed as a plain `.` it passed its health check, served a tool call, and answered
+    `E_RESOLVER_ERROR: ModuleNotFoundError: No module named 'boto3'` — the resolver abstaining
+    correctly over a dependency that was never installed. The extra is optional by design, and
+    this is the one artefact that is never offline.
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    if '".[cloud]"' in dockerfile or "'.[cloud]'" in dockerfile:
+        return None
+    return (
+        "Dockerfile installs the project without its `cloud` extra. The container would start, "
+        "answer /ping, and abstain on every datapoint with ModuleNotFoundError: boto3"
+    )
+
+
 def main() -> int:
     dockerfile = ROOT / "Dockerfile"
     if not dockerfile.is_file():
@@ -86,6 +105,8 @@ def main() -> int:
                 )
 
     # The other direction: what the build reads without the Dockerfile ever naming it.
+    problems += [m for m in (_installs_the_cloud_extra(),) if m is not None]
+
     install = INSTALL.search(text)
     if install is None:
         problems.append("no `RUN pip install .` stage — this check no longer knows what it guards")
