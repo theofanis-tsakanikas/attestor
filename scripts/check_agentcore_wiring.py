@@ -35,6 +35,7 @@ RESOLVED_PREFIXES = {
     "ATTESTOR_ISSUER": "src/attestor/policy/tenants.py",
     "ATTESTOR_AUDIENCE": "src/attestor/policy/tenants.py",
     "ATTESTOR_MEMORY": "src/attestor/agent/memory.py",
+    "ATTESTOR_GATEWAY_ROLE": "src/attestor/agent/handler.py",
 }
 
 #: The Lambda and the AgentCore runtime. Both serve these tools; an identity that resolved

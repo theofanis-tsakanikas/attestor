@@ -120,3 +120,26 @@ variable "agent_image_tag" {
   default     = "latest"
   description = "Image tag to run. The deploy workflow passes the commit sha; `latest` is a local convenience."
 }
+
+variable "gateway_roles" {
+  type        = map(string)
+  default     = { helios = "role:preparer", aegis = "role:preparer" }
+  description = <<-EOT
+    The role a call through each tenant's gateway carries.
+
+    AgentCore invokes a Lambda target with the gateway's own IAM role and forwards none of the
+    caller's token — confirmed from the client context, which carries the tool name, the gateway
+    id and the target id, and no claims at all. So the handler can derive the tenant, because
+    there is one gateway per tenant and AgentCore asserts which one was called, and it cannot
+    derive the role.
+
+    Declaring it here is the alternative to inventing it. A role in this map is a sentence
+    somebody wrote and somebody reviewed — "a call through the helios gateway is a preparer" —
+    rather than a default a handler chose at runtime. Cedar still runs twice: at the edge with
+    the caller's real claims, where it filters `tools/list` and refuses `request_override`, and
+    again inside the Lambda against this declared role.
+
+    Widening one of these is a pull request, which is the only way this project lets authority
+    change.
+  EOT
+}

@@ -52,7 +52,18 @@ class Report:
     results: list[tuple[str, bool, str]] = field(default_factory=list)
 
     def check(self, name: str, ok: bool, detail: str = "") -> None:
+        """Record it and say it, now.
+
+        Printed as it happens rather than collected for a summary. A probe that reports at the
+        end reports nothing when it dies in the middle — which is exactly what happened: a CLI
+        that had never heard of `bedrock-agentcore` raised in the last check and took five
+        passing assertions with it, including the two this project most wanted evidence for.
+        The summary still prints; it is no longer the only thing that does.
+        """
         self.results.append((name, ok, detail))
+        print(
+            f"  {'ok  ' if ok else 'FAIL'} {name}" + (f"  — {detail}" if detail else ""), flush=True
+        )
 
     @property
     def failed(self) -> list[tuple[str, bool, str]]:
@@ -60,9 +71,23 @@ class Report:
 
 
 def aws(*args: str) -> str:
+    """One AWS CLI call. Raises, so a broken probe cannot read as a pass."""
     return subprocess.run(  # noqa: S603
         [AWS, *args], capture_output=True, text=True, check=True
     ).stdout.strip()
+
+
+def aws_or_none(*args: str) -> str | None:
+    """The same call, for a probe whose failure is a finding rather than an abort.
+
+    The memory probes run last and had been raising. A CLI on the runner that did not know
+    `bedrock-agentcore` therefore ended the whole script with a traceback — discarding five
+    assertions that had already passed, including the two this project cares most about. A
+    verification that reports nothing when its last check errors is worse than one that has no
+    last check.
+    """
+    result = subprocess.run([AWS, *args], capture_output=True, text=True, check=False)  # noqa: S603
+    return result.stdout.strip() if result.returncode == 0 else None
 
 
 def token_for(tenant: str, secret_name: str, region: str) -> str:
@@ -293,35 +318,43 @@ def main() -> int:
 
     memories = json.loads(arguments.memories)
     if memories.get("helios"):
-        # `list_events` needs an actor and a session, and the session id is the Lambda's
-        # request id — not knowable from out here. So this walks down: which actors has this
-        # memory ever heard from, and did the most recent one leave any events. An empty actor
-        # list is the finding, and it is a specific one: nothing has ever written here.
-        actors = json.loads(
-            aws(
-                "bedrock-agentcore",
-                "list-actors",
-                "--region",
-                arguments.region,
-                "--memory-id",
-                memories["helios"],
-                "--query",
-                "actorSummaries[].actorId",
-                "--output",
-                "json",
+        # `list_events` needs an actor and a session, and the session id is the Lambda's request
+        # id — not knowable from out here. So this walks down: which actors has this memory ever
+        # heard from, and did any of them leave an event. An empty actor list is a specific
+        # finding, not an absence of one: nothing has ever written here.
+        #
+        # Tolerant calls, because these run last. When they raised, a runner CLI that did not
+        # know `bedrock-agentcore` ended the script with a traceback and discarded five
+        # assertions that had already passed.
+        raw_actors = aws_or_none(
+            "bedrock-agentcore",
+            "list-actors",
+            "--region",
+            arguments.region,
+            "--memory-id",
+            memories["helios"],
+            "--query",
+            "actorSummaries[].actorId",
+            "--output",
+            "json",
+        )
+        if raw_actors is None:
+            report.check(
+                "helios: this tenant's memory can be read at all",
+                False,
+                "bedrock-agentcore list-actors failed; the data plane is unreachable from here",
             )
-            or "[]"
-        )
-        report.check(
-            "helios: something has written to this tenant's memory",
-            bool(actors),
-            f"actor(s) {actors[:3]}" if actors else "no actor has ever written; memory is inert",
-        )
+        else:
+            actors = json.loads(raw_actors or "[]")
+            report.check(
+                "helios: something has written to this tenant's memory",
+                bool(actors),
+                f"actor(s) {actors[:3]}" if actors else "no actor has written; memory is inert",
+            )
 
-        events: list = []
-        for actor in actors[:3]:
-            sessions = json.loads(
-                aws(
+            events: list = []
+            for actor in actors[:3]:
+                raw_sessions = aws_or_none(
                     "bedrock-agentcore",
                     "list-sessions",
                     "--region",
@@ -335,11 +368,8 @@ def main() -> int:
                     "--output",
                     "json",
                 )
-                or "[]"
-            )
-            for session in sessions[:3]:
-                events += json.loads(
-                    aws(
+                for session_id in json.loads(raw_sessions or "[]")[:3]:
+                    raw_events = aws_or_none(
                         "bedrock-agentcore",
                         "list-events",
                         "--region",
@@ -349,7 +379,7 @@ def main() -> int:
                         "--actor-id",
                         actor,
                         "--session-id",
-                        session,
+                        session_id,
                         "--max-results",
                         "10",
                         "--query",
@@ -357,21 +387,20 @@ def main() -> int:
                         "--output",
                         "json",
                     )
-                    or "[]"
+                    events += json.loads(raw_events or "[]")
+
+            if actors:
+                report.check(
+                    "helios: the tool invocation itself was recorded",
+                    bool(events),
+                    f"{len(events)} event(s)" if events else "an actor exists but left no event",
                 )
-        report.check(
-            "helios: the tool invocation itself was recorded",
-            bool(events),
-            f"{len(events)} event(s)" if events else "an actor exists but left no event",
-        )
 
     _print(report)
     return 1 if report.failed else 0
 
 
 def _print(report: Report) -> None:
-    for name, ok, detail in report.results:
-        print(f"  {'ok  ' if ok else 'FAIL'} {name}" + (f"  — {detail}" if detail else ""))
     passed = len(report.results) - len(report.failed)
     print(f"\n  {passed}/{len(report.results)} passed")
 

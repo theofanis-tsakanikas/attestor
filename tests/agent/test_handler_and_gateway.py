@@ -358,10 +358,11 @@ class _GatewayContext:
 
     aws_request_id = "gateway-request-01"
 
-    def __init__(self, qualified: str) -> None:
-        self.client_context = type(
-            "ClientContext", (), {"custom": {"bedrockAgentCoreToolName": qualified}}
-        )()
+    def __init__(self, qualified: str, gateway: str = "attestor-gateway-helios-kwrv5ur") -> None:
+        custom = {"bedrockAgentCoreToolName": qualified}
+        if gateway:
+            custom["bedrockAgentCoreGatewayId"] = gateway
+        self.client_context = type("ClientContext", (), {"custom": custom})()
 
 
 def test_the_tool_name_can_arrive_in_the_client_context(repo_root, monkeypatch) -> None:
@@ -440,17 +441,57 @@ def test_a_gateway_event_is_read_as_one_big_argument_object(repo_root) -> None:
     assert handler._arguments({"tool": "t", "tenant_id": "aegis", "period": "2026"}) == {}
 
 
-def test_the_tenant_is_decided_by_who_signed_the_token(repo_root, monkeypatch) -> None:
-    """Not named by the caller. On a gateway call there is nobody to name it, and deriving it
-    is stronger anyway: one pool per tenant, one gateway per pool, so the issuer is the tenant.
+def test_the_tenant_is_decided_by_the_gateway_that_was_called(repo_root, monkeypatch) -> None:
+    """Not named by the caller, and not read from a token — there is no token on this path.
+
+    AgentCore invokes a Lambda target under its own IAM role and forwards no claims at all: the
+    client context carries the tool name, the gateway id and the target id, and nothing else.
+    One gateway per tenant, and which one was called is asserted by the platform, so the
+    gateway *is* the tenant — a stronger answer than the event body this path does not have.
     """
     monkeypatch.chdir(repo_root)
-    monkeypatch.setenv("ATTESTOR_ISSUER_HELIOS", "https://issuer.example/helios")
-    monkeypatch.setenv("ATTESTOR_ISSUER_AEGIS", "https://issuer.example/aegis")
+    monkeypatch.setenv("ATTESTOR_GATEWAY_ROLE_HELIOS", "role:preparer")
 
-    assert handler._tenant_from_issuer({"iss": "https://issuer.example/helios"}) == "helios"
-    assert handler._tenant_from_issuer({"iss": "https://issuer.example/aegis"}) == "aegis"
-    # A token from a provider this deployment does not know names no tenant, and an unnamed
-    # tenant is refused rather than defaulted.
-    assert handler._tenant_from_issuer({"iss": "https://issuer.example/somebody-else"}) == ""
-    assert handler._tenant_from_issuer({}) == ""
+    session = handler._gateway_session(
+        _GatewayContext("attestor-tools___read_lineage"),
+        period="2026",
+        session_id="req-000001",
+    )
+    assert session.tenant == "helios"
+    assert session.roles == frozenset({"role:preparer"})
+
+
+def test_a_gateway_naming_no_tenant_is_refused(repo_root, monkeypatch) -> None:
+    monkeypatch.chdir(repo_root)
+    with pytest.raises(handler.Rejected, match="names no tenant"):
+        handler._gateway_session(
+            _GatewayContext("t", gateway="attestor-gateway-somebody-else-xx"),
+            period="2026",
+            session_id="req-000001",
+        )
+
+
+def test_a_gateway_with_no_declared_role_runs_nothing(repo_root, monkeypatch) -> None:
+    """The safe state is no output. A role is declared, or there is no session at all.
+
+    This is the one place a default would have been easy and wrong: the claims are absent by
+    the platform's design, so "assume the least privilege" reads as prudence and is still a
+    handler granting authority that nobody wrote down and nobody reviewed.
+    """
+    monkeypatch.chdir(repo_root)
+    monkeypatch.delenv("ATTESTOR_GATEWAY_ROLE_HELIOS", raising=False)
+    with pytest.raises(handler.Rejected, match="no declared role"):
+        handler._gateway_session(_GatewayContext("t"), period="2026", session_id="req-000001")
+
+    monkeypatch.setenv("ATTESTOR_GATEWAY_ROLE_HELIOS", "role:emperor")
+    with pytest.raises(handler.Rejected, match="no declared role"):
+        handler._gateway_session(_GatewayContext("t"), period="2026", session_id="req-000001")
+
+
+def test_a_call_that_did_not_come_through_a_gateway_builds_no_gateway_session(repo_root) -> None:
+    """The runtime's HTTP surface still authenticates from verified, forwarded claims."""
+    assert handler._gateway_session(None, period="2026", session_id="req-000001") is None
+    assert (
+        handler._gateway_session(_GatewayContext("t", gateway=""), period="2026", session_id="r-1")
+        is None
+    )

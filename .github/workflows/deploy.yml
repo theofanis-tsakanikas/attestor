@@ -119,7 +119,12 @@ jobs:
         # costs the whole run, because the expensive layers are already standing by then.
         run: |
           set -euo pipefail
-          if ! aws bedrock-agentcore-control help >/dev/null 2>&1; then
+          # Both planes. The control plane creates the gateway and the memory; the *data*
+          # plane is what reads events back, and the verification step calls it. Checking only
+          # the first is how a runner reached that step with a CLI that had never heard of
+          # `bedrock-agentcore` and died mid-report, taking five passing assertions with it.
+          if ! aws bedrock-agentcore-control help >/dev/null 2>&1 \
+            || ! aws bedrock-agentcore help >/dev/null 2>&1; then
             echo "runner CLI ($(aws --version 2>&1)) predates bedrock-agentcore-control; upgrading"
             curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
             unzip -q /tmp/awscli.zip -d /tmp
@@ -127,6 +132,7 @@ jobs:
           fi
           aws --version
           aws bedrock-agentcore-control help >/dev/null
+          aws bedrock-agentcore help >/dev/null
 
       - name: compute expiry
         id: expiry

@@ -35,7 +35,7 @@ from attestor.datapoints.backends import AthenaBackend
 from attestor.datapoints.evidence import EvidenceIndex
 from attestor.datapoints.resolver import Resolver
 from attestor.policy import cedar
-from attestor.policy.tenants import Session, TenantRegistry, UnknownRole, WrongIssuer
+from attestor.policy.tenants import ROLES, Session, TenantRegistry, UnknownRole, WrongIssuer
 
 LOG = logging.getLogger("attestor.agent")
 LOG.setLevel(logging.INFO)
@@ -47,6 +47,10 @@ FORBIDDEN_ARGUMENTS = frozenset(
 )
 
 ROOT = Path(os.environ.get("ATTESTOR_ROOT", "/var/task"))
+
+#: The name every gateway is prefixed with, so `attestor-gateway-helios-kwrv5ursu9` can be read
+#: back to `helios`. Terraform builds the name from the same value.
+PROJECT = os.environ.get("ATTESTOR_PROJECT", "attestor")
 
 
 class Rejected(ValueError):
@@ -217,45 +221,60 @@ def _arguments(event: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in event.items() if k not in RESERVED_EVENT_KEYS}
 
 
-def _claims_from_context(context: Any) -> dict[str, Any]:
-    """The verified token claims AgentCore Gateway hands to a Lambda target.
+#: The gateway that invoked this Lambda, as AgentCore names it: `attestor-gateway-<tenant>-<id>`.
+GATEWAY_CONTEXT_KEY = "bedrockAgentCoreGatewayId"
 
-    The Gateway has already checked signature, issuer, audience and expiry — that is what the
-    authorizer is — and passes what it verified. Reading them here rather than from the event
-    is the difference between claims that were checked and claims that were typed.
+
+def _gateway_session(context: Any, *, period: str, session_id: str) -> Session | None:
+    """A session for a call that arrived through a gateway, or `None` if it did not.
+
+    AgentCore invokes a Lambda target under `GATEWAY_IAM_ROLE` and forwards none of the
+    caller's token. The client context carries the tool name, the gateway id, the target id and
+    a message id — and no claims whatsoever. That is the platform's design, not an oversight of
+    ours: the JWT authorizer and the policy engine are the authorization boundary for this
+    path, and they hold. Measured, in the same run: a helios token gets `insufficient_scope` at
+    the aegis gateway, `request_override` is refused by Cedar at the edge, and `tools/list`
+    returns five tools rather than six.
+
+    So the two halves of a session come from different places, and each from the strongest
+    source available.
+
+    **The tenant is the gateway.** There is one gateway per tenant, and which one was called is
+    asserted by AgentCore rather than supplied by the caller. That is a better answer than the
+    old one: `tenant_id` used to arrive in the event body, and this path has no body to put it
+    in — which is why `tenant_id` is a forbidden argument in the first place.
+
+    **The role is declared.** It cannot be derived, because the claims are not here. Inventing
+    one at runtime is the thing this system must never do, so it is stated in
+    `var.gateway_roles`, passed in as `ATTESTOR_GATEWAY_ROLE_<TENANT>`, and changed only by a
+    pull request. A missing or unknown role yields no session at all, and no session means no
+    tool runs — the safe state is no output, here as everywhere.
     """
     custom = getattr(getattr(context, "client_context", None), "custom", None) or {}
-    for key in ("bedrockAgentCoreIdentityClaims", "bedrockagentcoreidentityclaims", "claims"):
-        raw = custom.get(key)
-        if raw:
-            try:
-                return json.loads(raw) if isinstance(raw, str) else dict(raw)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                continue
-    return {}
+    gateway = str(custom.get(GATEWAY_CONTEXT_KEY, ""))
+    if not gateway:
+        return None
 
-
-def _tenant_from_issuer(claims: dict[str, Any]) -> str:
-    """Which undertaking this token speaks for, decided by who signed it.
-
-    The alternative — and what this handler did — is to let the caller name the tenant and then
-    check the issuer agrees. That works, and on this path there is nobody to name it: a Gateway
-    Lambda target receives tool arguments and a token, and `tenant_id` is a forbidden argument
-    by design.
-
-    Deriving it is also simply stronger. There is one Cognito pool per tenant and one gateway
-    per pool, so the issuer *is* the tenant; a token that could name a second undertaking would
-    have to have been signed by that undertaking's provider. `Session.from_claims` still
-    re-checks the binding, so this narrows what may be claimed rather than replacing the check.
-    """
-    issuer = str(claims.get("iss", "")).rstrip("/")
-    if not issuer:
-        return ""
     registry = declarative().registry
-    for tenant_id in registry.ids:
-        if registry[tenant_id].identity.resolved_issuer(tenant_id).rstrip("/") == issuer:
-            return tenant_id
-    return ""
+    tenant_id = next((t for t in registry.ids if gateway.startswith(f"{PROJECT}-gateway-{t}-")), "")
+    if not tenant_id:
+        raise Rejected(f"gateway {gateway!r} names no tenant this deployment knows")
+
+    role = os.environ.get(f"ATTESTOR_GATEWAY_ROLE_{tenant_id.upper()}", "")
+    if role not in ROLES:
+        raise Rejected(
+            f"gateway {gateway!r} carries no declared role. ATTESTOR_GATEWAY_ROLE_"
+            f"{tenant_id.upper()} is {role or 'unset'!r}; the platform sends no claims through "
+            "this path, and a role is declared in `var.gateway_roles` rather than assumed"
+        )
+
+    return Session(
+        tenant=tenant_id,
+        subject=f"gateway:{gateway}",
+        roles=frozenset({role}),
+        period=period,
+        session_id=session_id,
+    )
 
 
 def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
@@ -263,8 +282,8 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     started = dt.datetime.now(dt.UTC)
     tool = str(event.get("tool") or event.get("operationId") or "") or _tool_from_context(context)
     arguments = _arguments(event)
-    claims = dict(event.get("claims") or {}) or _claims_from_context(context)
-    tenant_id = str(event.get("tenant_id", "")) or _tenant_from_issuer(claims)
+    claims = dict(event.get("claims") or {})
+    tenant_id = str(event.get("tenant_id", ""))
     period = str(event.get("period", "")) or DEFAULT_PERIOD
     # Not "local". A `Session` requires at least six characters, so the old default could not
     # construct one — and every invocation arriving without a Lambda context died as a 500
