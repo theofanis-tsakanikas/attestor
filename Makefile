@@ -12,7 +12,10 @@ VENV := .venv
 PY   := $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 PIP  := $(if $(wildcard $(VENV)/bin/pip),$(VENV)/bin/pip,python3 -m pip)
 RUFF := $(if $(wildcard $(VENV)/bin/ruff),$(VENV)/bin/ruff,ruff)
-CHECKOV := $(if $(wildcard $(VENV)/bin/checkov),$(VENV)/bin/checkov,checkov)
+# Its own environment: checkov pins boto3==1.35.49 and the application needs a botocore
+# that knows `bedrock-agentcore`. Created on demand by `iac-scan`.
+CHECKOV_VENV := .venv-checkov
+CHECKOV := $(if $(wildcard $(CHECKOV_VENV)/bin/checkov),$(CHECKOV_VENV)/bin/checkov,checkov)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Everything above the "cloud" section runs with NO AWS account and NO
@@ -151,8 +154,15 @@ tf-validate: ## terraform validate per layer, offline (no backend, no provider c
 		terraform -chdir=$$layer validate || exit 1; \
 	done
 
+.PHONY: checkov-venv
+checkov-venv:
+	@test -x $(CHECKOV_VENV)/bin/checkov || { \
+		echo "  creating $(CHECKOV_VENV) — checkov pins boto3==1.35.49 and cannot share ours"; \
+		python3 -m venv $(CHECKOV_VENV) && $(CHECKOV_VENV)/bin/pip install -q --upgrade pip checkov; \
+	}
+
 .PHONY: iac-scan
-iac-scan: ## checkov over the Terraform layers
+iac-scan: checkov-venv ## checkov over the Terraform layers
 	$(CHECKOV) -d infra --quiet --compact
 
 .PHONY: package

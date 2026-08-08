@@ -46,3 +46,21 @@ output "reasoning_model" {
   value       = var.reasoning_model
   description = "The model the narrative provider drafts with. Read by the deploy workflow so the live run cannot silently fall back to a recorded draft."
 }
+
+output "verification_secret_names" {
+  description = <<-EOT
+    Where the deploy finds the credential it authenticates as, per tenant. The password itself
+    is never an output: an output is written to state and printed by `terraform output`, and a
+    credential that appears in a log is a credential.
+  EOT
+  value       = { for tenant, s in aws_secretsmanager_secret.verification : tenant => s.name }
+}
+
+output "tenant_issuers" {
+  description = <<-EOT
+    The issuer each tenant's tokens carry, which is also what the deployed handler checks them
+    against. Published so a verification step can assert the deployment and the account agree
+    — the mismatch this replaces was invisible for as long as nothing called the gateway.
+  EOT
+  value       = { for tenant, pool in aws_cognito_user_pool.tenant : tenant => "https://cognito-idp.${var.region}.amazonaws.com/${pool.id}" }
+}

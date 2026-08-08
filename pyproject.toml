@@ -31,13 +31,23 @@ dependencies = [
 # Cloud clients are NOT a hard dependency: the whole test suite, every eval and every gate
 # run without them. Installing this extra is only needed to talk to a live estate.
 cloud = [
-    "boto3>=1.35",
+    # 1.40, not 1.35. The `bedrock-agentcore` data plane — which is how anything writes to
+    # AgentCore Memory — does not exist in botocore before it, and `boto3.client(...)` on an
+    # unknown service raises `UnknownServiceError` at call time rather than at import. A floor
+    # that is too low here is a memory layer that is deployed, encrypted, retained, and
+    # unwritable.
+    "boto3>=1.40",
 ]
 dev = [
     "pytest>=8.3",
     "pytest-cov>=5.0",
     "ruff>=0.7",
-    "checkov>=3.2",
+    # checkov is deliberately absent, and this is the note that keeps it absent. It pins
+    # `boto3==1.35.49` exactly, in every release including the newest, and `bedrock-agentcore`
+    # — the API AgentCore Memory is written through — does not exist in botocore that old. One
+    # of the two had to leave the environment, and a scanner is a tool while boto3 is the
+    # application. It is installed on its own in CI and in `make iac-scan`; the scan itself is
+    # unchanged and still gates every push.
 ]
 
 [project.scripts]

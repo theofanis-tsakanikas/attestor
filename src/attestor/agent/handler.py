@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from attestor.agent import narrative
+from attestor.agent import memory, narrative
 from attestor.agent.tools import SPECS, Denied, Toolbox
 from attestor.contracts import loader, overrides
 from attestor.contracts.model import Standard
@@ -140,6 +140,32 @@ def _retrieval():
     )
 
 
+def _remember_refusal(
+    event: dict[str, Any], request_id: str, tool: str, outcome: str, detail: str
+) -> None:
+    """Record a refusal, if a session can be built at all.
+
+    A refusal is the more interesting half of the history. "Cedar denied `request_override`"
+    is precisely what an analyst needs to see when they ask why nothing happened, and it is
+    what an auditor asks about later.
+
+    Rebuilt rather than reused because the refusal may have happened before the session
+    existed — and where it did, there is nothing to attribute the event to and nothing is
+    written. A memory write is never a reason to construct a session that authorization
+    refused to construct.
+    """
+    try:
+        session = build_session(
+            dict(event.get("claims") or {}),
+            tenant_id=str(event.get("tenant_id", "")),
+            period=str(event.get("period", "")),
+            session_id=request_id,
+        )
+    except Exception:  # no session, nothing to attribute
+        return
+    memory.record_invocation(session, tool=tool, outcome=outcome, detail=detail)
+
+
 def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     """Gateway → tool. Returns a JSON body; never raises past this boundary."""
     started = dt.datetime.now(dt.UTC)
@@ -198,6 +224,17 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
             tenant=session.tenant,
             session_id=session.session_id,
             ms=_elapsed(started),
+            # Whether the question was remembered, not whether it was answered. An analyst
+            # asks follow-ups — "why is Scope 1 not disclosed" then "what would unblock it" —
+            # and the second is only answerable if the first was recorded. It is written
+            # after the answer exists and never gates it: memory is continuity, and the
+            # doctrine fails open on continuity the way it fails closed on a guardrail.
+            remembered=memory.record_invocation(
+                session,
+                tool=tool,
+                outcome="ok",
+                detail=json.dumps(result, default=str),
+            ),
         )
         return {"statusCode": 200, "body": result}
 
@@ -210,6 +247,7 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
             reason=denied.decision.reason,
             policies=list(denied.decision.determining),
         )
+        _remember_refusal(event, request_id, tool, "denied", str(denied))
         return {"statusCode": 403, "body": {"error": str(denied)}}
 
     except WrongIssuer as wrong:

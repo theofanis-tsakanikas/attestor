@@ -19,6 +19,7 @@ by the time the conversation exists, the membership is already fixed.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal, Self
@@ -46,12 +47,51 @@ class IdentityProvider(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["cognito", "oidc"]
+    #: The issuer as committed. For a Cognito tenant this is a **placeholder**: the real one
+    #: contains a user-pool id Terraform generates, which cannot be known when this file is
+    #: written. Read it through `resolved_issuer`, never directly.
+    #:
+    #: This was not always true, and the consequence was total. `tenants/helios.yaml` declared
+    #: `.../eu-central-1_EXAMPLE`, nothing substituted it at deploy, and `_check_provider`
+    #: compares the token's `iss` against it — so every real Cognito token presented to the
+    #: gateway was refused by our own handler with `WrongIssuer`. The AgentCore path could
+    #: never have worked. Nobody found out because nothing ever called it.
     issuer: str = Field(min_length=8)
+    #: Also a placeholder for a Cognito tenant, and for the same reason: a Cognito token
+    #: carries the app client *id* — a generated string — in `aud` or `client_id`, never a
+    #: name we chose. Read it through `resolved_audiences`.
     audience: str = Field(min_length=3)
     #: The claim carrying group membership. Providers disagree; the mapping is per tenant.
     groups_claim: str = "cognito:groups"
     #: Maps a provider's group name onto one of `ROLES`.
     role_map: dict[str, str] = Field(default_factory=dict)
+
+    def resolved_issuer(self, tenant_id: str) -> str:
+        """The issuer to check a token against, here, in this deployment.
+
+        `ATTESTOR_ISSUER_<TENANT>` wins when set. Terraform sets it on the Lambda and the
+        Runtime from the pool it just created, which is the only place the real value exists.
+
+        Nothing is relaxed when it is absent. The committed placeholder matches no real token,
+        so a deployment that forgot to pass it refuses every request instead of accepting any
+        — the control fails closed, and it fails loudly, naming both issuers.
+        """
+        return os.environ.get(f"ATTESTOR_ISSUER_{tenant_id.upper()}", self.issuer)
+
+    def resolved_audiences(self, tenant_id: str) -> frozenset[str]:
+        """Every audience a token for this tenant may legitimately carry.
+
+        A set, not a value, because one undertaking may have more than one application — a
+        console for its preparers and a service principal for automated checks are both this
+        tenant, and both are minted by this tenant's pool. What the check is for is that the
+        token was issued for *this* tenant's applications and not the neighbour's; it was
+        never for pinning the number of them to one.
+
+        `ATTESTOR_AUDIENCE_<TENANT>`, comma-separated, set by Terraform from the client ids of
+        that tenant's pool. Absent, the committed placeholder stands and matches nothing real.
+        """
+        raw = os.environ.get(f"ATTESTOR_AUDIENCE_{tenant_id.upper()}", self.audience)
+        return frozenset(part.strip() for part in raw.split(",") if part.strip())
 
     @model_validator(mode="after")
     def _roles_are_known(self) -> Self:
@@ -154,6 +194,33 @@ class Session(BaseModel):
     #: Opaque id for correlating traces and the cost meter.
     session_id: str = Field(min_length=6)
 
+    def resolved_issuer(self, tenant_id: str) -> str:
+        """The issuer to check a token against, here, in this deployment.
+
+        `ATTESTOR_ISSUER_<TENANT>` wins when set. Terraform sets it on the Lambda and the
+        Runtime from the pool it just created, which is the only place the real value exists.
+
+        Nothing is relaxed when it is absent. The committed placeholder matches no real token,
+        so a deployment that forgot to pass it refuses every request instead of accepting any
+        — the control fails closed, and it fails loudly, naming both issuers.
+        """
+        return os.environ.get(f"ATTESTOR_ISSUER_{tenant_id.upper()}", self.issuer)
+
+    def resolved_audiences(self, tenant_id: str) -> frozenset[str]:
+        """Every audience a token for this tenant may legitimately carry.
+
+        A set, not a value, because one undertaking may have more than one application — a
+        console for its preparers and a service principal for automated checks are both this
+        tenant, and both are minted by this tenant's pool. What the check is for is that the
+        token was issued for *this* tenant's applications and not the neighbour's; it was
+        never for pinning the number of them to one.
+
+        `ATTESTOR_AUDIENCE_<TENANT>`, comma-separated, set by Terraform from the client ids of
+        that tenant's pool. Absent, the committed placeholder stands and matches nothing real.
+        """
+        raw = os.environ.get(f"ATTESTOR_AUDIENCE_{tenant_id.upper()}", self.audience)
+        return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
     @model_validator(mode="after")
     def _roles_are_known(self) -> Self:
         unknown = sorted(self.roles - ROLES)
@@ -214,11 +281,12 @@ class Session(BaseModel):
         business trusting, and treating an absent claim as "nothing to check" is how a
         control becomes conditional on the attacker's cooperation.
         """
+        expected = tenant.identity.resolved_issuer(tenant.id)
         issuer = str(claims.get("iss", "")).rstrip("/")
-        if issuer != tenant.identity.issuer.rstrip("/"):
+        if issuer != expected.rstrip("/"):
             raise WrongIssuer(
                 f"token issued by {issuer or '<absent>'!r}, but tenant {tenant.id} "
-                f"authenticates against {tenant.identity.issuer!r}"
+                f"authenticates against {expected!r}"
             )
 
         # `aud` is a string or a list, depending on the provider — and Cognito access tokens
@@ -226,10 +294,11 @@ class Session(BaseModel):
         # allowed to be missing.
         raw = claims.get("aud", claims.get("client_id", []))
         audiences = {str(a) for a in (raw if isinstance(raw, list) else [raw]) if a != ""}
-        if tenant.identity.audience not in audiences:
+        permitted = tenant.identity.resolved_audiences(tenant.id)
+        if audiences.isdisjoint(permitted):
             raise WrongIssuer(
-                f"token audience {sorted(audiences) or '<absent>'} does not include "
-                f"{tenant.identity.audience!r}, which tenant {tenant.id} requires"
+                f"token audience {sorted(audiences) or '<absent>'} is none of "
+                f"{sorted(permitted)}, which is what tenant {tenant.id} accepts"
             )
 
     # ── Deriving everything else from the session ────────────────────────────

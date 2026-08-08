@@ -356,6 +356,23 @@ jobs:
           done
           attestor dashboard
 
+      - name: call the AgentCore surface with a real token
+        if: inputs.stage == 'full'
+        # The first thing that has ever called it. The gateway, the runtime, the six MCP tools
+        # and the Cedar `forbid` were deployed and READY for every deploy this repository has
+        # run, and had served zero requests — which is how `tenants/*.yaml` kept an issuer of
+        # `eu-central-1_EXAMPLE` that would have refused the first real token to arrive.
+        #
+        # Not `|| true`. A tenant that blocks is a correct outcome and does not fail a deploy;
+        # an authorization boundary that does not hold is not an outcome, it is a defect.
+        run: |
+          set -euo pipefail
+          python scripts/verify_agentcore.py \
+            --region "$AWS_REGION" \
+            --gateways "$(terraform -chdir=infra/agent output -json gateway_url)" \
+            --secrets "$(terraform -chdir=infra/agent output -json verification_secret_names)" \
+            --memories "$(terraform -chdir=infra/agent output -json memory_ids)"
+
       - name: publish the results
         if: inputs.stage == 'full'
         run: |

@@ -151,6 +151,11 @@ jobs:
         with:
           terraform_version: 1.9.8
       - run: pip install -e ".[dev]"
+      - name: install checkov on its own
+        # It pins `boto3==1.35.49` exactly, and the application needs a botocore that
+        # knows `bedrock-agentcore` — the API AgentCore Memory is written through. A
+        # scanner is a tool; boto3 is the application. The scan itself is unchanged.
+        run: pipx install checkov
       - run: terraform fmt -check -recursive infra
       - name: validate every layer against real provider schemas
         # `-backend=false`: no state, no credentials, nothing reached but the registry. This
@@ -172,6 +177,13 @@ jobs:
         # The engine is in the estate to keep `request_override` uncallable through the
         # gateway. A policy set that lost that forbid is a policy engine with nothing to say.
         run: python scripts/check_agentcore_policies.py
+      - name: terraform and the agent code agree on every name
+        # `tenants/*.yaml` carried `eu-central-1_EXAMPLE` as the Cognito issuer, nothing ever
+        # substituted it, and the handler compares a token's `iss` against it. Every real token
+        # would have been refused by our own code, on every deploy this repository has run —
+        # invisible because nothing ever called the gateway to find out.
+        run: python scripts/check_agentcore_wiring.py
+
       - name: every AgentCore name is one AgentCore accepts
         # Provider attribute validators run in the plan phase, and a plan needs credentials.
         # Two deploys died fifteen minutes in on a hyphen this would have caught for free.

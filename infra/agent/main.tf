@@ -16,8 +16,9 @@
 terraform {
   required_version = ">= 1.9"
   required_providers {
-    aws   = { source = "hashicorp/aws", version = "~> 5.70" }
-    awscc = { source = "hashicorp/awscc", version = "~> 1.20" }
+    aws    = { source = "hashicorp/aws", version = "~> 5.70" }
+    awscc  = { source = "hashicorp/awscc", version = "~> 1.20" }
+    random = { source = "hashicorp/random", version = "~> 3.6" }
   }
   backend "s3" { key = "agent/terraform.tfstate" }
 }
@@ -132,6 +133,43 @@ resource "aws_cognito_user_pool" "tenant" {
   }
 }
 
+# The issuer each tenant's tokens must carry, keyed the way the code reads it. This is the
+# only place the real value exists: it contains a pool id Terraform generates, so
+# `tenants/*.yaml` can only hold a placeholder.
+#
+# Without this the committed placeholder is what `Session._check_provider` compares a token's
+# `iss` against, and no real token matches — which is exactly what was deployed, for as long
+# as nothing ever called the gateway to find out.
+locals {
+  tenant_issuers = {
+    for tenant, pool in aws_cognito_user_pool.tenant :
+    "ATTESTOR_ISSUER_${upper(tenant)}" => "https://cognito-idp.${var.region}.amazonaws.com/${pool.id}"
+  }
+
+  # Both of this tenant's app clients: the one its people sign in through and the one the
+  # deploy authenticates as to prove the boundary. A Cognito token carries the client *id* in
+  # `aud`, so `tenants/*.yaml` cannot name it; and one undertaking having two applications is
+  # ordinary, which is why the check accepts a set rather than a single value.
+  tenant_audiences = {
+    for tenant, pool in aws_cognito_user_pool.tenant :
+    "ATTESTOR_AUDIENCE_${upper(tenant)}" => join(",", [
+      aws_cognito_user_pool_client.tenant[tenant].id,
+      aws_cognito_user_pool_client.verification[tenant].id,
+    ])
+  }
+
+  # The memory each tenant's events are written to. One resource per tenant rather than one
+  # memory with a namespace column: a filter can be forgotten on a single call, a separate
+  # resource cannot be. Empty until the memories exist, which is why it is merged rather than
+  # indexed — `agent` is applied as one layer and the map is complete by then.
+  tenant_memories = {
+    for tenant, m in awscc_bedrockagentcore_memory.tenant :
+    "ATTESTOR_MEMORY_${upper(tenant)}" => m.memory_id
+  }
+
+  tenant_identity_env = merge(local.tenant_issuers, local.tenant_audiences, local.tenant_memories)
+}
+
 resource "aws_cognito_user_group" "roles" {
   for_each = {
     for pair in setproduct(var.cognito_tenants, var.role_groups) :
@@ -165,6 +203,127 @@ resource "aws_cognito_user_pool_client" "tenant" {
     id_token      = "minutes"
     refresh_token = "hours"
   }
+}
+
+# ── A principal the deployment can actually authenticate as ──────────────────
+#
+# Everything above this comment was deployed, correct, and unreachable. There was no way to
+# obtain a token for any tenant: no domain, no users, and an app client offering only the
+# authorization-code flow. So the gateway, the runtime, the tool handlers and the Cedar
+# `forbid` at the edge had never served a single request, and the first thing a real token
+# would have hit was our own issuer check comparing it against `eu-central-1_EXAMPLE`.
+#
+# A user, not a machine-to-machine client, and the distinction is the whole value of the
+# exercise. Only a user token carries `cognito:groups`, which is what `Session.from_claims`
+# maps onto a role. A client-credentials token carries scopes instead, and verifying with one
+# would mean verifying a different code path from the one a person uses — proving the parts we
+# did not need to prove and skipping the part we did.
+
+resource "aws_cognito_user_pool_domain" "tenant" {
+  for_each = aws_cognito_user_pool.tenant
+
+  domain       = "${var.project}-${each.key}-${data.aws_caller_identity.current.account_id}"
+  user_pool_id = each.value.id
+}
+
+# Separate from the human client, which keeps its secret and its code flow untouched. This one
+# has no secret because `AdminInitiateAuth` with one requires a SECRET_HASH, and a verification
+# step that has to reimplement an HMAC to ask a question is a step that will be skipped.
+resource "aws_cognito_user_pool_client" "verification" {
+  for_each = aws_cognito_user_pool.tenant
+
+  name            = "${var.project}-${each.key}-verification"
+  user_pool_id    = each.value.id
+  generate_secret = false
+  explicit_auth_flows = [
+    "ALLOW_ADMIN_USER_PASSWORD_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH",
+  ]
+
+  access_token_validity  = 15
+  id_token_validity      = 15
+  refresh_token_validity = 1
+  token_validity_units {
+    access_token  = "minutes"
+    id_token      = "minutes"
+    refresh_token = "hours"
+  }
+}
+
+# Never in the repository and never in a log. It exists so a workflow can prove the tenant
+# boundary holds; it is not a way in for a person.
+resource "random_password" "verification" {
+  for_each = aws_cognito_user_pool.tenant
+
+  # Without a keeper this value is generated once and kept forever, which would have made the
+  # comment above it false. Keyed on the estate's expiry, which moves every time the layer is
+  # stood up — so the credential's lifetime is the estate's lifetime, by construction rather
+  # than by a rotation schedule nobody would run on an estate that lives for a day.
+  keepers = {
+    expires_at = var.expires_at
+  }
+
+  length           = 32
+  special          = true
+  override_special = "!@#%^*-_=+"
+  min_lower        = 2
+  min_upper        = 2
+  min_numeric      = 2
+  min_special      = 2
+}
+
+resource "aws_secretsmanager_secret" "verification" {
+  #checkov:skip=CKV2_AWS_57: Rotation here would be a Lambda that changes a password nobody
+  # holds for longer than the estate exists. `random_password.verification` is keyed on
+  # `expires_at`, so the credential is replaced whenever this layer is applied, and the
+  # estate is applied per deploy under a TTL the reaper enforces. A rotation schedule on top
+  # of that is a second mechanism for the same guarantee, and the weaker one — it would keep
+  # running against an estate that is meant to be gone.
+  for_each = aws_cognito_user_pool.tenant
+
+  name                    = "${var.project}/verification/${each.key}"
+  description             = "Password for the ${each.key} verification principal. Rotated on every apply."
+  kms_key_id              = local.foundation.kms_key_arn
+  recovery_window_in_days = 0
+
+  tags = {
+    "attestor:expires-at" = var.expires_at
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "verification" {
+  for_each = aws_cognito_user_pool.tenant
+
+  secret_id = aws_secretsmanager_secret.verification[each.key].id
+  secret_string = jsonencode({
+    username  = "${var.project}-verification"
+    password  = random_password.verification[each.key].result
+    client_id = aws_cognito_user_pool_client.verification[each.key].id
+    pool_id   = each.value.id
+  })
+}
+
+resource "aws_cognito_user" "verification" {
+  for_each = aws_cognito_user_pool.tenant
+
+  user_pool_id = each.value.id
+  username     = "${var.project}-verification"
+  password     = random_password.verification[each.key].result
+
+  # No email, no phone, no recovery path. It is not a person and must not be recoverable as
+  # one; the only way to hold this credential is to be allowed to read the secret.
+  message_action = "SUPPRESS"
+}
+
+# `preparers`, not `assurance`. A preparer may resolve a datapoint and read lineage, which is
+# what the verification calls, and may not approve anything — so the principal used to test
+# the boundary has no authority the test does not need.
+resource "aws_cognito_user_in_group" "verification" {
+  for_each = aws_cognito_user_pool.tenant
+
+  user_pool_id = each.value.id
+  group_name   = aws_cognito_user_group.roles["${each.key}-preparers"].name
+  username     = aws_cognito_user.verification[each.key].username
 }
 
 # ── The tool handlers behind Gateway ─────────────────────────────────────────
@@ -223,6 +382,21 @@ resource "aws_iam_role_policy" "tools" {
         Resource = [
           "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.evidence_kb_id}",
           "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${local.knowledge.regulatory_kb_id}",
+        ]
+      },
+      {
+        Effect = "Allow"
+        # Writing an analyst's question to their own tenant's memory, and reading it back.
+        # Scoped to the memories this layer creates: the module derives the namespace from a
+        # verified session, and this makes that derivation the *only* reachable one — a code
+        # path that tried to write elsewhere would be refused by IAM as well as by the code.
+        Action = [
+          "bedrock-agentcore:CreateEvent",
+          "bedrock-agentcore:ListEvents",
+          "bedrock-agentcore:GetEvent",
+        ]
+        Resource = [
+          for m in awscc_bedrockagentcore_memory.tenant : m.memory_arn
         ]
       },
       {
@@ -308,7 +482,7 @@ resource "aws_lambda_function" "tools" {
   }
 
   environment {
-    variables = {
+    variables = merge(local.tenant_identity_env, {
       ATTESTOR_WORKGROUP = var.project
       ATTESTOR_DATABASE  = "${var.project}_gold"
       # The handler resolves through Athena and needs somewhere to put its results. It was
@@ -324,7 +498,7 @@ resource "aws_lambda_function" "tools" {
       ATTESTOR_REASONING_MODEL = var.reasoning_model
       ATTESTOR_REPORTS_BUCKET  = local.foundation.reports_bucket
       OTEL_SERVICE_NAME        = "attestor-tools"
-    }
+    })
   }
 
   tracing_config {
@@ -565,7 +739,13 @@ resource "awscc_bedrockagentcore_gateway" "tenant" {
       # Exactly one client: this tenant's. Listing every tenant's app client against one
       # issuer's keys is what made the previous configuration look multi-tenant while
       # admitting one tenant and locking out the rest.
-      allowed_clients = [aws_cognito_user_pool_client.tenant[each.key].id]
+      # This tenant's clients, and only this tenant's. The verification client is here for
+      # the same reason it exists: a control nothing has ever exercised is a control nobody
+      # can vouch for, and the deploy now calls this gateway with a real token from it.
+      allowed_clients = [
+        aws_cognito_user_pool_client.tenant[each.key].id,
+        aws_cognito_user_pool_client.verification[each.key].id,
+      ]
     }
   }
 
@@ -724,7 +904,7 @@ resource "awscc_bedrockagentcore_runtime" "agent" {
     }
   }
 
-  environment_variables = {
+  environment_variables = merge(local.tenant_identity_env, {
     ATTESTOR_ROOT            = "/app"
     ATTESTOR_WORKGROUP       = var.project
     ATTESTOR_DATABASE        = "${var.project}_gold"
@@ -735,7 +915,7 @@ resource "awscc_bedrockagentcore_runtime" "agent" {
     ATTESTOR_GUARDRAIL_VER   = local.knowledge.guardrail_version
     ATTESTOR_REASONING_MODEL = var.reasoning_model
     OTEL_SERVICE_NAME        = "attestor-agent"
-  }
+  })
 
   tags = {
     "attestor:expires-at" = var.expires_at
@@ -855,6 +1035,20 @@ resource "aws_iam_role_policy" "runtime" {
         Effect   = "Allow"
         Action   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
         Resource = aws_ecr_repository.agent.arn
+      },
+      {
+        Effect = "Allow"
+        # The runtime serves the same tools as the Lambda and records the same events, so it
+        # needs the same grant. Two surfaces, one behaviour: a difference here would mean an
+        # analyst's history depended on which door they came through.
+        Action = [
+          "bedrock-agentcore:CreateEvent",
+          "bedrock-agentcore:ListEvents",
+          "bedrock-agentcore:GetEvent",
+        ]
+        Resource = [
+          for m in awscc_bedrockagentcore_memory.tenant : m.memory_arn
+        ]
       },
       {
         Effect = "Allow"

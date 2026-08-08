@@ -48,7 +48,11 @@ def _tool(name: str, fallback: str | None = None) -> str:
 
 PYTHON = _tool("python", sys.executable)
 RUFF = _tool("ruff")
-CHECKOV = _tool("checkov")
+#: checkov lives in its own environment, because it pins `boto3==1.35.49` exactly and the
+#: application needs `bedrock-agentcore`, which botocore only learned about later. `make
+#: iac-scan` creates `.venv-checkov` on demand; this finds it, and falls back to whatever is on
+#: PATH so a runner that installed it another way still runs the scan.
+CHECKOV = str(_CV) if (_CV := ROOT / ".venv-checkov" / "bin" / "checkov").exists() else "checkov"
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -275,6 +279,15 @@ CHECKS: list[Check] = [
         [sys.executable, "scripts/check_agentcore_policies.py"],
         "The deployed policy set still holds the rule it exists for — no override through the "
         "agent — and asserts nothing about token claims this repository has not verified.",
+    ),
+    Check(
+        "correctness",
+        "AgentCore wiring",
+        [sys.executable, "scripts/check_agentcore_wiring.py"],
+        "Terraform and the agent code agree on every name they pass between them. "
+        "`tenants/*.yaml` carried `eu-central-1_EXAMPLE` as the Cognito issuer, nothing "
+        "substituted it, and the handler compares a token's `iss` against it — so the whole "
+        "AgentCore path would have refused the first real token, on every deploy that has run.",
     ),
     Check(
         "deployability",
