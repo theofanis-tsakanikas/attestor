@@ -319,6 +319,25 @@ def _drop_an_endpoint_the_runtime_needs(root: Path) -> bool:
     return True
 
 
+def _let_the_surface_roles_drift(root: Path) -> bool:
+    """Take an Athena permission off the runtime and leave the Lambda's alone.
+
+    The failure arrives as `E_RESOLVER_ERROR`, which reads like a data problem and is a
+    permission the other surface has.
+    """
+    path = root / "infra/agent/main.tf"
+    text = path.read_text(encoding="utf-8")
+    marker = '"s3:GetBucketLocation",'
+    # Both roles grant it. Removing the last occurrence takes it from the runtime and leaves
+    # the Lambda's, which is exactly the drift the gate exists to see.
+    both_roles = 2
+    if text.count(marker) < both_roles:
+        return False
+    last = text.rindex(marker)
+    path.write_text(text[:last] + text[last + len(marker) :], encoding="utf-8")
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -473,6 +492,14 @@ MUTATIONS: tuple[Mutation, ...] = (
         "no endpoint",
         _drop_an_endpoint_the_runtime_needs,
         "Nothing refuses the connection. It waits, and the control plane says READY.",
+    ),
+    Mutation(
+        "let the two surfaces' roles drift apart",
+        "surface role parity",
+        [sys.executable, "scripts/check_surface_roles_agree.py"],
+        "missing",
+        _let_the_surface_roles_drift,
+        "Same handlers, separate roles. The failure arrives as an abstention.",
     ),
 )
 

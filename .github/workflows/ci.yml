@@ -184,6 +184,11 @@ jobs:
         # invisible because nothing ever called the gateway to find out.
         run: python scripts/check_agentcore_wiring.py
 
+      - name: both AgentCore surfaces may do the same things
+        # Identical handlers, separate IAM roles, and separate roles drift. Both failed Athena
+        # on the same missing `s3:GetBucketLocation` because only one had ever been called.
+        run: python scripts/check_surface_roles_agree.py
+
       - name: everything reached from inside the VPC has a way out
         # Twice now: `bedrock-agentcore` had no endpoint and a memory write hung for 180s, and
         # ECR had none so the runtime could never pull its own image while reporting READY. A
