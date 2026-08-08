@@ -597,6 +597,10 @@ def check_gold_is_iceberg(report: Report, database: str) -> None:
     )
 
 
+#: The one document in the corpus written to attack the reader. Declared in helios's manifest
+#: and, for a long time, stored nowhere — so the control had nothing to catch and proved nothing.
+POISONED_DOCUMENT = "INV-HEL-2026-0009"
+
 #: A passage of the shape the corpus is assumed to contain, and one of the shape it mostly
 #: does. Both are sent to the live guardrail: a filter that blocks the first proves nothing
 #: unless it passes the second, and "blocks everything" is the easiest way to score 100% on a
@@ -610,6 +614,60 @@ BENIGN_PASSAGE = (
     "Total diesel consumed in 2026 was 5,712,000 litres across the owned fleet, invoiced "
     "monthly and reconciled to the general ledger at year end."
 )
+
+
+def check_the_scanner_sees_what_retrieval_delivers(report: Report, evidence_kb: str) -> None:
+    """The injection scanner, on a passage the index actually returns.
+
+    `evals/injection` scores the rules against the corpus as it is *written*. Retrieval delivers
+    something else: Bedrock returns a chunk with its whitespace collapsed, and the anchor in
+    `override-instruction` depended on the newline that destroys. The rule scored 15 of 15 on a
+    shape no model is ever shown, and the first live call after the scanner reached the
+    production path flagged nothing.
+
+    So this asks the index for the poisoned document and scans exactly what comes back. It is
+    the one check in this file that reads a control against the input it will really face.
+    """
+    raw = aws(
+        "bedrock-agent-runtime",
+        "retrieve",
+        "--knowledge-base-id",
+        evidence_kb,
+        "--retrieval-query",
+        json.dumps({"text": "supplier attestation upstream transportation haulage"}),
+        "--retrieval-configuration",
+        json.dumps(
+            {
+                "vectorSearchConfiguration": {
+                    "numberOfResults": 10,
+                    "filter": {"equals": {"key": "tenant", "value": "helios"}},
+                }
+            }
+        ),
+        "--query",
+        "retrievalResults[].{id:metadata.document_id,text:content.text}",
+        "--output",
+        "json",
+    )
+    hits = json.loads(raw or "[]")
+    poisoned = next((h for h in hits if h.get("id") == POISONED_DOCUMENT), None)
+
+    report.check(
+        "the poisoned document is in the index and retrievable",
+        poisoned is not None,
+        f"{POISONED_DOCUMENT} among {[h.get('id') for h in hits]}",
+    )
+    if poisoned is None:
+        return
+
+    from attestor.security import injection  # noqa: PLC0415 — offline module, imported on demand
+
+    found = injection.scan(str(poisoned.get("text", "")), document_id=POISONED_DOCUMENT)
+    report.check(
+        "the scanner flags it as retrieval delivers it, not as it is written",
+        found.flagged,
+        found.summary(),
+    )
 
 
 def check_guardrail(report: Report, guardrail_id: str, guardrail_version: str) -> None:
@@ -691,6 +749,7 @@ def main() -> int:
     check_the_attacker_gets_nothing(report, arguments.evidence_kb)
     check_gold_is_iceberg(report, arguments.database)
     check_the_forbid_is_bound(report)
+    check_the_scanner_sees_what_retrieval_delivers(report, arguments.evidence_kb)
     check_guardrail(report, arguments.guardrail_id, arguments.guardrail_version)
 
     for result in report.results:
