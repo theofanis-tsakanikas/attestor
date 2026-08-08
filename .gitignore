@@ -50,3 +50,4 @@ infra/agent/tools/*
 # public surface. The folder is ignored rather than the file, so anything else that goes in
 # later is covered by the same decision instead of needing a new one.
 notes/
+.venv-checkov/

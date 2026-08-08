@@ -7,7 +7,16 @@ reporting_contact: sustainability-reporting@helios.example
 
 identity:
   kind: cognito
-  issuer: https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_EXAMPLE
+  # PLACEHOLDER. The real issuer contains a user-pool id Terraform generates, so it
+  # cannot be written here. The deployed handler and runtime read
+  # ATTESTOR_ISSUER_HELIOS, which `infra/agent` sets from the pool it created.
+  #
+  # This value is checked against a token's `iss`, so it is a control and not a note:
+  # if the deployment forgets the variable, no real token matches and every request is
+  # refused. That is the intended failure. What is *not* intended is what happened
+  # before — this line said `eu-central-1_EXAMPLE`, read like a sample, and silently
+  # made the whole AgentCore path unusable.
+  issuer: https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_PLACEHOLDER_SET_BY_TERRAFORM
   audience: attestor-helios
   groups_claim: "cognito:groups"
   role_map:
