@@ -305,6 +305,20 @@ def _point_every_runtime_at_one_issuer(root: Path) -> bool:
     return True
 
 
+def _drop_an_endpoint_the_runtime_needs(root: Path) -> bool:
+    """Remove ECR from the VPC endpoints.
+
+    The runtime keeps reporting READY and never starts, which is the most expensive shape a
+    failure can take: everything says fine and nothing runs.
+    """
+    path = root / "infra/foundation/main.tf"
+    text = path.read_text(encoding="utf-8")
+    if '"ecr.dkr",' not in text:
+        return False
+    path.write_text(text.replace('    "ecr.dkr",\n', ""), encoding="utf-8")
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -451,6 +465,14 @@ MUTATIONS: tuple[Mutation, ...] = (
         "one issuer",
         _point_every_runtime_at_one_issuer,
         "Exactly what was deployed until the audit found it.",
+    ),
+    Mutation(
+        "take away an endpoint the runtime cannot start without",
+        "VPC endpoints",
+        [sys.executable, "scripts/check_vpc_endpoints.py"],
+        "no endpoint",
+        _drop_an_endpoint_the_runtime_needs,
+        "Nothing refuses the connection. It waits, and the control plane says READY.",
     ),
 )
 

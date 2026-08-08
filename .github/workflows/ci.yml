@@ -184,6 +184,12 @@ jobs:
         # invisible because nothing ever called the gateway to find out.
         run: python scripts/check_agentcore_wiring.py
 
+      - name: everything reached from inside the VPC has a way out
+        # Twice now: `bedrock-agentcore` had no endpoint and a memory write hung for 180s, and
+        # ECR had none so the runtime could never pull its own image while reporting READY. A
+        # service with no endpoint does not fail, it waits.
+        run: python scripts/check_vpc_endpoints.py
+
       - name: every AgentCore surface serves exactly one tenant
         # A JWT authorizer validates against one issuer, and there is one pool per tenant. The
         # runtime admitted every tenant's clients against one of them: helios could not reach it
