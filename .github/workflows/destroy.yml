@@ -112,7 +112,29 @@ jobs:
               --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}')" 2>/dev/null || true
           done
 
+      - name: drop the schemas dbt created
+        # Terraform manages `attestor_gold` and `attestor_raw`. dbt creates one Glue database
+        # per schema beside them — `attestor_gold_ref`, `attestor_gold_quarantine` — and
+        # Terraform has never heard of those, so a clean `terraform destroy` left 45 tables
+        # standing and reported success. Found by sweeping the account after a teardown that
+        # said it had finished.
+        #
+        # Free, as it happens: the Data Catalog charges nothing for the first million objects.
+        # Left behind anyway, they are the difference between "destroyed" and "destroyed except
+        # the parts nobody was looking at".
+        run: |
+          set -euo pipefail
+          for database in $(aws glue get-databases \
+            --query "DatabaseList[?starts_with(Name, '$PROJECT')].Name" --output text); do
+            case "$database" in
+              "$PROJECT"_gold|"$PROJECT"_raw) continue ;;  # Terraform owns these
+            esac
+            echo "  dropping $database"
+            aws glue delete-database --name "$database"
+          done
+
       - name: destroy in reverse order
+        id: destroy
         env:
           TF_VAR_expires_at: "1970-01-01"
           TF_VAR_deploy_runtime: "true"
@@ -134,6 +156,33 @@ jobs:
               ./.github/scripts/wait-for-empty-subnets.sh || true
             fi
             ./.github/scripts/tf.sh destroy "$layer"
+          done
+
+      - name: release any lock this run left behind
+        if: always()
+        # A destroy that dies mid-apply keeps its lock. The next run then fails with `Error
+        # acquiring the state lock` and never touches the estate at all — which is how two
+        # consecutive teardowns "failed on the ENIs" when the second had not started, and how a
+        # NAT gateway billed for a night while both runs looked like the same known problem.
+        #
+        # Only a lock this workflow's own run created. `force-unlock` is otherwise exactly the
+        # kind of thing that should need a human, and stealing a lock from a running apply is
+        # worse than the stuck lock it fixes.
+        run: |
+          set -uo pipefail
+          for layer in agent knowledge data foundation; do
+            info=$(aws dynamodb get-item --table-name "$TF_LOCK_TABLE" \
+              --key "{\"LockID\":{\"S\":\"$TF_STATE_BUCKET/$layer/terraform.tfstate\"}}" \
+              --query 'Item.Info.S' --output text 2>/dev/null) || continue
+            [ "$info" = "None" ] || [ -z "$info" ] && continue
+            id=$(echo "$info" | jq -r .ID)
+            who=$(echo "$info" | jq -r .Who)
+            case "$who" in
+              runner@*) ;;
+              *) echo "  $layer is locked by $who, not by a runner — leaving it"; continue ;;
+            esac
+            echo "  releasing $layer ($id, held by $who)"
+            terraform -chdir="infra/$layer" force-unlock -force "$id" || true
           done
 
       - name: confirm nothing survived
