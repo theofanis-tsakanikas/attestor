@@ -216,6 +216,11 @@ def test_denied_is_reported_as_403_not_as_an_error(monkeypatch) -> None:
             "tool": "resolve_datapoint",
             "tenant_id": "helios",
             "period": "2026",
+            # Present so the claims branch is taken; `build_session` is patched above, so what
+            # is in them does not matter. Without any, this call now has no identity at all and
+            # is refused before Cedar is ever consulted — which is correct, and not what this
+            # test is about.
+            "claims": {"sub": "someone"},
             "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
         }
     )
@@ -450,7 +455,7 @@ def test_the_tenant_is_decided_by_the_gateway_that_was_called(repo_root, monkeyp
     gateway *is* the tenant — a stronger answer than the event body this path does not have.
     """
     monkeypatch.chdir(repo_root)
-    monkeypatch.setenv("ATTESTOR_GATEWAY_ROLE_HELIOS", "role:preparer")
+    monkeypatch.setenv("ATTESTOR_SURFACE_ROLE_HELIOS", "role:preparer")
 
     session = handler._gateway_session(
         _GatewayContext("attestor-tools___read_lineage"),
@@ -479,11 +484,11 @@ def test_a_gateway_with_no_declared_role_runs_nothing(repo_root, monkeypatch) ->
     handler granting authority that nobody wrote down and nobody reviewed.
     """
     monkeypatch.chdir(repo_root)
-    monkeypatch.delenv("ATTESTOR_GATEWAY_ROLE_HELIOS", raising=False)
+    monkeypatch.delenv("ATTESTOR_SURFACE_ROLE_HELIOS", raising=False)
     with pytest.raises(handler.Rejected, match="no declared role"):
         handler._gateway_session(_GatewayContext("t"), period="2026", session_id="req-000001")
 
-    monkeypatch.setenv("ATTESTOR_GATEWAY_ROLE_HELIOS", "role:emperor")
+    monkeypatch.setenv("ATTESTOR_SURFACE_ROLE_HELIOS", "role:emperor")
     with pytest.raises(handler.Rejected, match="no declared role"):
         handler._gateway_session(_GatewayContext("t"), period="2026", session_id="req-000001")
 
@@ -509,7 +514,7 @@ def test_a_gateway_invocation_builds_its_session_without_any_claims(repo_root, m
     reaching authorization at all means the session was built from the gateway.
     """
     monkeypatch.chdir(repo_root)
-    monkeypatch.setenv("ATTESTOR_GATEWAY_ROLE_HELIOS", "role:preparer")
+    monkeypatch.setenv("ATTESTOR_SURFACE_ROLE_HELIOS", "role:preparer")
 
     response = handler.invoke(
         {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
@@ -517,3 +522,48 @@ def test_a_gateway_invocation_builds_its_session_without_any_claims(repo_root, m
     )
 
     assert "unknown tenant" not in str(response["body"]), response["body"]
+
+
+def test_the_runtime_takes_its_tenant_from_the_resource(repo_root, monkeypatch) -> None:
+    """One runtime per tenant, the same as one gateway per tenant, and for the same reason.
+
+    A JWT authorizer validates against exactly one issuer. The single shared runtime that this
+    replaces pointed its `discovery_url` at `values(...)[0]` — an arbitrary map ordering — while
+    listing every tenant's client, so one tenant could reach it, the rest could not, and which
+    one was decided by iteration order. A runtime has no client context to read an identity out
+    of, so the fact is set on the resource where no caller can reach it.
+    """
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setenv("ATTESTOR_TENANT", "aegis")
+    monkeypatch.setenv("ATTESTOR_SURFACE_ROLE_AEGIS", "role:preparer")
+
+    session = handler._runtime_session(period="2026", session_id="req-000001")
+
+    assert session.tenant == "aegis"
+    assert session.roles == frozenset({"role:preparer"})
+    assert session.subject == "runtime:aegis"
+
+
+def test_off_the_runtime_path_there_is_no_runtime_session(repo_root, monkeypatch) -> None:
+    monkeypatch.delenv("ATTESTOR_TENANT", raising=False)
+    assert handler._runtime_session(period="2026", session_id="req-000001") is None
+
+
+def test_a_runtime_serving_an_unknown_tenant_runs_nothing(repo_root, monkeypatch) -> None:
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setenv("ATTESTOR_TENANT", "somebody-else")
+    with pytest.raises(handler.Rejected, match="not a tenant"):
+        handler._runtime_session(period="2026", session_id="req-000001")
+
+
+def test_an_invocation_with_no_identity_at_all_is_refused(repo_root, monkeypatch) -> None:
+    """The safe state is no output. Not a default tenant, not a default role — nothing."""
+    monkeypatch.chdir(repo_root)
+    monkeypatch.delenv("ATTESTOR_TENANT", raising=False)
+
+    response = handler.invoke(
+        {"tool": "read_lineage", "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"}}, None
+    )
+
+    assert response["statusCode"] >= 400
+    assert "nothing here says who is calling" in str(response["body"])

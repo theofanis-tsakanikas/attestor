@@ -31,6 +31,7 @@ import json
 import shutil
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 
@@ -232,6 +233,37 @@ class Mcp:
         return status, body
 
 
+def invoke_runtime(arn: str, token: str, region: str, payload: dict) -> tuple[int, dict]:
+    """One call to an AgentCore Runtime with a tenant's own bearer token.
+
+    Not through the CLI: `InvokeAgentRuntime` there signs with SigV4, and this runtime is
+    configured for OAuth — it answers a SigV4 caller with `Authorization method mismatch`, which
+    is the correct refusal and useless for testing the path a person takes.
+    """
+    endpoint = (
+        f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/"
+        f"{urllib.parse.quote(arn, safe='')}/invocations?qualifier=live"
+    )
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            # At least 33 characters, or the runtime refuses before the container is reached.
+            "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": "attestor-verification-session-0001",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+            return response.status, _parse(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        return exc.code, _parse(exc.read().decode() or "{}")
+    except (TimeoutError, urllib.error.URLError, OSError) as exc:
+        return 0, {"error": f"no answer from the runtime: {exc}"}
+
+
 def _tool_body(result: dict) -> dict:
     """The tool's own answer, out from under two layers of envelope.
 
@@ -267,12 +299,46 @@ def _parse(raw: str) -> dict:
         return {"raw": text[:400]}
 
 
+def check_runtimes(report: Report, runtimes: dict, token: str, region: str) -> None:
+    # 6. The runtime, which until now had never been called by anything at all. One per tenant
+    #    now, for the same reason there is one gateway per tenant: a JWT authorizer validates
+    #    against exactly one issuer. The shared runtime this replaces pointed at
+    #    `values(...)[0]` and listed every tenant's client — one tenant could reach it, the rest
+    #    could not, and which one was decided by the order Terraform iterated a map.
+    if runtimes.get("helios"):
+        status, body = invoke_runtime(
+            runtimes["helios"],
+            token,
+            region,
+            {"tool": "read_lineage", "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"}},
+        )
+        report.check(
+            "helios: the runtime answers its own tenant's token",
+            status == HTTP_OK and bool((body.get("body") or {}).get("lineage")),
+            f"HTTP {status} {json.dumps(body)[:220]}",
+        )
+
+    if runtimes.get("aegis"):
+        status, body = invoke_runtime(
+            runtimes["aegis"],
+            token,
+            region,
+            {"tool": "read_lineage", "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"}},
+        )
+        report.check(
+            "a helios token reaches nothing at the aegis runtime",
+            status in REFUSED,
+            f"HTTP {status} {json.dumps(body)[:220]}",
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--region", default="eu-central-1")
     parser.add_argument("--gateways", required=True, help='JSON {"helios": url, "aegis": url}')
     parser.add_argument("--secrets", required=True, help='JSON {"helios": name, "aegis": name}')
     parser.add_argument("--memories", default="{}", help='JSON {"helios": memory id}')
+    parser.add_argument("--runtimes", default="{}", help='JSON {"helios": runtime arn}')
     arguments = parser.parse_args()
 
     gateways = json.loads(arguments.gateways)
@@ -346,6 +412,8 @@ def main() -> int:
             status in REFUSED,
             f"HTTP {status} {json.dumps(body)[:200]}",
         )
+
+    check_runtimes(report, json.loads(arguments.runtimes), helios_token, arguments.region)
 
     memories = json.loads(arguments.memories)
     if memories.get("helios"):

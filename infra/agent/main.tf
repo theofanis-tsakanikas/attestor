@@ -172,16 +172,16 @@ locals {
   # Which role a call arriving through each tenant's gateway carries. See `var.gateway_roles`:
   # the platform gives the handler a tenant and no claims, so this is declared rather than
   # inferred, and a change to it is a reviewed change.
-  tenant_gateway_roles = {
-    for tenant, role in var.gateway_roles :
-    "ATTESTOR_GATEWAY_ROLE_${upper(tenant)}" => role
+  tenant_surface_roles = {
+    for tenant, role in var.surface_roles :
+    "ATTESTOR_SURFACE_ROLE_${upper(tenant)}" => role
   }
 
   tenant_identity_env = merge(
     local.tenant_issuers,
     local.tenant_audiences,
     local.tenant_memories,
-    local.tenant_gateway_roles,
+    local.tenant_surface_roles,
   )
 }
 
@@ -901,11 +901,22 @@ resource "aws_ecr_repository" "agent" {
   }
 }
 
+# One runtime per tenant, for the same reason there is one gateway per tenant: a JWT authorizer
+# validates against exactly one issuer, and one pool per tenant means one issuer per tenant.
+#
+# There used to be one runtime for everybody, and it showed what happens when that reason is
+# ignored. Its `discovery_url` was `values(aws_cognito_user_pool.tenant)[0]` — an arbitrary map
+# ordering, which happened to resolve to aegis — while `allowed_clients` listed every tenant.
+# The result was not a leak: the session's own issuer binding still refused a token that named
+# the wrong undertaking. It was worse in a quieter way. `helios` could not reach the runtime at
+# all, and which tenant *could* was decided by the order Terraform iterated a map. The comment
+# above the gateway has said all of this since the day the gateway was fixed; the runtime kept
+# the shape the comment was written about.
 resource "awscc_bedrockagentcore_runtime" "agent" {
-  count = var.deploy_runtime ? 1 : 0
+  for_each = var.deploy_runtime ? toset(var.cognito_tenants) : toset([])
 
-  agent_runtime_name = replace("${var.project}_agent", "-", "_")
-  description        = "Hosts the Attestor agent container. Judgement lives in the library."
+  agent_runtime_name = replace("${var.project}_agent_${each.value}", "-", "_")
+  description        = "Hosts the Attestor agent container for ${each.value}."
   role_arn           = aws_iam_role.runtime.arn
 
   agent_runtime_artifact = {
@@ -929,14 +940,16 @@ resource "awscc_bedrockagentcore_runtime" "agent" {
 
   authorizer_configuration = {
     custom_jwt_authorizer = {
-      discovery_url = "https://cognito-idp.${var.region}.amazonaws.com/${values(aws_cognito_user_pool.tenant)[0].id}/.well-known/openid-configuration"
-      allowed_clients = [
-        for client in aws_cognito_user_pool_client.tenant : client.id
-      ]
+      discovery_url   = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.tenant[each.value].id}/.well-known/openid-configuration"
+      allowed_clients = [aws_cognito_user_pool_client.tenant[each.value].id]
     }
   }
 
   environment_variables = merge(local.tenant_identity_env, {
+    # Which undertaking this runtime serves. The gateway learns its tenant from the id AgentCore
+    # puts in the Lambda's client context; a runtime has no such thing, so the same fact is
+    # stated here — and it is a fact about this resource, not a value a caller can influence.
+    ATTESTOR_TENANT          = each.value
     ATTESTOR_ROOT            = "/app"
     ATTESTOR_WORKGROUP       = var.project
     ATTESTOR_DATABASE        = "${var.project}_gold"
@@ -955,11 +968,11 @@ resource "awscc_bedrockagentcore_runtime" "agent" {
 }
 
 resource "awscc_bedrockagentcore_runtime_endpoint" "live" {
-  count = var.deploy_runtime ? 1 : 0
+  for_each = awscc_bedrockagentcore_runtime.agent
 
   name             = "live"
-  agent_runtime_id = awscc_bedrockagentcore_runtime.agent[0].agent_runtime_id
-  description      = "The alias callers address. Pointing at a version, never at latest."
+  agent_runtime_id = each.value.agent_runtime_id
+  description      = "The alias ${each.key}'s callers address. A version, never latest."
 }
 
 # ── Roles ────────────────────────────────────────────────────────────────────

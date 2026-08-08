@@ -22,6 +22,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 #: What each tenant is *supposed* to do. `aegis` failing is the point of `aegis`: its Scope 1
@@ -287,6 +289,70 @@ def check_every_indexed_document_is_governed(report: Report) -> None:
         "every indexed document carries a sidecar, and none failed",
         seen > 0 and not ungoverned,
         "; ".join(ungoverned) if ungoverned else f"{seen} data source(s)",
+    )
+
+
+def check_overrides_are_live(report: Report, records: dict[str, dict]) -> None:
+    """Every override on file names a datapoint of the tenant it belongs to, and whether it
+    fired on this run is reported rather than judged.
+
+    The register holds one entry: `helios`, `ESRS_E1-6_gross_scope_3`, `E_PARTIAL_BOUNDARY`,
+    `omit_with_material_limitation`. It is admissible — `E_PARTIAL_BOUNDARY` is a deficiency the
+    system detects, not a lawful omission a contract may pre-authorize, which is exactly the
+    kind of finding that needs a signed and expiring acceptance — and it is exercised end to end
+    by four tests that construct the condition and assert the block becomes a declared
+    limitation, then blocks again once the acceptance lapses.
+
+    On the live corpus it does not fire, because `helios` has the five documents the contract
+    demands. That is a healthy corpus, not a defect, and an earlier version of this check called
+    it "dormant" and failed the run for it. Reporting the fact is useful; failing on it would
+    push someone to degrade real evidence so a control could be seen working.
+
+    What is checked is what only a live run can see: that the datapoint an override names is one
+    the tenant actually reports. An override against a datapoint outside its tenant's standard is
+    an acceptance that could never apply, and nothing else would notice.
+    """
+    entries: list[tuple[str, str, str]] = []
+    for path in sorted((ROOT / "overrides").rglob("*.y*ml")):
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if loaded is None:
+            continue
+        for entry in loaded if isinstance(loaded, list) else [loaded]:
+            entries.append(
+                (
+                    str(entry.get("tenant") or path.parent.name),
+                    str(entry.get("datapoint_id", "")),
+                    str(entry.get("reason_code", "")),
+                )
+            )
+
+    unreachable: list[str] = []
+    fired: list[str] = []
+    for tenant, datapoint, reason in entries:
+        record = records.get(tenant) or {}
+        reported = {
+            str(o.get("datapoint_id"))
+            for o in [
+                *record.get("blockers", []),
+                *record.get("limitations", []),
+                *record.get("published", []),
+            ]
+        }
+        if record and datapoint not in reported:
+            unreachable.append(f"{tenant}/{datapoint}")
+        outcomes = {
+            (str(o.get("datapoint_id")), str(o.get("reason_code")))
+            for o in [*record.get("blockers", []), *record.get("limitations", [])]
+        }
+        if (datapoint, reason) in outcomes:
+            fired.append(f"{tenant}/{datapoint}:{reason}")
+
+    report.check(
+        "every override names a datapoint its tenant reports",
+        bool(entries) and not unreachable,
+        f"unreachable: {unreachable}"
+        if unreachable
+        else f"{len(entries)} override(s), {len(fired)} fired on this run",
     )
 
 
@@ -607,6 +673,7 @@ def main() -> int:
     if arguments.against:
         check_reproducible(report, records, run_records(ROOT / arguments.against))
     check_every_indexed_document_is_governed(report)
+    check_overrides_are_live(report, records)
     check_isolation(report, arguments.evidence_kb)
     check_the_attacker_gets_nothing(report, arguments.evidence_kb)
     check_gold_is_iceberg(report, arguments.database)

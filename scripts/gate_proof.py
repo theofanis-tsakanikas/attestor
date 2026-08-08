@@ -241,6 +241,70 @@ def _let_paper_back_the_primary(root: Path) -> bool:
     )
 
 
+def _let_a_surface_choose_its_own_role(root: Path) -> bool:
+    """Default the declared role instead of refusing without one.
+
+    The plausible version of this mistake, which is why it is worth planting. Neither AgentCore
+    surface forwards the caller's claims, so the handler cannot know the role — and "fall back
+    to the least privilege" reads as caution while being a handler granting authority nobody
+    wrote down and nobody reviewed. The safe state is no output, not the smallest output.
+    """
+    path = root / "src/attestor/agent/handler.py"
+    text = path.read_text(encoding="utf-8")
+    marker = 'role = os.environ.get(f"ATTESTOR_SURFACE_ROLE_{tenant_id.upper()}", "")'
+    if marker not in text:
+        return False
+    path.write_text(
+        text.replace(
+            marker,
+            'role = os.environ.get(f"ATTESTOR_SURFACE_ROLE_{tenant_id.upper()}", "role:reporter")',
+        ),
+        encoding="utf-8",
+    )
+    return True
+
+
+def _let_a_caller_name_the_tenant_at_a_surface(root: Path) -> bool:
+    """Trust `ATTESTOR_TENANT` from the event instead of from the resource.
+
+    One runtime per tenant is what makes the tenant a fact about the resource. Reading it from
+    the payload turns the strongest statement in the design into the weakest — a caller's word.
+    """
+    path = root / "src/attestor/agent/handler.py"
+    text = path.read_text(encoding="utf-8")
+    marker = '    tenant_id = os.environ.get("ATTESTOR_TENANT", "")'
+    if marker not in text:
+        return False
+    path.write_text(
+        text.replace(marker, '    tenant_id = os.environ.get("ATTESTOR_TENANT", "helios")'),
+        encoding="utf-8",
+    )
+    return True
+
+
+def _point_every_runtime_at_one_issuer(root: Path) -> bool:
+    """Restore the shared runtime: one issuer, every tenant's client.
+
+    This is not hypothetical. It is what was deployed until the audit found it — a
+    `discovery_url` chosen by arbitrary map ordering with `allowed_clients` listing everybody,
+    so one tenant could reach the runtime, the rest could not, and which one depended on how
+    Terraform happened to iterate.
+    """
+    path = root / "infra/agent/main.tf"
+    text = path.read_text(encoding="utf-8")
+    marker = "allowed_clients = [aws_cognito_user_pool_client.tenant[each.value].id]"
+    if marker not in text:
+        return False
+    path.write_text(
+        text.replace(
+            marker,
+            "allowed_clients = [for client in aws_cognito_user_pool_client.tenant : client.id]",
+        ),
+        encoding="utf-8",
+    )
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -364,6 +428,30 @@ MUTATIONS: tuple[Mutation, ...] = (
         _replay_a_stale_narrative,
         "Editing a prompt and shipping the previous prompt's prose, silently.",
     ),
+    Mutation(
+        "let a surface pick a role nobody declared",
+        "declared surface role",
+        ["pytest", "-q", "tests/agent/test_handler_and_gateway.py", "-x"],
+        "no declared role",
+        _let_a_surface_choose_its_own_role,
+        "Reads as caution. Is a handler granting authority nobody wrote down.",
+    ),
+    Mutation(
+        "let a runtime default its tenant",
+        "surface tenancy",
+        ["pytest", "-q", "tests/agent/test_handler_and_gateway.py", "-x"],
+        "runtime",
+        _let_a_caller_name_the_tenant_at_a_surface,
+        "One runtime per tenant is the whole reason the tenant is a fact and not a claim.",
+    ),
+    Mutation(
+        "let one runtime serve every tenant's clients",
+        "per-tenant authorizer",
+        [sys.executable, "scripts/check_agentcore_authorizers.py"],
+        "one issuer",
+        _point_every_runtime_at_one_issuer,
+        "Exactly what was deployed until the audit found it.",
+    ),
 )
 
 
@@ -419,7 +507,7 @@ def main() -> int:
                 print(f"  STALE  {mutation.name} — its target has moved; the proof is not running")
                 continue
 
-            result = _run([sys.executable, "-m", *(_module(mutation.command))], copy)
+            result = _run(_argv(mutation.command), copy)
             output = (result.stdout + result.stderr).lower()
 
             if result.returncode == 0:
@@ -444,13 +532,25 @@ def main() -> int:
     return 1 if failures or stale else 0
 
 
-def _module(command: list[str]) -> list[str]:
-    """Run through `python -m` so the mutated copy is the code under test, not the installed one."""
+def _argv(command: list[str]) -> list[str]:
+    """The full argv for a mutation's check, run out of the mutated copy.
+
+    `python -m` for the installed entry points, so the copy is the code under test rather than
+    whatever is on PATH. A bare script path is run as a script — it used to fall through the
+    `-m` branch and become `python -m /usr/bin/python scripts/foo.py`, which fails for a reason
+    that has nothing to do with the gate. The harness then reported "something failed, but not
+    <gate>", which is the correct thing for it to say and cost an hour to read as "the harness
+    mangled your command" rather than "your gate is broken".
+
+    That is the rule working: a non-zero exit is not evidence, the *named* check has to report
+    the failure. It caught a malformed command exactly as it would catch a gate that fired for
+    the wrong reason.
+    """
     if command[0] == "pytest":
-        return ["pytest", *command[1:]]
+        return [sys.executable, "-m", "pytest", *command[1:]]
     if command[0] == "attestor":
-        return ["attestor.cli.main", *command[1:]]
-    return command
+        return [sys.executable, "-m", "attestor.cli.main", *command[1:]]
+    return list(command)
 
 
 if __name__ == "__main__":

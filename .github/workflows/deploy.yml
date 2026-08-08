@@ -377,7 +377,8 @@ jobs:
             --region "$AWS_REGION" \
             --gateways "$(terraform -chdir=infra/agent output -json gateway_url)" \
             --secrets "$(terraform -chdir=infra/agent output -json verification_secret_names)" \
-            --memories "$(terraform -chdir=infra/agent output -json memory_ids)"
+            --memories "$(terraform -chdir=infra/agent output -json memory_ids)" \
+            --runtimes "$(terraform -chdir=infra/agent output -json runtime_arns)"
 
       - name: publish the results
         if: inputs.stage == 'full'
