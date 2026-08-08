@@ -106,6 +106,19 @@ def problems() -> list[str]:
         if service not in declared:
             found.append(f"no endpoint for {service!r}: {reason}")
 
+    # A gateway endpoint is a route, not a permission. Traffic to S3 still leaves through the
+    # security group and is still matched against its egress rules, and those allowed the VPC
+    # CIDR alone — so every packet to an S3 address was dropped while the route sat there
+    # looking correct. The container runtime pulling image layers was the only thing in the VPC
+    # that talks to S3 directly, and it timed out for weeks.
+    text = FOUNDATION_TF.read_text(encoding="utf-8")
+    if "aws_vpc_endpoint.s3.prefix_list_id" not in text:
+        found.append(
+            "the endpoint security group does not allow egress to S3's prefix list. The gateway "
+            "endpoint routes the traffic and this group still has to permit it; without the "
+            "rule, nothing in the VPC can reach S3 and the failure is a timeout, not a refusal"
+        )
+
     return found
 
 

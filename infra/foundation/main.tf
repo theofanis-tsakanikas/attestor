@@ -259,6 +259,14 @@ resource "aws_security_group" "endpoints" {
     protocol    = "-1"
     cidr_blocks = [aws_vpc.main.cidr_block]
   }
+
+  egress {
+    description     = "S3 through the gateway endpoint, by prefix list"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [aws_vpc_endpoint.s3.prefix_list_id]
+  }
 }
 
 resource "aws_vpc_endpoint" "interface" {
@@ -300,6 +308,17 @@ resource "aws_vpc_endpoint" "interface" {
   private_dns_enabled = true
 }
 
+# A gateway endpoint is a route, not an interface, and a route is not a permission. Traffic to
+# S3 still leaves through this security group and is still matched against its egress rules —
+# and those allowed the VPC CIDR and nothing else, so every packet to an S3 address was dropped.
+#
+# Nothing noticed for a long time because nothing in this VPC talks to S3 directly. Athena is
+# asked for its results through its own API and fetches the data server-side; the Lambda never
+# opens an S3 client. The one thing that does is the container runtime pulling image layers,
+# which come from an AWS-owned bucket — and it reported `dial tcp 52.219.170.178:443: i/o
+# timeout` while ECR itself, reached through an interface endpoint, authenticated perfectly.
+#
+# The prefix list keeps this narrow: S3's published ranges in this region, not `0.0.0.0/0`.
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
   service_name      = "com.amazonaws.${var.region}.s3"
