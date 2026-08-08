@@ -150,6 +150,21 @@ READ_TIMEOUT_SECONDS = 3
 ATTEMPTS = 1
 
 
+def client_settings() -> dict[str, Any]:
+    """The deadline this client is built with, as data.
+
+    Separated from the client itself so the suite can assert on it without importing botocore.
+    Offline is the default here: the whole test run has to work on a laptop with no AWS
+    dependencies installed, and a test that reaches for `botocore.config` to check a number is a
+    test that only runs where somebody happened to have it. CI caught exactly that.
+    """
+    return {
+        "connect_timeout": CONNECT_TIMEOUT_SECONDS,
+        "read_timeout": READ_TIMEOUT_SECONDS,
+        "retries": {"max_attempts": ATTEMPTS},
+    }
+
+
 def _client() -> Any:
     import boto3  # noqa: PLC0415 — optional dependency, never imported offline
     from botocore.config import Config  # noqa: PLC0415
@@ -157,9 +172,5 @@ def _client() -> Any:
     return boto3.client(
         "bedrock-agentcore",
         region_name=os.environ.get("AWS_REGION", "eu-central-1"),
-        config=Config(
-            connect_timeout=CONNECT_TIMEOUT_SECONDS,
-            read_timeout=READ_TIMEOUT_SECONDS,
-            retries={"max_attempts": ATTEMPTS},
-        ),
+        config=Config(**client_settings()),
     )
