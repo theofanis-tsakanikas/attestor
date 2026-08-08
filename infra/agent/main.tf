@@ -474,8 +474,16 @@ resource "aws_lambda_function" "tools" {
   handler          = "handler.invoke"
   filename         = data.archive_file.tools.output_path
   source_code_hash = data.archive_file.tools.output_base64sha256
-  timeout          = 60
-  memory_size      = 1024
+  # 180, not 60. These tools query a lakehouse: `read_lineage` and `resolve_datapoint` run the
+  # datapoint's SQL *and* its cross-check through Athena, and the first call after a deploy pays
+  # a cold start on top. The live gateway returned "An internal error occurred" after exactly
+  # 60000 ms — a Lambda timeout, surfaced to the caller as an internal error, which is the least
+  # diagnosable shape a wrong limit can take.
+  #
+  # Bounded rather than generous: the MCP session allows 900s and Lambda allows more still. A
+  # tool that cannot answer in three minutes is not slow, it is broken, and should say so.
+  timeout     = 180
+  memory_size = 1024
   # Bounded on purpose. A tool that can fan out without limit is a tool that can exhaust the
   # Bedrock quota for every tenant at once, and a per-tenant platform where one tenant can do
   # that has no isolation worth the name.
