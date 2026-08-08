@@ -246,7 +246,24 @@ jobs:
           EVIDENCE=$(terraform -chdir=infra/foundation output -raw evidence_bucket)
           python pipelines/ingest/evidence.py
           for tenant in helios aegis lumen; do
-            aws s3 sync "evidence/$tenant" "s3://$EVIDENCE/$tenant/"
+            # The manifest is excluded, and this is not tidiness. `evidence/<tenant>/2026.yaml`
+            # sat inside the data source's inclusion prefix, so Bedrock indexed it as evidence —
+            # with no `.metadata.json` beside it, therefore no `tenant` attribute, therefore
+            # reachable by no filtered query. Found live: helios and lumen each reported 5
+            # documents indexed against 4 sidecars, and `aegis` reported 1 and 0, the manifest
+            # being the whole of what aegis had in the index.
+            #
+            # It was unreachable rather than leaked, and only because every retrieval carries a
+            # filter and `kb.search` refuses to run without one. That is a real control and it
+            # held. But a document in a shared index that no tenant attribute governs is one
+            # missing filter away from being the thing this project exists not to do, and the
+            # manifest is a catalogue of a tenant's documents — ids, classes, hashes — which is
+            # exactly what the neighbouring tenant should never be one bug away from reading.
+            aws s3 sync "evidence/$tenant" "s3://$EVIDENCE/$tenant/" --exclude "*.yaml"
+            # `--exclude` stops it being uploaded; it does not remove what earlier deploys put
+            # there, and an object left in the prefix stays in the index. The sync job that
+            # follows reports these as `numberOfDocumentsDeleted`.
+            aws s3 rm "s3://$EVIDENCE/$tenant/" --recursive --exclude "*" --include "*.yaml"
           done
 
       - name: ingest the regulatory corpus
@@ -258,7 +275,13 @@ jobs:
           set -euo pipefail
           EVIDENCE=$(terraform -chdir=infra/foundation output -raw evidence_bucket)
           python pipelines/ingest/regulatory.py --check
-          aws s3 sync corpus/regulatory "s3://$EVIDENCE/_shared/regulatory/" --delete
+          # Only the notes named for a datapoint, which is exactly the set
+          # `scripts/generate_kb_metadata.py` writes a `standard` sidecar for. Syncing the whole
+          # directory also uploaded `README.md`, which the generator correctly skips — leaving
+          # one document in the shared regulatory index with no `standard` attribute, matched by
+          # no filtered query and governed by nothing. 17 indexed against 16 described, live.
+          aws s3 sync corpus/regulatory "s3://$EVIDENCE/_shared/regulatory/" --delete \
+            --exclude "*" --include "ESRS_*" --include "AIACT_*"
 
       - name: sync the knowledge bases
         if: contains(fromJSON('["knowledge","agent","full"]'), inputs.stage)

@@ -37,6 +37,11 @@ REGULATORY = ROOT / "corpus" / "regulatory"
 #: retrieving an AI Act article and citing it as though it applied.
 STANDARDS = {"ESRS": "ESRS", "AIACT": "EU_AI_ACT"}
 
+#: Files that live in the corpus directory for a reader, not for the index. The deploy's
+#: `s3 sync` uploads only `ESRS_*` and `AIACT_*`; anything else here must be named, so that
+#: "no sidecar" is always a decision somebody made rather than a name that missed a prefix.
+SKIPPED = ("README",)
+
 
 def sidecar(path: Path) -> Path:
     return path.with_name(path.name + ".metadata.json")
@@ -108,6 +113,34 @@ def filter_keys_a_session_builds() -> set[str]:
     return keys
 
 
+def _undescribed_and_stray(wanted: dict[Path, str]) -> list[str]:
+    """Both directions of the sidecar/document correspondence.
+
+    A sidecar with no document beside it filters nothing and confuses the next reader. A
+    document with no sidecar is the one that got into the account: Bedrock indexes it carrying
+    no attribute, so it is matched by no filtered query, governed by no tenant, and sitting in
+    an index three tenants share. Live, that was `corpus/regulatory/README.md` and each
+    tenant's `2026.yaml` manifest — 17 indexed against 16 described, and for `aegis`, 1
+    against 0. Every ingestion job had been saying so, in a statistic nobody read.
+
+    The deploy now uploads only what this script describes. This keeps the two in step, since
+    they live in different files and drift quietly.
+    """
+    problems: list[str] = []
+    for stray in sorted({*EVIDENCE.rglob("*.metadata.json"), *REGULATORY.glob("*.metadata.json")}):
+        if stray not in wanted:
+            problems.append(f"{stray.relative_to(ROOT)} describes a document that is not here")
+
+    for document in sorted(REGULATORY.glob("*.md")):
+        if sidecar(document) not in wanted and not document.name.startswith(SKIPPED):
+            problems.append(
+                f"{document.relative_to(ROOT)} gets no sidecar and is not an excluded name. "
+                "Either name it for a datapoint or add it to SKIPPED — an undescribed file "
+                "that reaches the index is a document nothing governs"
+            )
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="verify without writing")
@@ -138,10 +171,7 @@ def main() -> int:
                 "filter sends one. Bedrock ANDs its clauses, so this document is unreachable"
             )
 
-    # A sidecar with no document beside it would filter nothing and confuse the next reader.
-    for stray in sorted({*EVIDENCE.rglob("*.metadata.json"), *REGULATORY.glob("*.metadata.json")}):
-        if stray not in wanted:
-            problems.append(f"{stray.relative_to(ROOT)} describes a document that is not here")
+    problems += _undescribed_and_stray(wanted)
 
     for problem in problems:
         print(f"  {problem}", file=sys.stderr)
