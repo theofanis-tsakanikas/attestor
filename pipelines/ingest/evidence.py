@@ -156,6 +156,12 @@ def extract_all(
         try:
             read = extract(document, extractor=extractor)
         except ExtractionUnavailable:
+            # No extractor for this one — because its text is already text. A document stored
+            # as Markdown beside the manifest never goes through document extraction, and until
+            # now that meant it was never scanned at ingest either: the flag was attached only
+            # to things a machine had to read for us. `INV-HEL-2026-0009` moved from an `s3://`
+            # PDF to a file on disk and silently stopped being flagged.
+            _scan_a_document_on_disk(root, document, report)
             continue
         except ExtractionError as exc:
             report.rejected.append(f"{document.document_id}: {exc}")
@@ -236,6 +242,22 @@ def rows_for(
         if rows:
             built[spec.dataset] = RowSet(dataset=spec.dataset, rows=tuple(rows))
     return built
+
+
+def _scan_a_document_on_disk(root: Path, document, report: IngestReport) -> None:
+    """Scan a document whose text is already text, at the moment it enters the corpus."""
+    source = str(getattr(document, "source_uri", ""))
+    if not source.startswith("evidence/"):
+        return
+    path = root / source
+    if not path.is_file():
+        return
+    flagged, rules = scan_extracted(
+        path.read_text(encoding="utf-8"), document_id=document.document_id
+    )
+    already = any(note.startswith(document.document_id) for note in report.flagged)
+    if flagged and not already:
+        report.flagged.append(f"{document.document_id} ({', '.join(rules)})")
 
 
 def scan_extracted(text: str, *, document_id: str) -> tuple[bool, list[str]]:

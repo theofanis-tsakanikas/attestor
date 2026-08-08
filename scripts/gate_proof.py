@@ -356,6 +356,22 @@ def _let_one_pin_serve_every_table(root: Path) -> bool:
     return True
 
 
+def _stop_scanning_retrieved_passages(root: Path) -> bool:
+    """Let a flagged passage into the prompt.
+
+    The envelope still refuses a forged delimiter and `check_draft` still refuses digits, so
+    most of claim 1 looks intact — while the layer the claim is actually scored on stops running
+    on anything a model will ever see.
+    """
+    path = root / "src/attestor/agent/bedrock.py"
+    text = path.read_text(encoding="utf-8")
+    marker = "            if found.flagged:"
+    if marker not in text:
+        return False
+    path.write_text(text.replace(marker, "            if False:"), encoding="utf-8")
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -526,6 +542,14 @@ MUTATIONS: tuple[Mutation, ...] = (
         "own_pin",
         _let_one_pin_serve_every_table,
         "A replay then reads one table at another table's instant, and mostly still answers.",
+    ),
+    Mutation(
+        "let a flagged passage into the prompt",
+        "retrieval scanning",
+        ["pytest", "-q", "tests/agent/test_bedrock.py", "-x"],
+        "never_reaches_the_model",
+        _stop_scanning_retrieved_passages,
+        "The envelope and the draft check still run, so claim 1 keeps most of its shape.",
     ),
 )
 

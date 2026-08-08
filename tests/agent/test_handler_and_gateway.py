@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ from attestor.contracts import overrides
 from attestor.contracts.loader import ContractSet
 from attestor.contracts.model import Standard
 from attestor.datapoints.backends import RecordedBackend
-from attestor.datapoints.evidence import EvidenceIndex
+from attestor.datapoints.evidence import EvidenceDocument, EvidenceIndex
 from attestor.datapoints.resolver import Resolver
 from attestor.policy import cedar
 from attestor.policy.tenants import Session
@@ -53,7 +54,25 @@ def toolbox(repo_root: Path, contract_set: ContractSet) -> Toolbox:
         resolver=Resolver(
             contracts=contracts,
             backend=RecordedBackend.from_directory(repo_root / "recordings"),
-            evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
+            # Complete. `helios` is deliberately one logistics manifest short so its committed
+            # override is a real acceptance, and this fixture is about tool narrowing rather
+            # than about that gap — a derived figure whose operand is legitimately withheld
+            # tests nothing about whether the closure was computed correctly.
+            evidence=EvidenceIndex(
+                [
+                    *EvidenceIndex.for_tenant(repo_root, "helios"),
+                    EvidenceDocument(
+                        document_id="LOGI-TOOLBOX-2026",
+                        tenant="helios",
+                        document_class="logistics_manifest",
+                        covers_from=dt.date(2026, 1, 1),
+                        covers_to=dt.date(2026, 12, 31),
+                        content_sha256="0" * 64,
+                        source_uri="s3://test/logistics.parquet",
+                    ),
+                ],
+                tenant="helios",
+            ),
             override_register=overrides.load_register(repo_root),
             root=repo_root,
         ),
@@ -99,7 +118,25 @@ def test_an_auditor_reads_the_override_register(repo_root: Path, contract_set: C
         resolver=Resolver(
             contracts=contracts,
             backend=RecordedBackend.from_directory(repo_root / "recordings"),
-            evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
+            # Complete. `helios` is deliberately one logistics manifest short so its committed
+            # override is a real acceptance, and this fixture is about tool narrowing rather
+            # than about that gap — a derived figure whose operand is legitimately withheld
+            # tests nothing about whether the closure was computed correctly.
+            evidence=EvidenceIndex(
+                [
+                    *EvidenceIndex.for_tenant(repo_root, "helios"),
+                    EvidenceDocument(
+                        document_id="LOGI-TOOLBOX-2026",
+                        tenant="helios",
+                        document_class="logistics_manifest",
+                        covers_from=dt.date(2026, 1, 1),
+                        covers_to=dt.date(2026, 12, 31),
+                        content_sha256="0" * 64,
+                        source_uri="s3://test/logistics.parquet",
+                    ),
+                ],
+                tenant="helios",
+            ),
             override_register=overrides.load_register(repo_root),
             root=repo_root,
         ),
@@ -147,7 +184,25 @@ def test_a_reporter_cannot_draft_an_override_request(
         resolver=Resolver(
             contracts=contracts,
             backend=RecordedBackend.from_directory(repo_root / "recordings"),
-            evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
+            # Complete. `helios` is deliberately one logistics manifest short so its committed
+            # override is a real acceptance, and this fixture is about tool narrowing rather
+            # than about that gap — a derived figure whose operand is legitimately withheld
+            # tests nothing about whether the closure was computed correctly.
+            evidence=EvidenceIndex(
+                [
+                    *EvidenceIndex.for_tenant(repo_root, "helios"),
+                    EvidenceDocument(
+                        document_id="LOGI-TOOLBOX-2026",
+                        tenant="helios",
+                        document_class="logistics_manifest",
+                        covers_from=dt.date(2026, 1, 1),
+                        covers_to=dt.date(2026, 12, 31),
+                        content_sha256="0" * 64,
+                        source_uri="s3://test/logistics.parquet",
+                    ),
+                ],
+                tenant="helios",
+            ),
             override_register=overrides.load_register(repo_root),
             root=repo_root,
         ),
@@ -253,7 +308,25 @@ def test_resolving_one_datapoint_runs_only_its_closure(
         resolver=Resolver(
             contracts=contracts,
             backend=Counting(RecordedBackend.from_directory(repo_root / "recordings")._recordings),
-            evidence=EvidenceIndex.for_tenant(repo_root, "helios"),
+            # Complete. `helios` is deliberately one logistics manifest short so its committed
+            # override is a real acceptance, and this fixture is about tool narrowing rather
+            # than about that gap — a derived figure whose operand is legitimately withheld
+            # tests nothing about whether the closure was computed correctly.
+            evidence=EvidenceIndex(
+                [
+                    *EvidenceIndex.for_tenant(repo_root, "helios"),
+                    EvidenceDocument(
+                        document_id="LOGI-TOOLBOX-2026",
+                        tenant="helios",
+                        document_class="logistics_manifest",
+                        covers_from=dt.date(2026, 1, 1),
+                        covers_to=dt.date(2026, 12, 31),
+                        content_sha256="0" * 64,
+                        source_uri="s3://test/logistics.parquet",
+                    ),
+                ],
+                tenant="helios",
+            ),
             override_register=overrides.load_register(repo_root),
             root=repo_root,
         ),
