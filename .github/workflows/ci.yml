@@ -184,6 +184,12 @@ jobs:
         # invisible because nothing ever called the gateway to find out.
         run: python scripts/check_agentcore_wiring.py
 
+      - name: every AgentCore surface serves exactly one tenant
+        # A JWT authorizer validates against one issuer, and there is one pool per tenant. The
+        # runtime admitted every tenant's clients against one of them: helios could not reach it
+        # at all, and which tenant could was decided by how Terraform iterated a map.
+        run: python scripts/check_agentcore_authorizers.py
+
       - name: every AgentCore name is one AgentCore accepts
         # Provider attribute validators run in the plan phase, and a plan needs credentials.
         # Two deploys died fifteen minutes in on a hyphen this would have caught for free.

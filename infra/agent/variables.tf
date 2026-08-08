@@ -121,11 +121,11 @@ variable "agent_image_tag" {
   description = "Image tag to run. The deploy workflow passes the commit sha; `latest` is a local convenience."
 }
 
-variable "gateway_roles" {
+variable "surface_roles" {
   type        = map(string)
   default     = { helios = "role:preparer", aegis = "role:preparer" }
   description = <<-EOT
-    The role a call through each tenant's gateway carries.
+    The role a call through each tenant's AgentCore surfaces carries.
 
     AgentCore invokes a Lambda target with the gateway's own IAM role and forwards none of the
     caller's token — confirmed from the client context, which carries the tool name, the gateway

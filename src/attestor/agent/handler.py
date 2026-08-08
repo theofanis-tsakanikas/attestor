@@ -225,55 +225,79 @@ def _arguments(event: dict[str, Any]) -> dict[str, Any]:
 GATEWAY_CONTEXT_KEY = "bedrockAgentCoreGatewayId"
 
 
-def _gateway_session(context: Any, *, period: str, session_id: str) -> Session | None:
-    """A session for a call that arrived through a gateway, or `None` if it did not.
+def _declared_session(tenant_id: str, *, subject: str, period: str, session_id: str) -> Session:
+    """A session for a surface that authenticates its caller and forwards nothing.
 
-    AgentCore invokes a Lambda target under `GATEWAY_IAM_ROLE` and forwards none of the
-    caller's token. The client context carries the tool name, the gateway id, the target id and
-    a message id — and no claims whatsoever. That is the platform's design, not an oversight of
-    ours: the JWT authorizer and the policy engine are the authorization boundary for this
-    path, and they hold. Measured, in the same run: a helios token gets `insufficient_scope` at
-    the aegis gateway, `request_override` is refused by Cedar at the edge, and `tools/list`
-    returns five tools rather than six.
+    Both AgentCore surfaces do this. The Gateway invokes a Lambda target under
+    `GATEWAY_IAM_ROLE`, and its client context carries the tool name, the gateway id and the
+    target id — no claims whatsoever. The Runtime authenticates a JWT at its own edge and the
+    container behind it is not given the token either. In both cases the platform *is* the
+    authorization boundary for that hop, and both hold: measured live, a helios token gets
+    `insufficient_scope` at the aegis gateway and `request_override` is refused by Cedar before
+    the Lambda is reached at all.
 
-    So the two halves of a session come from different places, and each from the strongest
-    source available.
+    So the two halves of a session come from the two strongest sources available.
 
-    **The tenant is the gateway.** There is one gateway per tenant, and which one was called is
-    asserted by AgentCore rather than supplied by the caller. That is a better answer than the
-    old one: `tenant_id` used to arrive in the event body, and this path has no body to put it
-    in — which is why `tenant_id` is a forbidden argument in the first place.
+    **The tenant is the surface.** One gateway per tenant, one runtime per tenant, and which one
+    was called is asserted by AgentCore or set on the resource — never supplied by a caller.
 
-    **The role is declared.** It cannot be derived, because the claims are not here. Inventing
-    one at runtime is the thing this system must never do, so it is stated in
-    `var.gateway_roles`, passed in as `ATTESTOR_GATEWAY_ROLE_<TENANT>`, and changed only by a
-    pull request. A missing or unknown role yields no session at all, and no session means no
-    tool runs — the safe state is no output, here as everywhere.
+    **The role is declared**, in `var.surface_roles`, and arrives as
+    `ATTESTOR_SURFACE_ROLE_<TENANT>`. It cannot be derived, because the claims are not here, and
+    this is the one place where a default would be easy and wrong: with no claims, "assume the
+    least privilege" reads as prudence and is still a handler granting authority nobody wrote
+    down. An unset or unknown role yields no session, and no session runs no tool.
     """
+    registry = declarative().registry
+    if tenant_id not in registry.ids:
+        raise Rejected(f"{tenant_id!r} is not a tenant this deployment knows")
+
+    role = os.environ.get(f"ATTESTOR_SURFACE_ROLE_{tenant_id.upper()}", "")
+    if role not in ROLES:
+        raise Rejected(
+            f"the surface serving {tenant_id!r} carries no declared role. "
+            f"ATTESTOR_SURFACE_ROLE_{tenant_id.upper()} is {role or 'unset'!r}; no claims reach "
+            "this path, and a role is declared in `var.surface_roles` rather than assumed"
+        )
+
+    return Session(
+        tenant=tenant_id,
+        subject=subject,
+        roles=frozenset({role}),
+        period=period,
+        session_id=session_id,
+    )
+
+
+def _gateway_session(context: Any, *, period: str, session_id: str) -> Session | None:
+    """A session for a call that arrived through a gateway, or `None` if it did not."""
     custom = getattr(getattr(context, "client_context", None), "custom", None) or {}
     gateway = str(custom.get(GATEWAY_CONTEXT_KEY, ""))
     if not gateway:
         return None
 
-    registry = declarative().registry
-    tenant_id = next((t for t in registry.ids if gateway.startswith(f"{PROJECT}-gateway-{t}-")), "")
+    tenant_id = next(
+        (t for t in declarative().registry.ids if gateway.startswith(f"{PROJECT}-gateway-{t}-")),
+        "",
+    )
     if not tenant_id:
         raise Rejected(f"gateway {gateway!r} names no tenant this deployment knows")
+    return _declared_session(
+        tenant_id, subject=f"gateway:{gateway}", period=period, session_id=session_id
+    )
 
-    role = os.environ.get(f"ATTESTOR_GATEWAY_ROLE_{tenant_id.upper()}", "")
-    if role not in ROLES:
-        raise Rejected(
-            f"gateway {gateway!r} carries no declared role. ATTESTOR_GATEWAY_ROLE_"
-            f"{tenant_id.upper()} is {role or 'unset'!r}; the platform sends no claims through "
-            "this path, and a role is declared in `var.gateway_roles` rather than assumed"
-        )
 
-    return Session(
-        tenant=tenant_id,
-        subject=f"gateway:{gateway}",
-        roles=frozenset({role}),
-        period=period,
-        session_id=session_id,
+def _runtime_session(*, period: str, session_id: str) -> Session | None:
+    """A session for a call that arrived at this tenant's runtime, or `None` off that path.
+
+    `ATTESTOR_TENANT` is set on the runtime resource, one per tenant, the same way there is one
+    gateway per tenant. A runtime has no client context to read an identity out of, so the fact
+    is stated on the resource — where a caller cannot reach it — rather than inferred.
+    """
+    tenant_id = os.environ.get("ATTESTOR_TENANT", "")
+    if not tenant_id:
+        return None
+    return _declared_session(
+        tenant_id, subject=f"runtime:{tenant_id}", period=period, session_id=session_id
     )
 
 
@@ -344,9 +368,22 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
         # declares (the role). Through the runtime's HTTP surface the claims are verified and
         # forwarded, and the registry's issuer and audience binding decides which undertaking
         # they speak for.
-        session = _gateway_session(context, period=period, session_id=request_id) or build_session(
-            claims, tenant_id=tenant_id, period=period, session_id=request_id
-        )
+        # Claims first, when a caller actually presents them: the registry's issuer and
+        # audience binding is the strongest statement available about which undertaking a
+        # principal speaks for. Neither AgentCore surface forwards them, so both fall through
+        # to what the platform asserts and what Terraform declares.
+        if claims:
+            session = build_session(
+                claims, tenant_id=tenant_id, period=period, session_id=request_id
+            )
+        else:
+            session = _gateway_session(
+                context, period=period, session_id=request_id
+            ) or _runtime_session(period=period, session_id=request_id)
+        if session is None:
+            raise Rejected(
+                "no claims, no gateway and no runtime tenant; nothing here says who is calling"
+            )
         toolbox = build_toolbox(session)
         handler = getattr(toolbox, tool, None)
         if handler is None:  # pragma: no cover — SPECS and Toolbox are cross-checked in tests

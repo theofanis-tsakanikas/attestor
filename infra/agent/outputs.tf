@@ -39,7 +39,10 @@ output "ecr_repository_url" {
 }
 
 output "runtime_endpoint_arn" {
-  value = try(awscc_bedrockagentcore_runtime_endpoint.live[0].agent_runtime_endpoint_arn, null)
+  value = {
+    for tenant, e in awscc_bedrockagentcore_runtime_endpoint.live :
+    tenant => e.agent_runtime_endpoint_arn
+  }
 }
 
 output "reasoning_model" {
@@ -63,4 +66,14 @@ output "tenant_issuers" {
     — the mismatch this replaces was invisible for as long as nothing called the gateway.
   EOT
   value       = { for tenant, pool in aws_cognito_user_pool.tenant : tenant => "https://cognito-idp.${var.region}.amazonaws.com/${pool.id}" }
+}
+
+
+output "runtime_arns" {
+  description = <<-EOT
+    One runtime per tenant, addressed by the verification step. Published so the deploy can call
+    the surface it just created — a runtime nothing invokes is a runtime nobody can vouch for,
+    and this one spent every deploy so far in exactly that state.
+  EOT
+  value       = { for tenant, r in awscc_bedrockagentcore_runtime.agent : tenant => r.agent_runtime_arn }
 }

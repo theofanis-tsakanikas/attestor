@@ -290,6 +290,14 @@ CHECKS: list[Check] = [
         "AgentCore path would have refused the first real token, on every deploy that has run.",
     ),
     Check(
+        "correctness",
+        "AgentCore authorizers",
+        [sys.executable, "scripts/check_agentcore_authorizers.py"],
+        "Every surface authenticates against exactly one tenant. The shared runtime chose its "
+        "pool by map ordering and admitted every tenant's clients — not a leak, because the "
+        "session binding held, but one tenant served and the rest locked out by iteration order.",
+    ),
+    Check(
         "deployability",
         "AgentCore names",
         [sys.executable, "scripts/check_agentcore_names.py"],
