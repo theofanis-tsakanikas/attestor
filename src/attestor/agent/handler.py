@@ -189,17 +189,108 @@ def _remember_refusal(
     memory.record_invocation(session, tool=tool, outcome=outcome, detail=detail)
 
 
+#: Keys the handler owns at the top level of an event. Anything else in a gateway invocation is
+#: a tool argument, because a Gateway Lambda target receives the arguments as the event itself.
+RESERVED_EVENT_KEYS = frozenset(
+    {"tool", "operationId", "arguments", "claims", "tenant_id", "period"}
+)
+
+#: The period this deployment reports on. A gateway caller cannot supply it — `period` is in
+#: `FORBIDDEN_ARGUMENTS` precisely because a scope must never be caller-supplied — so it comes
+#: from the deployment, like the tenant does.
+DEFAULT_PERIOD = os.environ.get("ATTESTOR_PERIOD", "2026")
+
+
+def _arguments(event: dict[str, Any]) -> dict[str, Any]:
+    """The tool's arguments, however this caller arrived.
+
+    Our own tests and the runtime's HTTP surface nest them under `arguments`. AgentCore Gateway
+    does not: a Lambda target is invoked with the tool input *as* the event, with the tool name
+    off in the client context. So an event with no `arguments` key is one big argument object,
+    minus the keys this handler owns.
+
+    `FORBIDDEN_ARGUMENTS` still runs over the result, and matters more here than anywhere: on
+    this path a smuggled `tenant_id` would arrive looking exactly like a legitimate argument.
+    """
+    if "arguments" in event:
+        return dict(event["arguments"] or {})
+    return {k: v for k, v in event.items() if k not in RESERVED_EVENT_KEYS}
+
+
+def _claims_from_context(context: Any) -> dict[str, Any]:
+    """The verified token claims AgentCore Gateway hands to a Lambda target.
+
+    The Gateway has already checked signature, issuer, audience and expiry — that is what the
+    authorizer is — and passes what it verified. Reading them here rather than from the event
+    is the difference between claims that were checked and claims that were typed.
+    """
+    custom = getattr(getattr(context, "client_context", None), "custom", None) or {}
+    for key in ("bedrockAgentCoreIdentityClaims", "bedrockagentcoreidentityclaims", "claims"):
+        raw = custom.get(key)
+        if raw:
+            try:
+                return json.loads(raw) if isinstance(raw, str) else dict(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+    return {}
+
+
+def _tenant_from_issuer(claims: dict[str, Any]) -> str:
+    """Which undertaking this token speaks for, decided by who signed it.
+
+    The alternative — and what this handler did — is to let the caller name the tenant and then
+    check the issuer agrees. That works, and on this path there is nobody to name it: a Gateway
+    Lambda target receives tool arguments and a token, and `tenant_id` is a forbidden argument
+    by design.
+
+    Deriving it is also simply stronger. There is one Cognito pool per tenant and one gateway
+    per pool, so the issuer *is* the tenant; a token that could name a second undertaking would
+    have to have been signed by that undertaking's provider. `Session.from_claims` still
+    re-checks the binding, so this narrows what may be claimed rather than replacing the check.
+    """
+    issuer = str(claims.get("iss", "")).rstrip("/")
+    if not issuer:
+        return ""
+    registry = declarative().registry
+    for tenant_id in registry.ids:
+        if registry[tenant_id].identity.resolved_issuer(tenant_id).rstrip("/") == issuer:
+            return tenant_id
+    return ""
+
+
 def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     """Gateway → tool. Returns a JSON body; never raises past this boundary."""
     started = dt.datetime.now(dt.UTC)
     tool = str(event.get("tool") or event.get("operationId") or "") or _tool_from_context(context)
-    arguments = dict(event.get("arguments") or {})
-    claims = dict(event.get("claims") or {})
+    arguments = _arguments(event)
+    claims = dict(event.get("claims") or {}) or _claims_from_context(context)
+    tenant_id = str(event.get("tenant_id", "")) or _tenant_from_issuer(claims)
+    period = str(event.get("period", "")) or DEFAULT_PERIOD
     # Not "local". A `Session` requires at least six characters, so the old default could not
     # construct one — and every invocation arriving without a Lambda context died as a 500
     # with a pydantic message, which reads as a broken tool rather than a missing correlation
     # id. The default is now valid *and* obviously a default.
     request_id = getattr(context, "aws_request_id", None) or "local-no-request-id"
+
+    # The shape of what arrived, on every call. Keys only for the event and the context, plus
+    # the values of AgentCore's own metadata — a claim value is identity and does not belong in
+    # a log that operations reads.
+    #
+    # This is not scaffolding to remove. Three separate defects on this path were invisible
+    # because nothing recorded what the caller actually sent: the tool name that was somewhere
+    # else, the arguments that were somewhere else, and the claims. "unknown tool ''" told us a
+    # tool was missing and nothing about where to look.
+    custom = getattr(getattr(context, "client_context", None), "custom", None) or {}
+    _emit(
+        "invocation.shape",
+        session_id=request_id,
+        event_keys=sorted(event),
+        context_keys=sorted(custom),
+        agentcore={k: v for k, v in custom.items() if k.lower().startswith("bedrockagentcore")},
+        resolved_tool=tool,
+        resolved_tenant=tenant_id,
+        claim_keys=sorted(claims),
+    )
 
     try:
         smuggled = sorted(set(arguments) & FORBIDDEN_ARGUMENTS)
@@ -229,12 +320,7 @@ def invoke(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
         if missing:
             raise Rejected(f"{tool} requires argument(s) {', '.join(missing)}")
 
-        session = build_session(
-            claims,
-            tenant_id=str(event.get("tenant_id", "")),
-            period=str(event.get("period", "")),
-            session_id=request_id,
-        )
+        session = build_session(claims, tenant_id=tenant_id, period=period, session_id=request_id)
         toolbox = build_toolbox(session)
         handler = getattr(toolbox, tool, None)
         if handler is None:  # pragma: no cover — SPECS and Toolbox are cross-checked in tests
