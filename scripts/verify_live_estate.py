@@ -217,18 +217,12 @@ def check_isolation(report: Report, evidence_kb: str) -> None:
     The filter is applied by Bedrock at the index. This asks each tenant's filter for the
     other tenant's most distinctive document and requires nothing to come back.
 
-    Two honest limits, stated here rather than left to be inferred from a green line.
-
-    `aegis` is not probed, and it is the pair that would matter most: two peers in the same
-    vertical is what makes a leakage suite mean anything, which is why `aegis` exists. It has
-    no documents on disk, so it has none in the index, so nothing filtered by `tenant=aegis`
-    can leak and nothing filtered by `tenant=helios` can leak *from* it. A probe against an
-    empty corpus is the vacuous pass this file was just corrected for once already. `aegis`
-    earns its keep on the data path instead — tolerance and quarantine — and claim 2's twelve
-    leakage paths are argued offline in `evals/isolation/`, where the corpus is controlled.
+    This is the peer direction — two populated corpora, neither reaching the other. The
+    attacker direction, which is the one `aegis` exists for, is `check_the_attacker_gets_nothing`.
 
     And this tests the filter, not the whole claim. Cache keys, session reuse and Gateway tool
-    arguments are leakage paths that never touch a retrieval call.
+    arguments are leakage paths that never touch a retrieval call; they are covered by the
+    twelve probes in `src/attestor/security/isolation.py`, offline.
     """
     probes = {"helios": "Attestor human oversight procedure", "lumen": "fleet transition plan"}
     foreign = {"helios": "lumen", "lumen": "helios"}
@@ -268,6 +262,64 @@ def check_isolation(report: Report, evidence_kb: str) -> None:
             if uris
             else "no passages at all; this proves nothing",
         )
+
+
+def check_the_attacker_gets_nothing(report: Report, evidence_kb: str) -> None:
+    """Claim 2 in the direction that matters, with a control that makes the answer mean something.
+
+    `aegis` is the attacker. `src/attestor/security/isolation.py` says so in a constant —
+    `ATTACKER = "aegis"`, `VICTIM = "helios"` — and all twelve offline probes are written that
+    way. Two peers in the same vertical is the whole reason `aegis` exists.
+
+    An earlier version of this file recorded that `aegis` could not be probed live because it
+    has no documents in the index, and treated that as a stated limitation. It was not a
+    limitation, it was the wrong question. An attacker needs no corpus of its own; it needs to
+    fail to reach someone else's. The check was written symmetrically — "does X's filter return
+    Y's documents" — which happens to require Y to be populated, and `aegis` is X.
+
+    So: one query, twice. Under `tenant=helios` it must return helios documents, or the query
+    is simply a bad query and proves nothing. Under `tenant=aegis` it must return none. The
+    control is what makes zero a result instead of an absence.
+    """
+    query = "fleet transition plan diesel capital expenditure board approval"
+
+    def retrieve(tenant: str) -> list[str]:
+        raw = aws(
+            "bedrock-agent-runtime",
+            "retrieve",
+            "--knowledge-base-id",
+            evidence_kb,
+            "--retrieval-query",
+            json.dumps({"text": query}),
+            "--retrieval-configuration",
+            json.dumps(
+                {
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": 10,
+                        "filter": {"equals": {"key": "tenant", "value": tenant}},
+                    }
+                }
+            ),
+            "--query",
+            "retrievalResults[].location.s3Location.uri",
+            "--output",
+            "json",
+        )
+        return json.loads(raw or "[]")
+
+    victim = retrieve("helios")
+    report.check(
+        "isolation control: the query does reach helios's corpus",
+        bool(victim),
+        f"{len(victim)} passage(s) — without this, the line below is an empty query",
+    )
+
+    attacker = retrieve("aegis")
+    report.check(
+        "isolation: aegis, the attacker, reaches none of helios's evidence",
+        bool(victim) and not attacker,
+        f"reached {attacker}" if attacker else "nothing came back",
+    )
 
 
 def check_the_forbid_is_bound(report: Report) -> None:
@@ -476,6 +528,7 @@ def main() -> int:
     if arguments.against:
         check_reproducible(report, records, run_records(ROOT / arguments.against))
     check_isolation(report, arguments.evidence_kb)
+    check_the_attacker_gets_nothing(report, arguments.evidence_kb)
     check_gold_is_iceberg(report, arguments.database)
     check_the_forbid_is_bound(report)
     check_guardrail(report, arguments.guardrail_id, arguments.guardrail_version)
