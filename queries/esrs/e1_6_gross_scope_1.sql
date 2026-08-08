@@ -12,6 +12,7 @@
 -- :period_start   inclusive
 -- :period_end     exclusive
 -- :snapshot_id    Iceberg snapshot to read; NULL reads current and records what it read
+-- {{asof}}       expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     SUM(t.co2e_tonnes) AS value,
@@ -35,19 +36,21 @@ SELECT
             AND q.activity_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
--- Reads current, and reports which snapshot current was through `resolved_snapshot_id`
--- above. This line used to say
--- `FOR VERSION AS OF COALESCE(:snapshot_id, gold.ghg_scope_1_activity$current_snapshot)`,
--- which Athena rejects twice over: `FOR VERSION AS OF` takes a literal snapshot id and not an
--- expression, and `table$current_snapshot` is not a value — the metadata tables are relations
--- you select from. It failed with `mismatched input '$'`, and it was the only query in
--- `queries/` that tried; the other seven read current and record what they read, which is what
--- this now does too.
+-- Reads the snapshot this run is pinned to, and reports which one that was through
+-- `resolved_snapshot_id` above — so a run that read "current" records what current turned out
+-- to be, and a replay of it reads exactly that.
 --
--- So as-of pinning is *not* implemented on the live path. Claim 4 holds in replay, where the
--- recorded backend answers from a captured snapshot. Saying that plainly is better than a
--- clause that looks like time travel and has never once parsed.
-FROM gold.ghg_scope_1_activity AS t
+-- This line used to say `FOR VERSION AS OF COALESCE(:snapshot_id, gold.ghg_scope_1_activity$
+-- current_snapshot)`, which Athena rejects twice over: the clause takes a literal snapshot id
+-- rather than an expression, and `table$current_snapshot` is not a value — the metadata tables
+-- are relations you select from. It failed with `mismatched input '$'`, and for weeks this
+-- comment said as-of pinning was simply not implemented on the live path.
+--
+-- `{{asof}}` is the answer to both objections. It is expanded by `_bind` into a literal or into
+-- nothing at all, outside comments and string literals, and the snapshot id is validated as
+-- digits before it is ever substituted — it is the one value in this system that reaches a
+-- statement by substitution rather than by binding, and it earns that check.
+FROM gold.ghg_scope_1_activity {{asof}} AS t
 WHERE
     t.tenant_id = :tenant_id
     AND t.activity_date >= CAST(:period_start AS DATE)

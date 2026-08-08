@@ -7,11 +7,12 @@
 -- and not a rounding one.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     CAST(SUM(c.count) FILTER (WHERE c.predicted_label = c.true_label) AS DOUBLE)
     / NULLIF(SUM(c.count), 0) AS value
-FROM gold.model_evaluation_confusion AS c
+FROM gold.model_evaluation_confusion {{asof}} AS c
 WHERE
     c.tenant_id = :tenant_id
     AND c.evaluated_at >= CAST(:period_start AS DATE)

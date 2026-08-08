@@ -78,7 +78,12 @@ def query_digest(sql: str) -> str:
 @runtime_checkable
 class QueryBackend(Protocol):
     def execute(
-        self, *, sql: str, parameters: dict[str, str], snapshot_id: str | None
+        self,
+        *,
+        sql: str,
+        parameters: dict[str, str],
+        snapshot_id: str | None,
+        pins: dict[str, str] | None = None,
     ) -> QueryResult: ...
 
 
@@ -107,7 +112,12 @@ class RecordedBackend:
         return f"{digest}|{bound}"
 
     def execute(
-        self, *, sql: str, parameters: dict[str, str], snapshot_id: str | None
+        self,
+        *,
+        sql: str,
+        parameters: dict[str, str],
+        snapshot_id: str | None,
+        pins: dict[str, str] | None = None,
     ) -> QueryResult:
         digest = query_digest(sql)
         entry = self._recordings.get(self._key(digest, parameters))
@@ -169,7 +179,12 @@ class AthenaBackend:
         return self._client
 
     def execute(
-        self, *, sql: str, parameters: dict[str, str], snapshot_id: str | None
+        self,
+        *,
+        sql: str,
+        parameters: dict[str, str],
+        snapshot_id: str | None,
+        pins: dict[str, str] | None = None,
     ) -> QueryResult:
         """Run the statement with **bound** parameters and wait for one scalar.
 
@@ -179,7 +194,7 @@ class AthenaBackend:
         in it.
         """
         statement, ordered = _bind(
-            sql, parameters, snapshot_id=snapshot_id, database=self._database
+            sql, parameters, snapshot_id=snapshot_id, pins=pins, database=self._database
         )
         started = self._athena().start_query_execution(
             QueryString=statement,
@@ -296,6 +311,15 @@ _LAYER_SCHEMA = re.compile(r'(?:\b(gold|ref)|"(gold|ref)")\s*\.')
 #: Iceberg snapshot ids are integers. This is the only value in the system that reaches a SQL
 #: statement by substitution rather than by binding — Athena will not take a table-version pin
 #: as a parameter — so the shape is asserted here instead of trusted.
+#: Where a query says "pin this read, if this run is pinned". Expanded to `FOR VERSION AS OF
+#: <id>` when a snapshot is supplied and to nothing when it is not, so one statement serves both
+#: a current read and a replay of an earlier one.
+ASOF_MARKER = "{{asof}}"
+
+#: The identifier following a `gold.` or `ref.` qualifier, so a pin can be matched to the table
+#: it belongs to rather than to the datapoint that happened to ask for it.
+_TABLE_NAME = re.compile(r'"?([a-z_][a-z0-9_]*)"?')
+
 _SNAPSHOT_ID = re.compile(r"^[0-9]{1,20}$")
 
 
@@ -341,6 +365,7 @@ def _bind(
     parameters: dict[str, str],
     *,
     snapshot_id: str | None = None,
+    pins: dict[str, str] | None = None,
     database: str | None = None,
 ) -> tuple[str, list[str]]:
     """Rewrite `:name` markers to positional `?`, returning values in matching order.
@@ -355,6 +380,17 @@ def _bind(
     value in this system reaches SQL as a parameter; this one cannot, so it earns the one
     validation the others do not need.
     """
+    pins = dict(pins or {})
+    if snapshot_id is not None:
+        # A run pinned wholesale still works: `*` applies to whatever table the marker sits on.
+        pins.setdefault("*", str(snapshot_id))
+    for value in pins.values():
+        if not _SNAPSHOT_ID.match(str(value)):
+            raise QueryError(
+                f"snapshot id {value!r} is not an Iceberg snapshot id. It is the one value "
+                "substituted into a statement rather than bound to it, so it is refused "
+                "rather than escaped."
+            )
     if snapshot_id is not None and not _SNAPSHOT_ID.match(str(snapshot_id)):
         raise QueryError(
             f"snapshot id {snapshot_id!r} is not an Iceberg snapshot id. It is the one "
@@ -372,12 +408,23 @@ def _bind(
         ordered.append(_quoted(str(parameters[name])))
         return "?"
 
-    statement = _substitute_outside_literals(sql, replace, database=database)
+    # `FOR VERSION AS OF <literal>` or nothing. Athena takes a literal there and refuses an
+    # expression or a bound parameter, which is why an earlier attempt at
+    # `FOR VERSION AS OF COALESCE(:snapshot_id, ...)` failed to parse and why this file said for
+    # weeks that as-of pinning was not implemented on the live path.
+    #
+    # The id was already validated above — it is the one value substituted into a statement
+    # rather than bound to it, and it earns the check the others do not need.
+    statement = _substitute_outside_literals(sql, replace, database=database, snapshots=pins or {})
     return statement, ordered
 
 
 def _substitute_outside_literals(
-    sql: str, replace: Callable[[str], str], *, database: str | None = None
+    sql: str,
+    replace: Callable[[str], str],
+    *,
+    database: str | None = None,
+    snapshots: dict[str, str] | None = None,
 ) -> str:
     """Rewrite `:name` markers, but only where they are code.
 
@@ -390,8 +437,13 @@ def _substitute_outside_literals(
 
     String literals are skipped for the older reason: a marker inside quotes is text, and
     turning it into a placeholder changes what the query says.
+
+    `{{asof}}` is expanded here for the same reason `:snapshot_id` is: every query in
+    `queries/` explains the token in its own comment header, and a plain `str.replace` would
+    rewrite the explanation as well as the clause.
     """
     out: list[str] = []
+    last_table: str | None = None
     index, length = 0, len(sql)
     while index < length:
         character = sql[index]
@@ -417,6 +469,20 @@ def _substitute_outside_literals(
             out.append(sql[index:end])
             index = end
         else:
+            if sql.startswith(ASOF_MARKER, index):
+                # The pin for *this* table, chosen by the table the marker is attached to.
+                # `FROM gold.general_ledger_posting {{asof}} AS l` — the marker sits beside its
+                # own table, so the walker that just emitted the table knows which pin applies.
+                #
+                # Keyed by datapoint instead, one pin was handed to both a query and its
+                # cross-check, which read different tables: `INVALID_ARGUMENTS: Iceberg snapshot
+                # ID does not exists`, naming an id that existed perfectly well on the other
+                # table. The lineage has always recorded these per table; this reads them the
+                # same way.
+                pin = (snapshots or {}).get(last_table or "") or (snapshots or {}).get("*")
+                out.append(f"FOR VERSION AS OF {pin}" if pin else "")
+                index += len(ASOF_MARKER)
+                continue
             match = _MARKER.match(sql, index)
             if match:
                 out.append(replace(match.group(1)))
@@ -429,6 +495,8 @@ def _substitute_outside_literals(
                 quoted = schema.group(0).startswith('"')
                 out.append(f'"{resolved}".' if quoted else f"{resolved}.")
                 index = schema.end()
+                name = _TABLE_NAME.match(sql, index)
+                last_table = f"{layer}.{name.group(1)}" if name else None
                 continue
             out.append(character)
             index += 1

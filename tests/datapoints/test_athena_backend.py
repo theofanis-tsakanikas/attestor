@@ -349,3 +349,67 @@ class TestValuesReachAthenaQuoted:
         statement, values = _bind("SELECT x FROM t WHERE s = :snapshot_id", {}, snapshot_id="12345")
         assert "'12345'" in statement
         assert values == []
+
+
+# ── As-of pinning ────────────────────────────────────────────────────────────
+
+
+def test_the_marker_expands_beside_the_table_it_pins():
+    """Claim 4's second half: re-resolving *as of an earlier instant*.
+
+    This was unimplemented for weeks, and the query file said so. `FOR VERSION AS OF` takes a
+    literal snapshot id — not an expression, not a bound parameter — so the clause has to be
+    built into the statement, and the id is the one value in this system that reaches SQL by
+    substitution rather than by binding.
+    """
+    sql = "FROM gold.ghg_scope_1_activity {{asof}} AS t\n"
+
+    pinned, _ = _bind(sql, {}, pins={"gold.ghg_scope_1_activity": "77"}, database="attestor_gold")
+    assert "FOR VERSION AS OF 77" in pinned
+
+    current, _ = _bind(sql, {}, pins={}, database="attestor_gold")
+    assert "FOR VERSION AS OF" not in current
+    assert "attestor_gold.ghg_scope_1_activity" in current
+
+
+def test_each_table_gets_its_own_pin():
+    """Keyed by table, because a query and its cross-check read different ones.
+
+    Keyed by datapoint, one pin went to both, and Athena answered `INVALID_ARGUMENTS: Iceberg
+    snapshot ID does not exists` naming an id that existed perfectly well — on the other table.
+    """
+    sql = (
+        "FROM gold.general_ledger_posting {{asof}} AS l\n"
+        "JOIN ref.chart_of_accounts {{asof}} AS c ON c.code = l.account_code\n"
+    )
+    statement, _ = _bind(
+        sql,
+        {},
+        pins={"gold.general_ledger_posting": "11", "ref.chart_of_accounts": "22"},
+        database="attestor_gold",
+    )
+    assert "attestor_gold.general_ledger_posting FOR VERSION AS OF 11" in statement
+    assert "attestor_gold_ref.chart_of_accounts FOR VERSION AS OF 22" in statement
+
+
+def test_a_table_with_no_pin_reads_current_while_its_neighbour_is_pinned():
+    sql = "FROM gold.a {{asof}} AS a JOIN gold.b {{asof}} AS b ON b.id = a.id\n"
+    statement, _ = _bind(sql, {}, pins={"gold.a": "9"}, database="db")
+
+    assert "db.a FOR VERSION AS OF 9" in statement
+    assert "db.b  AS b" in statement or "db.b AS b" in statement
+
+
+def test_the_marker_is_left_alone_inside_a_comment():
+    """Every query documents the marker in its own header. Rewriting the explanation as well as
+    the clause is the mistake `:snapshot_id` already taught this file once."""
+    sql = "-- {{asof}} expands to FOR VERSION AS OF <id>\nFROM gold.t {{asof}} AS t\n"
+    statement, _ = _bind(sql, {}, pins={"gold.t": "5"}, database="db")
+
+    assert "-- {{asof}} expands" in statement
+    assert statement.count("FOR VERSION AS OF 5") == 1
+
+
+def test_a_pin_that_is_not_a_snapshot_id_is_refused_rather_than_escaped():
+    with pytest.raises(QueryError, match="not an Iceberg snapshot id"):
+        _bind("FROM gold.t {{asof}} AS t", {}, pins={"gold.t": "1; DROP TABLE t"}, database="db")

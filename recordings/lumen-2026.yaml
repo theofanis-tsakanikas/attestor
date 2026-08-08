@@ -6,7 +6,7 @@ note: Shaped by hand to exercise the resolver's branches. Re-captured against th
   with the run id.
 results:
 - query: ai_act/evaluation_accuracy.sql
-  query_digest: d3adaab5fe6befd865f2fe30a4281ab6a7b13ee04d2d11db10b5c1b6456becf7
+  query_digest: 25497e076be552c571d0c6fa3100fbd8d2cdbf262e6945778cb66791e975869f
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -19,7 +19,7 @@ results:
   row_counts:
     gold.model_evaluation_prediction: 5000
 - query: ai_act/evaluation_accuracy_crosscheck_confusion.sql
-  query_digest: afd9d06b17e89d681f081d010f7bbfd3afec12f2efb238704a3f5bd1fc5ad7d6
+  query_digest: 92832edfb463372692bb4c2b0b7ba0ce6e987d7be6b282c07e5d94bb52d52a69
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -30,7 +30,7 @@ results:
   snapshot_ids:
     gold.model_evaluation_confusion: '3319419023871123002'
 - query: ai_act/evaluation_set_size.sql
-  query_digest: 6a90109fc01aaf84ce47ac2ce39ec653b234891ea82c22c9396a2d0da6d0bb81
+  query_digest: 96a3625ed7f352530f85ae709cced6890c3cf80934351532c1c670d06a00b91f
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -41,7 +41,7 @@ results:
   snapshot_ids:
     gold.model_evaluation_prediction: '3319419023871123001'
 - query: ai_act/open_residual_risks.sql
-  query_digest: bef16e6067026c56ae84423073f332d016021390e27b292c8b4750fa1f33d3b5
+  query_digest: 1c6aad3d12280f48e86ecf0d40f7a5e1441360783758a9d7c3d018a5cb39a391
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'
@@ -52,7 +52,7 @@ results:
   snapshot_ids:
     gold.risk_register: '3319419023871123003'
 - query: ai_act/serious_incidents.sql
-  query_digest: 4a38e0e20ddeb76e2b10bd824f7e327e95a8c1c9bbe14c5323c4e33f95f923e5
+  query_digest: 7109c5bfbb06605529f9a41e2ccecad6e840a2857bd704a0092de05482a75e1b
   parameters:
     tenant_id: lumen
     period_start: '2026-01-01'

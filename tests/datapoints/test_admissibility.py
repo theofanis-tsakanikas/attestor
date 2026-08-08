@@ -150,8 +150,11 @@ class _Corrupted(RecordedBackend):
         super().__init__(recordings)
         self._crosscheck = crosscheck
 
-    def execute(self, *, sql, parameters, snapshot_id):
-        result = super().execute(sql=sql, parameters=parameters, snapshot_id=snapshot_id)
+    # `**passthrough`, not a fixed signature. The resolver also hands the backend the
+    # as-of pins now, and a stub that names every argument stops receiving the call the
+    # moment one is added — silently, as an empty capture rather than a TypeError.
+    def execute(self, *, sql, parameters, **passthrough):
+        result = super().execute(sql=sql, parameters=parameters, **passthrough)
         if "procurement_fuel_spend" in sql:
             return QueryResult(
                 value=self._crosscheck,

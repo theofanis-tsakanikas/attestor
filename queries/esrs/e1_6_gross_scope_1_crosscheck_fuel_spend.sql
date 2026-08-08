@@ -9,12 +9,13 @@
 -- figure nobody has ever verified.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 WITH spend AS (
     SELECT
         p.fuel_type,
         SUM(p.net_amount_eur) AS spend_eur
-    FROM gold.procurement_fuel_spend AS p
+    FROM gold.procurement_fuel_spend {{asof}} AS p
     WHERE
         p.tenant_id = :tenant_id
         AND p.invoice_date >= CAST(:period_start AS DATE)

@@ -4,6 +4,7 @@
 -- and counting it twice makes a small evaluation set look adequate.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     COUNT(DISTINCT p.example_id) AS value,
@@ -27,7 +28,7 @@ SELECT
             AND q.evaluated_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.model_evaluation_prediction AS p
+FROM gold.model_evaluation_prediction {{asof}} AS p
 WHERE
     p.tenant_id = :tenant_id
     AND p.evaluated_at >= CAST(:period_start AS DATE)

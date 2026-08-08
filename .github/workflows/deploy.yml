@@ -361,6 +361,33 @@ jobs:
             attestor run --tenant "$tenant" --run-id "${{ github.run_id }}" || true
           done
           attestor dashboard
+          attestor cost
+
+          # Claim 4's second half, on the live path: re-resolve helios pinned to the snapshots
+          # its own record just wrote, and require the same figures and the same lineage hashes
+          # back. The first half — the same data resolving the same way — has always held; this
+          # is the one that needed `FOR VERSION AS OF` to exist.
+          mkdir -p out/replay
+          attestor run --tenant helios --run-id replay \
+            --replay "out/runs/helios-2026-${{ github.run_id }}.json" || true
+          mv out/runs/helios-2026-replay.json out/replay/ 2>/dev/null || true
+
+      - name: verify the five claims against the estate that just ran
+        if: inputs.stage == 'full'
+        # Not wired in until now. The script that checks the claims against a standing account
+        # ran when somebody remembered to run it, which is the same as saying it ran when it was
+        # least needed. Everything it has ever caught — a sidecar-less document in a shared
+        # index, a Cedar policy bound to a gateway that no longer existed, a run record whose
+        # shape had moved — was caught by hand, after a deploy had already reported success.
+        run: |
+          set -euo pipefail
+          python scripts/verify_live_estate.py \
+            --runs out/runs \
+            --reports out \
+            --against out/replay \
+            --evidence-kb "$(terraform -chdir=infra/knowledge output -raw evidence_kb_id)" \
+            --guardrail-id "$(terraform -chdir=infra/knowledge output -raw guardrail_id)" \
+            --guardrail-version "$(terraform -chdir=infra/knowledge output -raw guardrail_version)"
 
       - name: call the AgentCore surface with a real token
         if: inputs.stage == 'full'

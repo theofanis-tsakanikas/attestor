@@ -13,6 +13,7 @@
 -- which categories used which.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     SUM(a.co2e_tonnes) AS value,
@@ -36,7 +37,7 @@ SELECT
             AND q.activity_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.ghg_scope_3_activity AS a
+FROM gold.ghg_scope_3_activity {{asof}} AS a
 INNER JOIN ref.scope_3_category_screening AS s
     ON
         s.tenant_id = a.tenant_id

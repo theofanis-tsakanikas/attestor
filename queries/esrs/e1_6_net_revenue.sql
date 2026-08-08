@@ -5,6 +5,7 @@
 -- statement that quotes an unclosed number will not survive its first reconciliation.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     SUM(l.amount_eur) / 1000000.0 AS value,
@@ -28,7 +29,7 @@ SELECT
             AND q.posting_date < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.general_ledger_posting AS l
+FROM gold.general_ledger_posting {{asof}} AS l
 INNER JOIN ref.chart_of_accounts AS c
     ON
         c.tenant_id = l.tenant_id

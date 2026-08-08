@@ -5,6 +5,7 @@
 -- the thing Article 9(5) requires be communicated.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     COUNT(*) AS value,
@@ -28,7 +29,7 @@ SELECT
             AND q.assessed_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.risk_register AS r
+FROM gold.risk_register {{asof}} AS r
 WHERE
     r.tenant_id = :tenant_id
     AND r.assessed_at >= CAST(:period_start AS DATE)

@@ -10,10 +10,11 @@
 -- each other; they are the same number, and a real difference means somebody restated.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     f.net_revenue_eur / 1000000.0 AS value
-FROM gold.financial_statement_extract AS f
+FROM gold.financial_statement_extract {{asof}} AS f
 WHERE
     f.tenant_id = :tenant_id
     AND f.period_start = CAST(:period_start AS DATE)

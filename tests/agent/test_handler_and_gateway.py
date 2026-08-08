@@ -239,9 +239,12 @@ def test_resolving_one_datapoint_runs_only_its_closure(
     contracts = contract_set.for_standard(Standard.ESRS)
 
     class Counting(RecordedBackend):
-        def execute(self, *, sql, parameters, snapshot_id):
+        # `**passthrough`, not a fixed signature. The resolver also hands the backend the
+        # as-of pins now, and a stub that names every argument stops receiving the call the
+        # moment one is added — silently, as an empty capture rather than a TypeError.
+        def execute(self, *, sql, parameters, **passthrough):
             executed.append(sql.splitlines()[0])
-            return super().execute(sql=sql, parameters=parameters, snapshot_id=snapshot_id)
+            return super().execute(sql=sql, parameters=parameters, **passthrough)
 
     box = Toolbox(
         session=_session(),
