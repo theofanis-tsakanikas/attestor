@@ -5,6 +5,7 @@
 -- takes, which is the opposite of what post-market monitoring is for.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     COUNT(*) AS value,
@@ -28,7 +29,7 @@ SELECT
             AND q.occurred_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.incident_log AS i
+FROM gold.incident_log {{asof}} AS i
 WHERE
     i.tenant_id = :tenant_id
     AND i.occurred_at >= CAST(:period_start AS DATE)

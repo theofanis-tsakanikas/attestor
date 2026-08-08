@@ -153,6 +153,11 @@ class RunRecord(BaseModel):
         return path
 
     @classmethod
+    def load(cls, path: Path | str) -> RunRecord:
+        """One record, by path. What `--replay` re-resolves against."""
+        return cls.model_validate_json(Path(path).read_text(encoding="utf-8"))
+
+    @classmethod
     def load_all(cls, directory: Path | str) -> tuple[RunRecord, ...]:
         directory = Path(directory)
         if not directory.is_dir():

@@ -190,6 +190,9 @@ def check_reproducible(report: Report, first: dict[str, dict], second: dict[str,
     so a difference here is reported rather than failed: it is a fact about the run, and
     claim 4 is carried by the lineage record, not by an assumption that prose repeats.
     """
+    # Both halves of claim 4. "The same data resolves to the same values" is the pair of runs
+    # this compares. "Re-resolving *as of an earlier instant*" is what `--replay` does, and the
+    # second directory is produced by it: pinned to the first run's own recorded snapshots.
     for tenant in sorted(set(first) & set(second)):
         a = {p["datapoint_id"]: p for p in first[tenant].get("published", [])}
         b = {p["datapoint_id"]: p for p in second[tenant].get("published", [])}

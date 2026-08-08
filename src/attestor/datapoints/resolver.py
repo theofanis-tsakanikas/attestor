@@ -496,10 +496,28 @@ class Resolver:
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
-    def _run(self, sql: str, parameters: dict[str, str], context: ResolutionContext) -> QueryResult:
+    def _run(
+        self,
+        sql: str,
+        parameters: dict[str, str],
+        context: ResolutionContext,
+        datapoint_id: str | None = None,
+    ) -> QueryResult:
+        # Keyed by datapoint, falling back to `*` for a run pinned wholesale. Per datapoint
+        # because that is how the lineage records it: each figure names the snapshot of the
+        # table it was computed from, and two figures resolved minutes apart can legitimately
+        # have read different ones. A single pin for a whole run would be a coarser claim than
+        # the receipt this system already writes.
+        # The whole map, keyed by table. The binder picks the pin for the table each `{{asof}}`
+        # marker sits beside — a query and its cross-check read different tables, and one pin
+        # for the pair is how `INVALID_ARGUMENTS: Iceberg snapshot ID does not exists` arrives
+        # naming an id that exists perfectly well on the other one.
         try:
             result = self._backend.execute(
-                sql=sql, parameters=parameters, snapshot_id=context.snapshots.get("*")
+                sql=sql,
+                parameters=parameters,
+                snapshot_id=None,
+                pins=context.snapshots,
             )
         except QueryError as exc:
             raise _Abstain("E_RESOLVER_ERROR", str(exc)) from exc

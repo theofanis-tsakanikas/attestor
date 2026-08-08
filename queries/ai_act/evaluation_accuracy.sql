@@ -9,6 +9,7 @@
 -- accuracy is wrong without anybody lying.
 --
 -- :tenant_id · :period_start · :period_end · :snapshot_id
+-- {{asof}} expands to `FOR VERSION AS OF <id>` when pinned, to nothing when not
 
 SELECT
     CAST(SUM(CASE WHEN p.predicted_label = p.true_label THEN 1 ELSE 0 END) AS DOUBLE)
@@ -33,7 +34,7 @@ SELECT
             AND q.evaluated_at < CAST(:period_end AS DATE)
             AND q.dq_status <> 'clean'
     ) AS quarantined_rows
-FROM gold.model_evaluation_prediction AS p
+FROM gold.model_evaluation_prediction {{asof}} AS p
 WHERE
     p.tenant_id = :tenant_id
     AND p.evaluated_at >= CAST(:period_start AS DATE)

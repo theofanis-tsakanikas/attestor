@@ -163,8 +163,30 @@ def _resolver(tenant: str, root: Path, *, cost_meter: CostMeter | None = None) -
     )
 
 
+def snapshots_from(record: run_record.RunRecord) -> dict[str, str]:
+    """The snapshot each table was read at, keyed by table.
+
+    A run record already carries this: every published figure lists its sources as
+    `gold.ghg_scope_1_activity@7705096761963662595`. That is the receipt. Feeding it back in is
+    what turns the receipt into a replay — the difference between being able to say which
+    version of the data produced a number and being able to produce the number again.
+    """
+    pins: dict[str, str] = {}
+    for published in record.published:
+        for source in published.sources:
+            table, _, snapshot = source.partition("@")
+            if snapshot:
+                pins[table] = snapshot
+    return pins
+
+
 def _resolve(
-    tenant: str, root: Path, *, as_of: dt.date = REPORT_DATE, cost_meter: CostMeter | None = None
+    tenant: str,
+    root: Path,
+    *,
+    as_of: dt.date = REPORT_DATE,
+    cost_meter: CostMeter | None = None,
+    snapshots: dict[str, str] | None = None,
 ):
     return _resolver(tenant, root, cost_meter=cost_meter).resolve_all(
         ResolutionContext(
@@ -174,6 +196,7 @@ def _resolve(
             period_end=PERIOD_END,
             as_of=as_of,
             run_id="cli",
+            snapshots=snapshots or {},
         )
     )
 
@@ -474,6 +497,7 @@ def run_report(
     root: Path = typer.Option(ROOT, "--root"),
     out: Path = typer.Option(Path("out"), "--out"),
     run_id: str = typer.Option("local", "--run-id"),
+    replay: Path | None = typer.Option(None, "--replay", help="a prior run record to re-resolve"),
 ) -> None:
     """Resolve, render, gate, and record — the whole pipeline for one tenant.
 
@@ -486,7 +510,14 @@ def run_report(
     tenant_config = registry[tenant]
     contracts = _contracts_for(tenant, root)
     meter = CostMeter()
-    results = _resolve(tenant, root, cost_meter=meter)
+    # `--replay` is claim 4's second half. The first — the same data resolving to the same
+    # values — has always held. This is re-resolving *as of an earlier instant*: the pins come
+    # from the prior record's own lineage, so the query reads the table as it stood when the
+    # figure was published rather than as it stands now.
+    pins = snapshots_from(run_record.RunRecord.load(replay)) if replay else None
+    if pins:
+        console.print(f"replaying {replay} — {len(pins)} datapoint(s) pinned to their snapshots")
+    results = _resolve(tenant, root, cost_meter=meter, snapshots=pins)
 
     record = run_record.build(
         run_id=run_id,

@@ -42,8 +42,11 @@ def _context(tenant: str = "helios", run_id: str = "run-01") -> ResolutionContex
 class Scanning(RecordedBackend):
     """A recorded backend that also reports what the scan would have cost."""
 
-    def execute(self, *, sql, parameters, snapshot_id):
-        result = super().execute(sql=sql, parameters=parameters, snapshot_id=snapshot_id)
+    # `**passthrough`, not a fixed signature. The resolver also hands the backend the
+    # as-of pins now, and a stub that names every argument stops receiving the call the
+    # moment one is added — silently, as an empty capture rather than a TypeError.
+    def execute(self, *, sql, parameters, **passthrough):
+        result = super().execute(sql=sql, parameters=parameters, **passthrough)
         return QueryResult(
             value=result.value,
             tables=result.tables,
@@ -257,7 +260,9 @@ def test_the_cli_hands_the_resolver_a_meter(repo_root, monkeypatch):
 
     monkeypatch.setattr(cli, "_resolve", capture)
     with pytest.raises(RuntimeError):
-        cli.run_report(tenant="helios", root=repo_root, out=Path("out"), run_id="test")
+        # `replay=None` explicitly: called directly rather than through typer, an unset option
+        # is still an `OptionInfo` object, which is truthy and is not a path.
+        cli.run_report(tenant="helios", root=repo_root, out=Path("out"), run_id="test", replay=None)
 
     assert isinstance(seen.get("cost_meter"), CostMeter), (
         "a report that does not meter itself reports EUR 0.0000 having queried a lakehouse"

@@ -338,6 +338,24 @@ def _let_the_surface_roles_drift(root: Path) -> bool:
     return True
 
 
+def _let_one_pin_serve_every_table(root: Path) -> bool:
+    """Choose the as-of pin by anything other than the table it is attached to.
+
+    Claim 4's second half rests on a pin per table: a query and its cross-check read different
+    ones, and a single pin for the pair is how a replay dies naming a snapshot id that exists —
+    on the other table.
+    """
+    path = root / "src/attestor/datapoints/backends.py"
+    text = path.read_text(encoding="utf-8")
+    marker = 'pin = (snapshots or {}).get(last_table or "") or (snapshots or {}).get("*")'
+    if marker not in text:
+        return False
+    path.write_text(
+        text.replace(marker, "pin = next(iter((snapshots or {}).values()), None)"), encoding="utf-8"
+    )
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "launder a resolver error into a lawful omission",
@@ -500,6 +518,14 @@ MUTATIONS: tuple[Mutation, ...] = (
         "missing",
         _let_the_surface_roles_drift,
         "Same handlers, separate roles. The failure arrives as an abstention.",
+    ),
+    Mutation(
+        "let one as-of pin serve every table",
+        "per-table pinning",
+        ["pytest", "-q", "tests/datapoints/test_athena_backend.py", "-x"],
+        "own_pin",
+        _let_one_pin_serve_every_table,
+        "A replay then reads one table at another table's instant, and mostly still answers.",
     ),
 )
 

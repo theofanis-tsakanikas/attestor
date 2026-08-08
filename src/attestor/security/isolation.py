@@ -197,9 +197,13 @@ def _probe_7_query_parameters(harness: Harness) -> ProbeResult:
     captured: dict[str, str] = {}
 
     class Recording(RecordedBackend):
-        def execute(self, *, sql: str, parameters: dict[str, str], snapshot_id: str | None):
+        # `**passthrough` rather than a fixed signature. The resolver now also hands the backend
+        # the as-of pins, and a probe that names every argument stops seeing the call the moment
+        # a new one is added — this one silently captured nothing and reported `tenant_id=None`,
+        # which reads as a leak rather than as a probe that had stopped watching.
+        def execute(self, *, sql: str, parameters: dict[str, str], **passthrough):
             captured.update(parameters)
-            return super().execute(sql=sql, parameters=parameters, snapshot_id=snapshot_id)
+            return super().execute(sql=sql, parameters=parameters, **passthrough)
 
     backend = Recording(RecordedBackend.from_directory(harness.root / "recordings")._recordings)
     resolver = Resolver(

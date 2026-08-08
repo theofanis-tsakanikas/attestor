@@ -6,7 +6,7 @@ note: Shaped by hand to exercise the resolver's branches. Re-captured against th
   with the run id.
 results:
 - query: esrs/e1_6_gross_scope_1.sql
-  query_digest: c5a198c36793996fd98addce23365f19b1ebbcc855e4e009ba68cd7276f19c88
+  query_digest: aa9b447b037d3bbafcc19123728d52225cd33f5dc80791329d9f8e70c777ba4f
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -17,7 +17,7 @@ results:
   snapshot_ids:
     gold.ghg_scope_1_activity: '5551419023871123001'
 - query: esrs/e1_6_gross_scope_1_crosscheck_fuel_spend.sql
-  query_digest: 3d9a258f261a936f2bdccd45f44bb0293a2523b65a3c5fb5a33019cb6ae4e033
+  query_digest: dd81d655eff584ca81626c2dafc0f70e495c91608951f1ee6db5df8476e25697
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -27,7 +27,7 @@ results:
   - gold.procurement_fuel_spend
   - ref.fuel_price_period
 - query: esrs/e1_5_electricity_consumption.sql
-  query_digest: 07bee5cec574fa850b4db03ff210d942fb611aa86de7d254674196ed9d7d0e10
+  query_digest: da6a6e5371dcab4fbf53f725cc96f99e6650a666773ffd22de44c876bfe868ea
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -38,7 +38,7 @@ results:
   snapshot_ids:
     gold.electricity_consumption: '5551419023871123003'
 - query: esrs/e1_5_electricity_consumption_crosscheck_meter.sql
-  query_digest: d75d5192bda5775d01e5a80178dfeb2bdfacc5d4eaaae69cdfd020e181850ee0
+  query_digest: bb79830c9b775bf417f2f91b3c0326b1b7759dac348bcfe969445fbca0ae6060
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -47,7 +47,7 @@ results:
   tables:
   - gold.meter_interval_reading
 - query: esrs/e1_6_gross_scope_3.sql
-  query_digest: 40a4e9f03532ce8bd6ccf6b5a4ace04226fb6b377abcabe8714c3e6c88baf685
+  query_digest: 28e62b218cecb9a194448339262ef7d1b9c568d62e0bd4554ee442d4c58d3296
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -57,7 +57,7 @@ results:
   - gold.ghg_scope_3_activity
   quarantined_rows: 1284
 - query: esrs/e1_6_net_revenue.sql
-  query_digest: 13c9c0526c4d4bd753293f3991a4e633811b01dee1223a2ba01b875c359ce62e
+  query_digest: 4bbdb614629782cf1dee49d0930ff6e6b60dc2c1073477135e0ae3d00ab086ca
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
@@ -67,7 +67,7 @@ results:
   - gold.general_ledger_posting
   - ref.chart_of_accounts
 - query: esrs/e1_6_net_revenue_crosscheck_ledger.sql
-  query_digest: ce9dc8a663255bef6dd5dd3905d41024f9e07089b7bc6cf8c98cc17083ceaf65
+  query_digest: 8c3106dde869083adec2502affc6382509550679fefdc9e7b96e8c2e0a9566e8
   parameters:
     tenant_id: aegis
     period_start: '2026-01-01'
