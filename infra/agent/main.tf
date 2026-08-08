@@ -169,7 +169,20 @@ locals {
     "ATTESTOR_MEMORY_${upper(tenant)}" => m.memory_id
   }
 
-  tenant_identity_env = merge(local.tenant_issuers, local.tenant_audiences, local.tenant_memories)
+  # Which role a call arriving through each tenant's gateway carries. See `var.gateway_roles`:
+  # the platform gives the handler a tenant and no claims, so this is declared rather than
+  # inferred, and a change to it is a reviewed change.
+  tenant_gateway_roles = {
+    for tenant, role in var.gateway_roles :
+    "ATTESTOR_GATEWAY_ROLE_${upper(tenant)}" => role
+  }
+
+  tenant_identity_env = merge(
+    local.tenant_issuers,
+    local.tenant_audiences,
+    local.tenant_memories,
+    local.tenant_gateway_roles,
+  )
 }
 
 resource "aws_cognito_user_group" "roles" {
