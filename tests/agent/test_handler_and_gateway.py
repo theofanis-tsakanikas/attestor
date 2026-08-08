@@ -495,3 +495,25 @@ def test_a_call_that_did_not_come_through_a_gateway_builds_no_gateway_session(re
         handler._gateway_session(_GatewayContext("t", gateway=""), period="2026", session_id="r-1")
         is None
     )
+
+
+def test_a_gateway_invocation_builds_its_session_without_any_claims(repo_root, monkeypatch):
+    """The wiring, which was defined and then not called.
+
+    `_gateway_session` existed, was tested, and `invoke` never reached it: an edit had been
+    written against a two-line form that ruff had already collapsed into one, so the
+    replacement silently matched nothing. The estate went on answering `unknown tenant ''`
+    while every unit test around the helper passed.
+
+    This asserts the path, not the helper. A gateway invocation carries no claims at all, so
+    reaching authorization at all means the session was built from the gateway.
+    """
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setenv("ATTESTOR_GATEWAY_ROLE_HELIOS", "role:preparer")
+
+    response = handler.invoke(
+        {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
+        _GatewayContext("attestor-tools___read_lineage"),
+    )
+
+    assert "unknown tenant" not in str(response["body"]), response["body"]
