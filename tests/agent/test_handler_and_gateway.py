@@ -348,3 +348,75 @@ def test_the_declarative_cache_is_built_once(repo_root: Path) -> None:
     first = handler.declarative()
     assert handler.declarative() is first
     assert not hasattr(first, "evidence")
+
+
+# ── How the Gateway names a tool ─────────────────────────────────────────────
+
+
+class _GatewayContext:
+    """A Lambda context shaped the way AgentCore Gateway sends one."""
+
+    aws_request_id = "gateway-request-01"
+
+    def __init__(self, qualified: str) -> None:
+        self.client_context = type(
+            "ClientContext", (), {"custom": {"bedrockAgentCoreToolName": qualified}}
+        )()
+
+
+def test_the_tool_name_can_arrive_in_the_client_context(repo_root, monkeypatch) -> None:
+    """The seam that made every gateway call fail, and could only fail live.
+
+    The handler read `event["tool"]` — what our tests send, and what the runtime's HTTP surface
+    sends. The Gateway sends neither: it puts `attestor-tools___read_lineage` in the Lambda
+    client context. Both sides looked complete on their own, and had never been introduced, so
+    every tool call through the gateway was answered `unknown tool ''` with an HTTP 200 around
+    it. Nothing offline could have noticed, because nothing offline speaks to a gateway.
+    """
+    assert handler._tool_from_context(_GatewayContext("attestor-tools___read_lineage")) == (
+        "read_lineage"
+    )
+
+
+def test_an_unqualified_name_is_taken_as_it_stands(repo_root) -> None:
+    assert handler._tool_from_context(_GatewayContext("read_lineage")) == "read_lineage"
+
+
+def test_a_context_without_one_yields_nothing_rather_than_guessing(repo_root) -> None:
+    """`unknown tool ''` is a better answer than a tool nobody asked for."""
+    assert handler._tool_from_context(None) == ""
+    assert handler._tool_from_context(_GatewayContext("")) == ""
+
+
+def test_the_event_still_wins_when_it_carries_a_tool(repo_root) -> None:
+    """The runtime's HTTP surface sends it in the body, and that path is unchanged."""
+    response = handler.invoke(
+        {"tool": "nonexistent_tool", "arguments": {}, "tenant_id": "helios", "period": "2026"},
+        _GatewayContext("attestor-tools___read_lineage"),
+    )
+    assert response["statusCode"] == 400
+    assert "nonexistent_tool" in response["body"]["error"]
+
+
+def test_a_gateway_call_gets_past_the_tool_lookup(repo_root, monkeypatch) -> None:
+    """The wiring, not the helper. This is the assertion the live failure was about.
+
+    A gateway invocation carries no `tool` in its event at all; the name is only in the client
+    context. What the estate returned was `{"statusCode": 400, "error": "unknown tool ''"}`
+    wrapped in an HTTP 200 — a malformed-call answer to a perfectly well-formed call.
+
+    The session will still be refused here, because these claims carry no real issuer, and that
+    is the point: reaching *authorization* means the tool was found. Asserting on the specific
+    later failure would tie this test to whatever happens next instead of to the seam.
+    """
+    monkeypatch.chdir(repo_root)
+    response = handler.invoke(
+        {
+            "arguments": {"datapoint_id": "ESRS_E1-6_gross_scope_1"},
+            "tenant_id": "helios",
+            "period": "2026",
+            "claims": {},
+        },
+        _GatewayContext("attestor-tools___read_lineage"),
+    )
+    assert "unknown tool" not in str(response["body"]), response["body"]
