@@ -17,10 +17,17 @@ memory to authorize, to resolve or to abstain; a figure is never recalled, it is
 If this module returned wrong answers, or no answers, every number in every report would be
 identical — which is the property that makes it safe to let it fail.
 
-**It fails open, loudly.** A memory write is operational continuity, not safety or compliance,
-and the doctrine splits on exactly that line: fail closed on a guardrail, fail open on a
-reranker. An analyst's question is answered whether or not the recording of it succeeded, and
-the failure is logged rather than raised.
+**It fails open, loudly, and quickly.** A memory write is operational continuity, not safety or
+compliance, and the doctrine splits on exactly that line: fail closed on a guardrail, fail open
+on a reranker. An analyst's question is answered whether or not the recording of it succeeded,
+and the failure is logged rather than raised.
+
+The third word is the one that was missing. Fail-open catches an *error*, and a call with
+nowhere to go does not produce one — it hangs. This module was deployed into a VPC whose egress
+is the VPC and nothing else, before `bedrock-agentcore` had an endpoint there, and the tool
+handler resolved its answer in seconds and then sat inside `create_event` until Lambda killed
+it at 180 seconds. The caller was told "An internal error occurred" about work that had already
+succeeded. A degradation with no deadline is not a degradation.
 """
 
 from __future__ import annotations
@@ -135,9 +142,24 @@ def recent(session: Session, *, limit: int = 10, client: Any = None) -> list[dic
     return list(response.get("events", []))
 
 
+#: How long a memory write may take before it is abandoned. Seconds, not minutes: nothing waits
+#: on this, and the answer it accompanies is already computed. The numbers are deliberately
+#: smaller than any caller's patience — see the module docstring for what an unbounded one cost.
+CONNECT_TIMEOUT_SECONDS = 2
+READ_TIMEOUT_SECONDS = 3
+ATTEMPTS = 1
+
+
 def _client() -> Any:
     import boto3  # noqa: PLC0415 — optional dependency, never imported offline
+    from botocore.config import Config  # noqa: PLC0415
 
     return boto3.client(
-        "bedrock-agentcore", region_name=os.environ.get("AWS_REGION", "eu-central-1")
+        "bedrock-agentcore",
+        region_name=os.environ.get("AWS_REGION", "eu-central-1"),
+        config=Config(
+            connect_timeout=CONNECT_TIMEOUT_SECONDS,
+            read_timeout=READ_TIMEOUT_SECONDS,
+            retries={"max_attempts": ATTEMPTS},
+        ),
     )
