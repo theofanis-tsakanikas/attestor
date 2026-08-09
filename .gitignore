@@ -50,4 +50,9 @@ infra/agent/tools/*
 # public surface. The folder is ignored rather than the file, so anything else that goes in
 # later is covered by the same decision instead of needing a new one.
 notes/
+
+# Promo material — shot lists, clips, music, the production guide. Large binaries and a
+# marketing artefact; neither belongs in a repository whose whole claim is that everything
+# in it is checkable.
+promo/
 .venv-checkov/
