@@ -30,6 +30,25 @@ sections:
           Both figures are recomputed from the evaluation run's own predictions and
           cross-checked against the confusion matrix. Neither is read from a summary document.
 
+  - title: Robustness against manipulated input
+    reference: Annex IV §2(g) · Article 15(5)
+    blocks:
+      - kind: paragraph
+        text: >-
+          The system reads an evidence corpus it does not control. Measured on the labelled
+          set described in the data sheet, the retrieval scanner withheld
+          {{dp:AIACT_ANNEX-IV-2_injection_block_rate}} of passages carrying a known
+          manipulation attempt, while withholding
+          {{dp:AIACT_ANNEX-IV-2_injection_false_positive_rate}} of benign passages.
+      - kind: note
+        text: >-
+          The two figures are disclosed together because neither is interpretable alone: a
+          scanner that withheld every passage would report a perfect block rate. The benign
+          set is adversarial by construction — correspondence quoting an instruction, a
+          methodology note describing what the system must not do — so the second figure is a
+          measurement rather than a formality. Both are computed from the scanner's own
+          decisions on that set, not from a summary of them.
+
   - title: Human oversight
     reference: Annex IV §3 · Article 14
     blocks:

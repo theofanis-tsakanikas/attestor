@@ -151,6 +151,14 @@ CHECKS: list[Check] = [
     ),
     Check(
         "consistency",
+        "measured evidence",
+        [PYTHON, "-m", "attestor.cli.main", "evidence", "export", "--check"],
+        "`lumen`'s evaluation report is generated from the harnesses it describes, and every "
+        "declared digest is reconciled against the bytes. Three of them were not, and a "
+        "content hash nobody compares is a decoration.",
+    ),
+    Check(
+        "consistency",
         "governance docs",
         [PYTHON, "-m", "attestor.cli.main", "govern", "generate", "--check"],
         "The generated control descriptions still match the code that enforces them.",

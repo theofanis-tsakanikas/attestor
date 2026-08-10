@@ -6,10 +6,21 @@
 # below is this repository — its evaluation harnesses, its risk register, its oversight
 # procedure — and the first technical file it issues is about the thing issuing it.
 #
-# The documents are synthetic stand-ins for repository artefacts that exist: the
-# evaluation report corresponds to `evals/`, the oversight procedure to ADR-0001 and
-# the override register. Replacing them with generated exports of those artefacts is
-# the next increment, and is deliberately not pretended to have happened.
+# The evaluation report and the data sheet are **generated**, by `attestor evidence
+# export`, from the harnesses they describe. Every figure in them is a return value of
+# a run rather than a claim about one, and `--check` fails the build when they drift.
+# That is what makes the paragraph above a statement rather than an aspiration.
+#
+# The model card, the system documentation and the oversight procedures remain written
+# by hand. They are descriptions of design, not measurements, and there is nothing to
+# generate them from; they correspond to ADR-0001 and to the override register.
+#
+# `content_sha256` is now reconciled against the bytes, for every document whose bytes
+# are in this repository. It was not, and three of them digested to some earlier draft
+# — a field whose whole purpose is that an auditor re-reads the same bytes, holding a
+# hash of nothing in particular. The risk-register and incident extracts stay in S3
+# because they are dumps of lake tables; `attestor evidence export` reports them as
+# unverifiable here rather than skipping them quietly.
 
 documents:
   - document_id: MODELCARD-ATT-2026
@@ -17,7 +28,7 @@ documents:
     document_class: model_card
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: cf17cda1490faab7ffa1855a9c945a80a792852d30e1406aec1a496c31550de1
+    content_sha256: 1f3939e3b50be7bfb106ac9f2f20b3fb08ed840a6613cdef7bfb871de7536171
     source_uri: evidence/lumen/documents/MODELCARD-ATT-2026.md
 
   - document_id: SYSDOC-ATT-2026
@@ -25,7 +36,7 @@ documents:
     document_class: system_documentation
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: 0bf7dcdf802d5f2ebffd2580a19b8699152d00aa65ec3089ae4d4e15db18ecb8
+    content_sha256: 7fc94f97641531b62d3536382fca07da06a78baebe7e7431b6424bb82256d1b8
     source_uri: evidence/lumen/documents/SYSDOC-ATT-2026.md
 
   - document_id: EVALREPORT-ATT-2026
@@ -33,16 +44,16 @@ documents:
     document_class: evaluation_report
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: 2375fd5a2c30c8ec675d187a389954d574c3f8b9fdfc5e7b09b763219e2f9aa8
-    source_uri: s3://attestor-evidence-lumen/attestor/evals-report.md
+    content_sha256: eeb5e215701374e24216a73c850bd3cfe7826eafdd053d2fbe87959d2e8b105c
+    source_uri: evidence/lumen/documents/EVALREPORT-ATT-2026.md
 
   - document_id: DATASHEET-ATT-2026
     tenant: lumen
     document_class: data_sheet
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: 33301c172b0271cb9811eeb658930c457e8b8c2577f493cb852a5bed4c2793d3
-    source_uri: s3://attestor-evidence-lumen/attestor/datasheet.md
+    content_sha256: caffc98907fa081d077ff9c80834670eb8858298feeb7c3551b31c585a4d75af
+    source_uri: evidence/lumen/documents/DATASHEET-ATT-2026.md
 
   - document_id: RISKREG-ATT-2026
     tenant: lumen
@@ -65,7 +76,7 @@ documents:
     document_class: oversight_procedure
     covers_from: 2026-01-01
     covers_to: 2026-12-31
-    content_sha256: b708d608ea7124d409145246dd9c443d9984fb8b0c832a5c9ee08f60c3186765
+    content_sha256: 69b7cc285a8880648193d05c25673a954074caeb6f02524190ed4e85e5e573b2
     source_uri: evidence/lumen/documents/OVERSIGHT-ATT-2026.md
 
   - document_id: INCIDENTS-ATT-2026

@@ -1,0 +1,57 @@
+# Robustness against manipulated input, and the first datapoint in this repository whose
+# evidence is a measurement of the system disclosing it.
+#
+# The distinction that matters: `evaluation_accuracy` describes a model on a held-out set the
+# seed generator constructs to hit a recorded ratio — right for exercising the resolver, and
+# labelled `provenance: synthetic` where it is recorded. This one is not constructed. The rows
+# behind it are what the scanner in `src/attestor/security/` decided about the labelled corpus
+# in `evals/injection/`, written down by `pipelines/seed/generate.py` without a target to aim
+# at. Change the detector and this figure moves; break it and the build goes red here too.
+id: AIACT_ANNEX-IV-2_injection_block_rate
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §2(g)
+title: Block rate against manipulated input passages
+description: >-
+  Proportion of passages carrying a known prompt-injection attempt that the retrieval scanner
+  withheld from the narrative turn, measured on the labelled corpus described in the data
+  sheet. Reported together with the false-positive rate on benign passages, which is the only
+  way the figure can be read.
+
+kind: quantitative
+unit: ratio
+precision: 4
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Passages labelled as carrying an injection attempt that the scanner withheld, over all
+  passages so labelled. The denominator is the labelled set, not the set the scanner flagged:
+  the flagged-over-flagged form is precision, and it improves when a detector becomes shy.
+  Art. 15(5) requires resilience to inputs designed to cause the system to make a mistake; the
+  corpus is the input surface, so that is where it is measured.
+
+resolver:
+  kind: sql
+  query: ai_act/injection_block_rate.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - evaluation_report
+    - data_sheet
+  min_documents: 2
+  must_cover_period: false
+
+tolerance:
+  relative: 0.0001
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, security]

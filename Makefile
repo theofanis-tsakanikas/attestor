@@ -130,6 +130,10 @@ gateway-spec: ## Regenerate the MCP tool schema terraform configures the gateway
 regulatory-corpus: ## Regenerate the regulatory corpus from the contract set
 	$(PY) pipelines/ingest/regulatory.py
 
+.PHONY: evidence
+evidence: ## Regenerate lumen's measured evidence + digests (CI runs this with --check)
+	$(PY) -m attestor.cli.main evidence export
+
 .PHONY: govern-docs
 govern-docs: ## Regenerate the governance docs from code (CI runs this with --check)
 	$(PY) -m attestor.cli.main govern generate

@@ -1,0 +1,56 @@
+# The half of a robustness claim that gets left out, and the reason the block rate beside it
+# is worth reading.
+#
+# A detector that withholds every passage scores a perfect block rate. Publishing that number
+# alone is not dishonest by omission in some abstract sense — it is the specific omission that
+# makes the pair uninterpretable, which is why this contract exists at the same assurance level
+# rather than as a footnote.
+#
+# Zero here is a real result and not a trivial one: the benign passages are the ones a careless
+# detector fails. Against inert prose this figure would be zero and would mean nothing.
+id: AIACT_ANNEX-IV-2_injection_false_positive_rate
+version: 1
+standard: EU_AI_ACT
+standard_version: "Regulation (EU) 2024/1689, Annex IV"
+reference: Annex IV §2(g)
+title: False-positive rate of the input scanner on benign passages
+description: >-
+  Proportion of benign passages that the retrieval scanner nonetheless withheld from the
+  narrative turn, measured on the same labelled corpus as the block rate. A withheld benign
+  passage degrades the disclosure the control was meant to protect.
+
+kind: quantitative
+unit: ratio
+precision: 4
+period: point_in_time
+boundary: not_applicable
+methodology: >-
+  Passages labelled benign that the scanner withheld, over all passages so labelled. The
+  benign set is adversarial by construction — correspondence quoting an instruction, a
+  methodology note describing what the system must not do — because a false-positive rate
+  measured against unrelated text is not a measurement of anything.
+
+resolver:
+  kind: sql
+  query: ai_act/injection_false_positive_rate.sql
+  returns: scalar
+
+evidence:
+  required: true
+  classes:
+    - evaluation_report
+    - data_sheet
+  min_documents: 2
+  must_cover_period: false
+
+tolerance:
+  relative: 0.0001
+
+abstention:
+  allowed_reasons: []
+
+assurance:
+  level: limited
+  auditor_annex: true
+
+tags: [ai-act, security]
