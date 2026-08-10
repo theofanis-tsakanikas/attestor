@@ -27,6 +27,18 @@ jobs:
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
+    # On a push the action scans the commits it was handed. On a *pull request* it takes a
+    # different path — it asks the API which commits the PR contains — and the workflow-level
+    # `contents: read` does not cover that, so it exited 403 before scanning anything.
+    #
+    # It had never shown, because until branch protection landed there had never been a pull
+    # request: every change went straight to `main` and took the push path. So the first PR
+    # this repository ever opened found a secret scan that would have failed open on every
+    # subsequent one. Worth stating plainly — this is the gate that guards `main` against a
+    # committed credential, and on the path all future changes take it was not running.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,6 +46,10 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Read, not write. A finding must fail the build, which it does through the exit
+          # code; posting a comment about it would need write on every pull request, and a
+          # scanner that can write to a PR is more privilege than a scanner needs.
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   quality:
     name: lint and tests
