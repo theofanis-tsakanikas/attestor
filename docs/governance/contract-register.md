@@ -3,7 +3,7 @@
 
 # Contract register
 
-16 regulated datapoint(s), rendered from `contracts/`.
+18 regulated datapoint(s), rendered from `contracts/`.
 
 | datapoint | reference | kind | unit | resolver | evidence | lawful omissions |
 |---|---|---|---|---|---|---|
@@ -11,6 +11,8 @@
 | `AIACT_ANNEX-IV-2_error_rate` | Annex IV §2(g) | quantitative | ratio | derived | inherited | — |
 | `AIACT_ANNEX-IV-2_evaluation_accuracy` | Annex IV §2(g) | quantitative | ratio | sql | 2× {data_sheet, evaluation_report} | — |
 | `AIACT_ANNEX-IV-2_evaluation_set_size` | Annex IV §2(d) | quantitative | count | sql | 1× {data_sheet} | — |
+| `AIACT_ANNEX-IV-2_injection_block_rate` | Annex IV §2(g) | quantitative | ratio | sql | 2× {data_sheet, evaluation_report} | — |
+| `AIACT_ANNEX-IV-2_injection_false_positive_rate` | Annex IV §2(g) | quantitative | ratio | sql | 2× {data_sheet, evaluation_report} | — |
 | `AIACT_ANNEX-IV-3_human_oversight` | Annex IV §3, Article 14 | narrative | — | narrative | 1× {oversight_procedure} | — |
 | `AIACT_ANNEX-IV-8_serious_incidents` | Annex IV §8 | quantitative | count | sql | 1× {incident_log} | E_NOT_APPLICABLE |
 | `AIACT_ART-9_open_residual_risks` | Article 9(5) | quantitative | count | sql | 1× {risk_register_extract} | — |
