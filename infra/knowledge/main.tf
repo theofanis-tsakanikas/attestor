@@ -141,9 +141,10 @@ resource "aws_opensearchserverless_collection" "main" {
   name = local.collection
   type = "VECTORSEARCH"
 
-  # `standby_replicas` doubles capacity for availability this estate does not need. It is
-  # turned off for the build blocks and turned on for the capture run, which is the one place
-  # the production topology has to be the thing that was photographed.
+  # `standby_replicas` doubles billed capacity to buy cross-AZ availability. Off for a build
+  # block, because an estate that is rebuilt from this file in half an hour has no uptime to
+  # protect; on for a run that must stand up as a real deployment would. Declared per run
+  # rather than fixed here, so the topology is a decision somebody made.
   standby_replicas = var.production_topology ? "ENABLED" : "DISABLED"
 
   depends_on = [
