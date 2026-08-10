@@ -49,6 +49,7 @@ policy_app = typer.Typer(help="Cedar policies.")
 retrieval_app = typer.Typer(help="Retrieval engineering.")
 govern_app = typer.Typer(help="Generated governance documents.")
 gateway_app = typer.Typer(help="The MCP surface AgentCore Gateway exposes.")
+evidence_app = typer.Typer(help="Evidence a corpus holds, generated from the runs it describes.")
 
 app.add_typer(contracts_app, name="contracts")
 app.add_typer(gate_app, name="gate")
@@ -58,6 +59,7 @@ app.add_typer(policy_app, name="policy")
 app.add_typer(retrieval_app, name="retrieval")
 app.add_typer(govern_app, name="govern")
 app.add_typer(gateway_app, name="gateway")
+app.add_typer(evidence_app, name="evidence")
 
 console = Console()
 ROOT = Path.cwd()
@@ -486,6 +488,31 @@ def govern_generate(
             console.print(f"  stale: {name}")
         _fail("governance docs are out of date; run `make govern-docs`")
     _ok("governance docs in sync")
+
+
+# ── evidence ─────────────────────────────────────────────────────────────────
+
+
+@evidence_app.command("export")
+def evidence_export(
+    root: Path = typer.Option(ROOT, "--root"),
+    check: bool = typer.Option(False, "--check", help="Fail if the committed evidence is stale."),
+) -> None:
+    """Regenerate `lumen`'s measured evidence, and reconcile every declared digest."""
+    from attestor.evals import export  # noqa: PLC0415
+
+    stale = export.generate(root, check=check)
+    drifted = export.reconcile(root, check=check)
+    for name in [*stale, *drifted]:
+        console.print(f"  stale: {name}")
+    if stale or drifted:
+        _fail("evidence is out of date; run `make evidence`")
+    if unchecked := export.unverifiable(root):
+        # Not a failure. These are dumps of lake tables and their bytes are genuinely not
+        # here — but a corpus that reported six verified documents and stayed silent about
+        # the other two would be claiming more than it checked.
+        console.print(f"  digest unverifiable offline: {', '.join(unchecked)}")
+    _ok("evidence matches the runs it describes")
 
 
 # ── run ──────────────────────────────────────────────────────────────────────

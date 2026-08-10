@@ -72,6 +72,13 @@ jobs:
         # below becomes approximately true — which is the same as untrue.
         run: python pipelines/seed/generate.py --check
 
+      - name: the measured evidence is what the harnesses produce
+        # `lumen`'s evaluation report and data sheet are generated from the runs they
+        # describe, and every locally-stored document's `content_sha256` is reconciled
+        # against its bytes. Three of them digested to an earlier draft for as long as
+        # nothing compared the two.
+        run: attestor evidence export --check
+
       - name: every document carries the metadata retrieval filters on
         # Bedrock evaluates the tenant filter against attributes it reads from a sidecar file.
         # A document without one is a document no filtered query can ever reach.

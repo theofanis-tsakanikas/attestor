@@ -26,6 +26,7 @@ sources:
       - name: model_evaluation_confusion
       - name: risk_register
       - name: incident_log
+      - name: security_scan_result
 
 models:
   - name: stg_electricity_consumption
@@ -164,4 +165,25 @@ models:
       answered with a zero.
     columns:
       - name: tenant_id
+        tests: [not_null]
+
+  - name: stg_security_scan_result
+    description: >-
+      What the retrieval scanner decided about each labelled passage. The tests below are the
+      data contract: a label outside the vocabulary would silently leave the denominator of a
+      safety ratio, so it is quarantined rather than counted.
+    columns:
+      - name: tenant_id
+        tests: [not_null]
+      - name: example_id
+        tests: [not_null]
+      - name: true_label
+        tests:
+          - accepted_values:
+              values: ['manipulated', 'benign']
+      - name: predicted_label
+        tests:
+          - accepted_values:
+              values: ['withheld', 'admitted']
+      - name: corpus
         tests: [not_null]
