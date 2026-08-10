@@ -63,8 +63,15 @@ variable "production_topology" {
   type        = bool
   default     = false
   description = <<-EOT
-    Standby replicas double OpenSearch capacity. Off during build blocks, on for the capture
-    run — the screenshots should show the topology anyone would actually deploy.
+    Cross-AZ redundancy for the vector store, which doubles its billed capacity.
+
+    Off by default, and the default is a statement about this estate rather than about the
+    setting: it is ephemeral, it is rebuilt from this configuration in half an hour, and
+    redundancy protects availability that a run nobody depends on does not have. On for any
+    run that has to stand up the way a deployment serving real traffic would.
+
+    A variable rather than a constant so the topology is declared per run and visible in the
+    dispatch, instead of being whatever the last person left behind.
   EOT
 }
 
