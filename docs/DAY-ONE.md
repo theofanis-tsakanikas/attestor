@@ -11,7 +11,7 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 | ~~2~~ | ~~Service quotas~~ | **Not needed.** The defaults are three orders of magnitude above what this uses — see below | — | ☑ |
 | ~~3~~ | ~~Confirm AgentCore region availability~~ | **Done.** Verified available in `eu-central-1`, so the data plane and the agent plane stay in the same region and there is no residency split to document | — | ☑ |
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision. **Not a blocker** — checked, see below | minutes | ☐ |
-| ~~5~~ | ~~Bootstrap apply~~ | **Done.** 19 resources in `387229419515` / `eu-central-1`; the backend, the deploy role and `/attestor/bootstrap/*` all stand | — | ☑ |
+| ~~5~~ | ~~Bootstrap apply~~ | **Done.** 19 resources in `<account>` / `eu-central-1`; the backend, the deploy role and `/attestor/bootstrap/*` all stand | — | ☑ |
 | ~~6~~ | ~~GitHub Environments `deploy` and `destroy`~~ | **Done, without reviewers** — the plan does not allow them on a private repository. See the section below; this one is not merely ticked | — | ☑ |
 | ~~7~~ | ~~Two repository variables~~ | **Done.** `AWS_ACCOUNT_ID` and `AWS_REGION`. No secret | — | ☑ |
 | ~~8~~ | ~~Budget alert address confirmed~~ | **Nothing to confirm** — the row was wrong. See below | — | ☑ |
@@ -190,12 +190,12 @@ is real, and the choice is between a layer that is awkward to recover and one th
 to start.
 
 So the file is copied out of band instead, to
-`s3://attestor-tfstate-387229419515/bootstrap/terraform.tfstate.backup`, SSE-KMS under the
+`s3://attestor-tfstate-<account>/bootstrap/terraform.tfstate.backup`, SSE-KMS under the
 same key, in the versioned bucket. A copy is not a backend — nothing locks it and nothing
 keeps it current — so **re-upload it after any bootstrap apply**:
 
     aws s3 cp infra/bootstrap/terraform.tfstate \
-      s3://attestor-tfstate-387229419515/bootstrap/terraform.tfstate.backup \
+      s3://attestor-tfstate-<account>/bootstrap/terraform.tfstate.backup \
       --sse aws:kms --sse-kms-key-id "$(terraform -chdir=infra/bootstrap output -raw kms_key_arn)"
 
 A stale copy is still worth more than no copy: four resources to import by hand becomes a
@@ -267,7 +267,7 @@ second was not.
 
 ## Verified state of this account
 
-Checked read-only against `387229419515` / `eu-central-1`. Re-check rather than trust this
+Checked read-only against `<account>` / `eu-central-1`. Re-check rather than trust this
 table if time has passed — it is a snapshot, not a control.
 
 | What | State |
@@ -276,7 +276,7 @@ table if time has passed — it is a snapshot, not a control.
 | `eu.anthropic.claude-haiku-4-5-...` | **Ready.** Verified by a `converse` call against the exact profile id `infra/agent` pins |
 | Anthropic use-case form | **Submitted** |
 | AgentCore control plane | **Available** in `eu-central-1` |
-| State backend | `attestor-tfstate-387229419515`, versioned, SSE-KMS, public access blocked |
+| State backend | `attestor-tfstate-<account>`, versioned, SSE-KMS, public access blocked |
 | Lock table | `attestor-tfstate-locks`, PITR on |
 | Deploy role | `attestor-github-deploy`, trusting only `…:environment:deploy` and `…:environment:destroy` |
 | `/attestor/bootstrap/*` | Three parameters, read by both workflows before anything else |

@@ -20,9 +20,23 @@
 # output is a poor way to report one.
 
 : "${AWS_REGION:=eu-central-1}"
-: "${TF_STATE_BUCKET:=attestor-tfstate-387229419515}"
-: "${TF_LOCK_TABLE:=attestor-tflock}"
 export AWS_REGION
+
+# The backend, from the account rather than from this file. `infra/bootstrap` publishes these
+# to `/attestor/bootstrap/*` and every workflow reads them there; the deploy and destroy jobs
+# have done so from the start. This script used to carry the bucket name as a literal, which
+# made it the one place a rename would be missed — and, because the name embeds the account
+# id, the one place this repository stated which account it deploys into.
+_live_env_param() {
+  aws ssm get-parameter --name "/attestor/bootstrap/$1" \
+    --query 'Parameter.Value' --output text 2>/dev/null
+}
+: "${TF_STATE_BUCKET:=$(_live_env_param state_bucket)}"
+: "${TF_LOCK_TABLE:=$(_live_env_param lock_table)}"
+
+if [ -z "${TF_STATE_BUCKET:-}" ] || [ -z "${TF_LOCK_TABLE:-}" ]; then
+  echo "  cannot read /attestor/bootstrap/* — are you signed in to the right account?" >&2
+fi
 
 _live_env_output() {
   local layer="$1" name="$2" value
