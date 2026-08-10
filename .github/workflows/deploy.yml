@@ -33,7 +33,7 @@ on:
         options: [foundation, data, knowledge, agent, full]
         default: full
       production_topology:
-        description: OpenSearch standby replicas — on for the capture run only
+        description: OpenSearch cross-AZ redundancy (doubles vector-store cost)
         type: boolean
         default: false
 
