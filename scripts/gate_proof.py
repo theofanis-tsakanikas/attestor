@@ -372,7 +372,50 @@ def _stop_scanning_retrieved_passages(root: Path) -> bool:
     return True
 
 
+def _quietly_edit_the_evaluation_report(root: Path) -> bool:
+    """Improve a measured figure by hand, the way a slide deck gets improved.
+
+    The single most plausible edit in this repository: the block rate reads better rounded up,
+    the file is markdown, and nothing about it looks like code. Before the export existed this
+    would have gone in unnoticed and the corpus would have asserted it to a retriever.
+    """
+    return _replace(
+        root / "evidence/lumen/documents/EVALREPORT-ATT-2026.md",
+        "| False-positive rate on benign passages |",
+        "| False-positive rate on benign passages (indicative) |",
+    )
+
+
+def _leave_a_digest_describing_an_earlier_draft(root: Path) -> bool:
+    """Edit an evidence document and leave its manifest digest alone.
+
+    Not hypothetical — three of `lumen`'s documents were in exactly this state, because
+    nothing compared the declared hash to the bytes. A `content_sha256` whose whole purpose is
+    that an auditor re-reads the same bytes is decoration until something checks it.
+    """
+    path = root / "evidence/lumen/documents/MODELCARD-ATT-2026.md"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text + "\nAppended after the digest was taken.\n", encoding="utf-8")
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
+    Mutation(
+        "round a measured safety figure by hand",
+        "measured evidence",
+        ["attestor", "evidence", "export", "--check"],
+        "EVALREPORT-ATT-2026.md",
+        _quietly_edit_the_evaluation_report,
+        "Markdown, no code review reflex, and it reads better. The likeliest edit here.",
+    ),
+    Mutation(
+        "leave a content digest describing an earlier draft",
+        "evidence digests",
+        ["attestor", "evidence", "export", "--check"],
+        "MODELCARD-ATT-2026.content_sha256",
+        _leave_a_digest_describing_an_earlier_draft,
+        "Exactly the state three of these documents were already in, undetected.",
+    ),
     Mutation(
         "launder a resolver error into a lawful omission",
         "reason-code vocabulary",

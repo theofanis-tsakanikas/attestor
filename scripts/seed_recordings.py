@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import sys
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,31 @@ def configured_model() -> str:
 
 
 PERIOD = {"period_start": "2026-01-01", "period_end": "2027-01-01"}
+
+
+@functools.cache
+def _measured_injection() -> dict[str, Any]:
+    """Run the scanner over the labelled corpus and report what it did.
+
+    Cached, because it is read four times while `SCENARIOS` is built and the harness should
+    run once per process — and because two calls returning different numbers would make the
+    block rate and the row count describe different runs.
+    """
+    from attestor.security import harness  # noqa: PLC0415
+
+    score = harness.run(ROOT / "evals" / "injection" / "corpus.yaml")
+    poisoned, benign = len(score.poisoned), len(score.benign)
+    return {
+        "block_rate": f"{score.blocked / poisoned:.4f}",
+        "false_positive_rate": f"{len(score.false_positives) / benign:.4f}",
+        "labelled": poisoned + benign,
+    }
+
+
+#: Recorded values that are measurements rather than targets, per tenant.
+MEASURED: dict[str, set[str]] = {
+    "lumen": {"ai_act/injection_block_rate.sql", "ai_act/injection_false_positive_rate.sql"}
+}
 
 # Per tenant: query path -> the recorded answer. `None` means "the query matched no rows",
 # which the resolver treats as an evidence problem rather than as zero.
@@ -99,6 +125,26 @@ SCENARIOS: dict[str, dict[str, dict[str, Any]]] = {
     # The AI Act tenant. Its documented system is Attestor itself, so these figures stand in
     # for this repository's own evaluation run until the estate captures a real one.
     "lumen": {
+        # The two robustness figures are the only recorded values in this file that are not
+        # typed here. Every other scenario names a target and `pipelines/seed` builds rows
+        # that reach it — correct for a lake standing in for an undertaking's ERP.
+        #
+        # These describe *this* system, so a typed target would make the disclosure a claim
+        # about itself. `_measured_injection()` runs the scanner over the labelled corpus and
+        # the ratio it returns is what gets recorded. Weaken the detector and this file
+        # changes; `--check` then fails and the Annex IV figures go red with it, which is the
+        # behaviour a robustness disclosure is supposed to have.
+        "ai_act/injection_block_rate.sql": {
+            "value": _measured_injection()["block_rate"],
+            "tables": ["gold.security_scan_result"],
+            "snapshot_ids": {"gold.security_scan_result": "3319419023871123005"},
+            "row_counts": {"gold.security_scan_result": _measured_injection()["labelled"]},
+        },
+        "ai_act/injection_false_positive_rate.sql": {
+            "value": _measured_injection()["false_positive_rate"],
+            "tables": ["gold.security_scan_result"],
+            "snapshot_ids": {"gold.security_scan_result": "3319419023871123005"},
+        },
         "ai_act/evaluation_accuracy.sql": {
             "value": "0.9412",
             "tables": ["gold.model_evaluation_prediction"],
@@ -448,15 +494,28 @@ def build(tenant: str, scenario: dict[str, dict[str, Any]]) -> dict[str, Any]:
                 **recorded,
             }
         )
+    measured = sorted(MEASURED.get(tenant, ()))
+    note = (
+        "Shaped by hand to exercise the resolver's branches. Re-captured against the "
+        "live estate by `python scripts/seed_recordings.py --capture`, which stamps "
+        "provenance with the run id."
+    )
+    if measured:
+        # A file-level `provenance: synthetic` would now be wrong about part of its own
+        # contents, and "mostly synthetic" is the kind of qualifier that stops being read.
+        # Naming the exceptions is cheaper than a per-result field, which every consumer of
+        # a recording would have to learn about to ignore.
+        note += (
+            " Two results are not shaped: "
+            + ", ".join(measured)
+            + " are computed by running the scanner over `evals/injection/corpus.yaml`, so a "
+            "change in the detector rewrites them and `--check` demands the re-record."
+        )
     return {
         "tenant": tenant,
         "period": "2026",
-        "provenance": "synthetic",
-        "note": (
-            "Shaped by hand to exercise the resolver's branches. Re-captured against the "
-            "live estate by `python scripts/seed_recordings.py --capture`, which stamps "
-            "provenance with the run id."
-        ),
+        "provenance": "synthetic" if not measured else "synthetic+measured",
+        "note": note,
         "results": results,
     }
 

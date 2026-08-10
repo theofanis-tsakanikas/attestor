@@ -221,6 +221,36 @@ def ledger(tenant: str, target_meur: Decimal) -> list[dict[str, Any]]:
     ]
 
 
+def scan_results(tenant: str) -> list[dict[str, Any]]:
+    """One row per labelled passage, carrying what the scanner actually decided about it.
+
+    Every other stream in this file is built backwards: a recording names the answer and the
+    generator shapes rows that produce it. That is right for a lake standing in for an
+    undertaking's ERP, where the point is to exercise the resolver's branches.
+
+    It would be wrong here. These rows describe *this system's* robustness, and a set built to
+    hit a chosen block rate would make the resulting disclosure a number about itself. So the
+    real scanner runs over the real labelled corpus and the outcome is written down — which
+    means a regression in the detector does not quietly reshape the seed, it fails
+    `--check` and takes the Annex IV figures red with it.
+    """
+    from attestor.security import harness  # noqa: PLC0415 — only the lumen branch needs it
+
+    score = harness.run(ROOT / "evals" / "injection" / "corpus.yaml")
+    return [
+        {
+            "tenant_id": tenant,
+            "assessed_at": "2026-06-30",
+            "example_id": outcome.case.id,
+            "corpus": "injection",
+            "true_label": "manipulated" if outcome.case.poisoned else "benign",
+            "predicted_label": "withheld" if outcome.detected else "admitted",
+            "dq_status": "clean",
+        }
+        for outcome in sorted(score.outcomes, key=lambda outcome: outcome.case.id)
+    ]
+
+
 def evaluation(tenant: str, accuracy: Decimal, size: int) -> tuple[list[dict], list[dict]]:
     """Predictions whose accuracy is exactly the recorded ratio, and a matching matrix."""
     correct = int((accuracy * size).to_integral_value(rounding=ROUND_HALF_EVEN))
@@ -349,6 +379,7 @@ def build(tenant: str) -> dict[str, list[dict[str, Any]]]:
             }
         ]
         tables["incident_log"] = []
+        tables["security_scan_result"] = scan_results(tenant)
 
     return tables
 
@@ -408,6 +439,15 @@ def verify(tenant: str, tables: dict[str, list[dict[str, Any]]]) -> list[str]:
         check("ai_act/open_residual_risks.sql", Decimal(len(rows)))
     if "incident_log" in tables:
         check("ai_act/serious_incidents.sql", Decimal(len(clean(tables["incident_log"]))))
+    if "security_scan_result" in tables:
+        rows = clean(tables["security_scan_result"], corpus="injection")
+        for reason, truth in (("block_rate", "manipulated"), ("false_positive_rate", "benign")):
+            labelled = [r for r in rows if r["true_label"] == truth]
+            withheld = sum(1 for r in labelled if r["predicted_label"] == "withheld")
+            check(
+                f"ai_act/injection_{reason}.sql",
+                (Decimal(withheld) / Decimal(len(labelled))).quantize(Decimal("0.0001")),
+            )
 
     return problems
 

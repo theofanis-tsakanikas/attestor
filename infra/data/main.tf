@@ -238,6 +238,17 @@ resource "aws_glue_catalog_table" "raw" {
       { name = "classification", type = "string" },
       { name = "dq_status", type = "string" },
     ]
+    # One row per labelled passage the retrieval scanner judged. The only stream in this lake
+    # whose rows are a measurement of this system rather than a stand-in for a client's ERP
+    # extract — `pipelines/seed` runs the scanner and writes what it decided.
+    security_scan_result = [
+      { name = "assessed_at", type = "string" },
+      { name = "example_id", type = "string" },
+      { name = "corpus", type = "string" },
+      { name = "true_label", type = "string" },
+      { name = "predicted_label", type = "string" },
+      { name = "dq_status", type = "string" },
+    ]
   }
 
   name          = each.key

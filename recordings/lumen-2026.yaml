@@ -1,10 +1,36 @@
 tenant: lumen
 period: '2026'
-provenance: synthetic
-note: Shaped by hand to exercise the resolver's branches. Re-captured against the
+provenance: synthetic+measured
+note: 'Shaped by hand to exercise the resolver''s branches. Re-captured against the
   live estate by `python scripts/seed_recordings.py --capture`, which stamps provenance
-  with the run id.
+  with the run id. Two results are not shaped: ai_act/injection_block_rate.sql, ai_act/injection_false_positive_rate.sql
+  are computed by running the scanner over `evals/injection/corpus.yaml`, so a change
+  in the detector rewrites them and `--check` demands the re-record.'
 results:
+- query: ai_act/injection_block_rate.sql
+  query_digest: 2ebaf852ca1937d0c43edc305ae3bcf713bf7f5a0431d9a8d9440c2a3ddc3341
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '1.0000'
+  tables:
+  - gold.security_scan_result
+  snapshot_ids:
+    gold.security_scan_result: '3319419023871123005'
+  row_counts:
+    gold.security_scan_result: 27
+- query: ai_act/injection_false_positive_rate.sql
+  query_digest: a25fdc76ee09032ee36e49543a75b6fef9c44d5d831682dcdd67fa84707ee396
+  parameters:
+    tenant_id: lumen
+    period_start: '2026-01-01'
+    period_end: '2027-01-01'
+  value: '0.0000'
+  tables:
+  - gold.security_scan_result
+  snapshot_ids:
+    gold.security_scan_result: '3319419023871123005'
 - query: ai_act/evaluation_accuracy.sql
   query_digest: 25497e076be552c571d0c6fa3100fbd8d2cdbf262e6945778cb66791e975869f
   parameters:
