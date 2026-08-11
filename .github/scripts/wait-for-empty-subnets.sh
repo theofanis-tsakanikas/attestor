@@ -3,15 +3,22 @@
 #
 # AgentCore puts network interfaces into the subnets it is given and takes them back on its
 # own schedule — minutes after the runtime, the gateways and the memories all report deleted.
-# They are `ela-attach` interfaces whose attachment is owned by `amazon-aws`. What they can do
-# is hold a subnet open, and `DeleteSubnet` answers `DependencyViolation` for as long as they
-# do — and behind the subnet sit the route table and the NAT gateway, so one of these bills
-# money for as long as it is forgotten.
+# They are `ela-attach` interfaces whose attachment is owned by `amazon-aws`: the account that
+# created them cannot detach them and cannot delete them, and that holds whether or not
+# AgentCore still has anything left. Tried, on a teardown where the service reported no
+# runtimes, no gateways and no memories:
 #
-# This file used to state that they can neither be detached nor deleted. That is true while
-# AgentCore still owns them and false once it does not: with the service holding nothing, a
-# forced detach and a delete both succeed. The distinction is made below by asking the service
-# rather than by assuming either way.
+#   DetachNetworkInterface  OperationNotPermitted    not allowed to manage 'ela-attach'
+#   DeleteNetworkInterface  InvalidParameterValue    interface is currently in use
+#
+# A dry run says both would succeed, which is worth knowing about dry runs: `--dry-run` answers
+# the authorisation question and nothing else. The deploy role is permitted; the operation is
+# refused anyway.
+#
+# What they can do is hold a subnet open, and `DeleteSubnet` answers `DependencyViolation` for
+# as long as they do. Behind the subnet sit the route table and the NAT gateway, so Terraform
+# spends the whole run on the three resources in front of the blockage and never reaches the
+# one that costs money. Waiting is the only remedy this script has.
 #
 # The AWS provider retries that for about forty minutes and then fails the run, which is the
 # worst of both: the wait happened anyway, and the estate is still there at the end of it.
@@ -53,37 +60,6 @@ agentcore_holds_nothing() {
         --output text 2>/dev/null || echo 1)" = "0" ]
 }
 
-# Only interfaces of AgentCore's own type, only inside the subnets this state file owns, and
-# only once the service has nothing left that could claim them.
-#
-# Observed on 11 August 2026: every AgentCore resource in the account reported deleted and two
-# `agentic_ai` interfaces stayed `in-use` for over two hours across three teardowns. Nothing
-# was coming back for them. They are not slow, they are orphaned — and they hold the private
-# subnets, which hold the route table, which holds the NAT gateway. Terraform never even
-# reached the NAT: it spent every run failing on the three resources in front of it.
-#
-# One forgotten interface bills a NAT gateway until somebody looks.
-reclaim_orphans() {
-  local orphans eni attachment
-  orphans=$(aws ec2 describe-network-interfaces \
-    --filters "Name=subnet-id,Values=$subnets" "Name=interface-type,Values=agentic_ai" \
-    --query 'NetworkInterfaces[].NetworkInterfaceId' --output text)
-  [ -n "$orphans" ] || return 1
-
-  for eni in $orphans; do
-    echo "  AgentCore holds nothing; reclaiming orphaned $eni"
-    attachment=$(aws ec2 describe-network-interfaces --network-interface-ids "$eni" \
-      --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)
-    if [ -n "$attachment" ] && [ "$attachment" != "None" ]; then
-      aws ec2 detach-network-interface --attachment-id "$attachment" --force 2>&1 |
-        sed 's/^/    detach: /' || true
-      sleep 15
-    fi
-    aws ec2 delete-network-interface --network-interface-id "$eni" 2>&1 |
-      sed 's/^/    delete: /' || true
-  done
-}
-
 waited=0
 while [ "$waited" -lt "$DEADLINE_SECONDS" ]; do
   remaining=$(aws ec2 describe-network-interfaces \
@@ -100,16 +76,15 @@ while [ "$waited" -lt "$DEADLINE_SECONDS" ]; do
     --query 'NetworkInterfaces[].[NetworkInterfaceId,InterfaceType,Status]' --output text |
     sed 's/^/    still attached: /'
 
-  # Past the grace period, and the service that made them has nothing left. Waiting out the
-  # full deadline here would be waiting for something that is not coming.
-  if [ "$waited" -ge "$GRACE_SECONDS" ] && agentcore_holds_nothing && reclaim_orphans; then
-    remaining=$(aws ec2 describe-network-interfaces \
-      --filters "Name=subnet-id,Values=$subnets" \
-      --query 'length(NetworkInterfaces)' --output text)
-    if [ "$remaining" = "0" ]; then
-      echo "  subnets are empty after reclaiming"
-      exit 0
-    fi
+  # Past the grace period with the service holding nothing, the remaining time is spent
+  # waiting for an owner that no longer exists. Nothing here can shorten that wait — the
+  # interfaces are not ours to remove — but it can stop pretending the deadline is the
+  # question. Say so once, and stop, so the failure arrives in minutes rather than in an hour.
+  if [ "$waited" -ge "$GRACE_SECONDS" ] && agentcore_holds_nothing; then
+    echo "  AgentCore holds no runtime, gateway or memory, and these interfaces are still" >&2
+    echo "  attached. They are 'ela-attach' and cannot be detached or deleted by this" >&2
+    echo "  account; AWS releases them on its own schedule. Re-run the teardown later." >&2
+    break
   fi
 
   sleep "$INTERVAL_SECONDS"

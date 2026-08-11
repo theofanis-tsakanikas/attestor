@@ -51,6 +51,11 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/attestor-github-deploy
           aws-region: ${{ vars.AWS_REGION }}
+          # The default session is an hour, and a teardown can run longer than that: this one
+          # waits on AgentCore's network interfaces before it may delete a subnet. Destroy
+          # 31492173599 spent its wait and then answered `RequestExpired` to everything after
+          # it — a failure that looks like an AWS problem and is a clock.
+          role-duration-seconds: 10800
 
       - name: resolve the backend from the account
         # Everything except the account id is a consequence of names `infra/bootstrap`
