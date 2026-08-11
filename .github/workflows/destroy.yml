@@ -222,12 +222,26 @@ jobs:
 
           # 2. The three line items that would actually cost money if Terraform ever lost track
           #    of one. Asked of the services that own them, because those answer with the truth.
+          #
+          #    Scoped to this project, and that is not tidiness. Two of these three used to ask
+          #    the account rather than the estate: every NAT gateway, every interface endpoint,
+          #    whoever owned them. This account now runs other projects — twenty-nine endpoints
+          #    across two VPCs belonging to one of them — so the check would have reported a
+          #    teardown as failed on somebody else's resources, every single time, for as long
+          #    as those resources exist.
+          #
+          #    The comment three paragraphs down already argues that failing on something the
+          #    teardown does not own teaches people to ignore a red destroy, and that the cost
+          #    of that is not the noise but the day it is right and nobody believes it. That
+          #    argument applied here and the code did not follow it.
           collections=$(aws opensearchserverless list-collections \
             --query 'collectionSummaries[?starts_with(name, `attestor`)].name' --output text)
           nats=$(aws ec2 describe-nat-gateways \
             --filter Name=state,Values=available,pending \
+            --filter Name=tag:attestor:layer,Values=foundation \
             --query 'NatGateways[].NatGatewayId' --output text)
           endpoints=$(aws ec2 describe-vpc-endpoints \
+            --filters Name=tag:attestor:layer,Values=foundation \
             --query 'VpcEndpoints[?VpcEndpointType==`Interface`].VpcEndpointId' --output text)
           for label in "collections:$collections" "nat gateways:$nats" "vpc endpoints:$endpoints"; do
             values="${label#*:}"
