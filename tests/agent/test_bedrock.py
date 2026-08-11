@@ -39,15 +39,23 @@ GOOD = {
 
 
 class StubConverse:
-    def __init__(self, body: str, *, stop: str = "end_turn") -> None:
-        self.body = body
+    def __init__(self, *bodies: str, stop: str = "end_turn") -> None:
+        #: One body per attempt, and the last one repeats. A single body — the common case —
+        #: behaves exactly as before; several let a test drive the retry loop through real
+        #: refusals rather than around it.
+        self.bodies = bodies
         self.stop = stop
         self.calls: list[dict] = []
 
+    @property
+    def body(self) -> str:
+        return self.bodies[min(len(self.calls), len(self.bodies)) - 1]
+
     def converse(self, **kwargs):
+        body = self.bodies[min(len(self.calls), len(self.bodies) - 1)]
         self.calls.append(kwargs)
         return {
-            "output": {"message": {"content": [{"text": self.body}]}},
+            "output": {"message": {"content": [{"text": body}]}},
             "stopReason": self.stop,
             "usage": {"inputTokens": 900, "outputTokens": 210},
         }
@@ -264,8 +272,17 @@ def test_the_placeholder_list_goes_in_the_system_turn_not_beside_the_evidence(
         )
 
 
-def test_without_placeholders_the_system_turn_is_the_prompt_unchanged(repo_root, contract) -> None:
-    """The recorded backend digests the prompt file; appending to it invisibly would drift."""
+def test_the_system_turn_opens_with_the_prompt_file(repo_root, contract) -> None:
+    """The recorded backend digests the prompt file; rewriting it here would drift.
+
+    This used to assert byte equality. That was the right guard against *editing* the prompt
+    in code, and it also forbade telling the model the thresholds it is judged against — which
+    is why `max_words` sat in the prompt's frontmatter, unread by anything, while two
+    consecutive deploys lost a datapoint to a draft that ran long.
+
+    So the guard moves rather than goes: the file is still the opening of the turn, verbatim,
+    and everything after it is derived from the contract. Nothing here paraphrases a prompt.
+    """
     client = StubConverse(json.dumps(GOOD))
     provider = _provider(repo_root, client)
     assert provider.placeholder_ids == ()
@@ -273,8 +290,48 @@ def test_without_placeholders_the_system_turn_is_the_prompt_unchanged(repo_root,
     provider(contract, CONTEXT)
 
     system = " ".join(block["text"] for block in client.calls[0]["system"])
-    assert system == (repo_root / "prompts" / f"{contract.resolver.prompt_id}.md").read_text(
-        encoding="utf-8"
+    assert system.startswith(
+        (repo_root / "prompts" / f"{contract.resolver.prompt_id}.md").read_text(encoding="utf-8")
+    )
+
+
+def test_the_model_is_told_the_thresholds_it_is_judged_against(repo_root, contract) -> None:
+    """Read from the contract, not typed here.
+
+    A threshold repeated in the prompt is a threshold that drifts from the one enforced, and
+    the model then learns the wrong bar with everything still green.
+    """
+    client = StubConverse(json.dumps(GOOD))
+    provider = _provider(repo_root, client)
+
+    provider(contract, CONTEXT)
+
+    system = " ".join(block["text"] for block in client.calls[0]["system"])
+    assert str(contract.resolver.max_words) in system
+    assert str(contract.resolver.grounding.min_citations) in system
+
+
+def test_a_refused_attempt_tells_the_next_one_what_it_broke(repo_root, contract) -> None:
+    """Three identical prompts are three draws, not a retry.
+
+    Deploy 31463497574 drafted 470, then 458, then 421 words against a ceiling of 400 and was
+    refused three times. The model was converging by luck because nothing told it what had
+    gone wrong — and the run cost a tenant its report.
+    """
+    long_draft = dict(GOOD, narrative=" ".join(["word"] * 900) + " [ev:aaaa] [ev:bbbb] [ev:cccc]")
+    client = StubConverse(json.dumps(long_draft), json.dumps(long_draft), json.dumps(GOOD))
+    provider = _provider(repo_root, client)
+
+    provider(contract, CONTEXT)
+
+    first = " ".join(block["text"] for block in client.calls[0]["system"])
+    second = " ".join(block["text"] for block in client.calls[1]["system"])
+
+    assert "previous attempt was refused" not in first
+    assert "previous attempt was refused" in second
+    assert "exceeds the contract" in second, "the reason has to be the measured one"
+    assert "no requirement has been relaxed" in second, (
+        "a retry that reads as permission to try easier is the softening this module refuses"
     )
 
 
