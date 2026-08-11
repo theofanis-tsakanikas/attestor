@@ -6,6 +6,9 @@
 
 > **Attestor** — *one who attests*. The auditor's word, applied to an AI system.
 
+> The undertakings are invented and every figure is synthetic — see
+> [DISCLAIMER.md](DISCLAIMER.md). The two exceptions are named there, and they are the point.
+
 ---
 
 > **Status: ready to deploy, not deployed.** `make preflight` runs 23 checks — every claim
