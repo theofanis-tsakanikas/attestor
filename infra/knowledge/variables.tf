@@ -63,7 +63,8 @@ variable "production_topology" {
   type        = bool
   default     = false
   description = <<-EOT
-    Cross-AZ redundancy for the vector store, which doubles its billed capacity.
+    Cross-AZ redundancy for the vector store. It takes the collection's OCU floor from
+    2 (1 indexing, 1 search) to 4, and OCU-hours are almost the whole bill.
 
     Off by default, and the default is a statement about this estate rather than about the
     setting: it is ephemeral, it is rebuilt from this configuration in half an hour, and
