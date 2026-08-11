@@ -55,6 +55,21 @@ jobs:
     # The same gates a pull request runs, re-run on the exact ref being deployed. A green
     # check on a branch is not evidence about the commit somebody typed into a dispatch box.
     uses: ./.github/workflows/ci.yml
+    # A called workflow cannot ask for a permission its caller does not hold, and the token is
+    # built before any job exists — so exceeding the grant is not a failed job, it is
+    # `startup_failure` with no jobs, no logs and no annotation to read.
+    #
+    # `ci.yml`'s secret scan needs `pull-requests: read` on the `pull_request` path, where
+    # gitleaks asks the API which commits a PR contains. On this path the event is
+    # `workflow_dispatch` and it never makes that call, but permissions are static: the grant
+    # has to cover the widest thing the called workflow might do.
+    #
+    # Declared here rather than at the top of this file, so the deploy's own jobs — the ones
+    # holding `id-token: write` against a role that can build the estate — keep the narrower
+    # grant they had.
+    permissions:
+      contents: read
+      pull-requests: read
 
   deploy:
     needs: validate
