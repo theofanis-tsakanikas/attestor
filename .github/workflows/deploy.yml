@@ -33,7 +33,7 @@ on:
         options: [foundation, data, knowledge, agent, full]
         default: full
       production_topology:
-        description: OpenSearch cross-AZ redundancy (doubles vector-store cost)
+        description: OpenSearch cross-AZ redundancy — doubles the OCU floor, 2 to 4
         type: boolean
         default: false
 

@@ -141,7 +141,7 @@ resource "aws_opensearchserverless_collection" "main" {
   name = local.collection
   type = "VECTORSEARCH"
 
-  # `standby_replicas` doubles billed capacity to buy cross-AZ availability. Off for a build
+  # `standby_replicas` takes the OCU floor from 2 to 4 to buy cross-AZ availability. Off for a build
   # block, because an estate that is rebuilt from this file in half an hour has no uptime to
   # protect; on for a run that must stand up as a real deployment would. Declared per run
   # rather than fixed here, so the topology is a decision somebody made.

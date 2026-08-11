@@ -162,13 +162,26 @@ The plan is the place to find this out, not the invoice. `infra/foundation` alon
 | 1 NAT gateway | ~€35/mo plus data processing |
 | KMS, S3, SNS, Lambda, CloudWatch at this volume | a few euro |
 
-OpenSearch Serverless, in `infra/knowledge`, is the one that dominates everything: its floor
-is 2 OCU for indexing and 2 for search, which is roughly **€600–700 a month** — about €20 a
-day. `production_topology = true` doubles it, which is why it defaults to off and is meant to
-be on only for the capture run.
+OpenSearch Serverless, in `infra/knowledge`, is the one that dominates everything, and its
+floor depends on `production_topology`:
 
-So a `full` estate costs on the order of **€25 a day**, and the 300 USD budget's first alert
-fires at 60% — around €180. Twelve days of a standing `full` estate reaches it. That is the
+| `production_topology` | `standby_replicas` | OCU floor | Roughly |
+|---|---|---|---|
+| `false` (default) | `DISABLED` | 1 indexing + 1 search = **2** | ~$11/day |
+| `true` | `ENABLED` | 2 indexing + 2 search = **4** | ~$23/day |
+
+Halving that floor is the entire reason AWS offers the switch: a collection without standby
+replicas cannot survive the loss of an availability zone, and an estate rebuilt from this
+configuration in half an hour has no uptime that redundancy protects.
+
+This table used to read `2 OCU for indexing and 2 for search` as the *default* floor and then
+say the flag doubled it — which described the redundant configuration as the baseline and then
+doubled it again. The billing disagreed: three days of bounded blocks cost $0.62, $3.39 and
+$4.09, and $4.09 is about eight hours at two OCUs, not at four.
+
+So a `full` estate costs on the order of **$13–15 a day** with the default topology, and the
+300 USD budget's first alert fires at 60% — around $180. Roughly a fortnight of a standing
+`full` estate reaches it; half that with redundancy on. That is the
 arithmetic behind "OpenSearch lives in deliberate, bounded blocks", stated as a number
 rather than as a principle, and it is the reason the `days` input has no default.
 
