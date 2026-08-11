@@ -1,0 +1,33 @@
+# What the secret scan looks for, beyond the defaults.
+#
+# `useDefault` matters: this file *adds* to gitleaks' built-in rule set rather than replacing
+# it. A config that silently narrowed the scan to one custom rule would turn the strictest
+# gate in this repository into the weakest, and it would still report PASS.
+
+[extend]
+useDefault = true
+
+# ── AWS account id ───────────────────────────────────────────────────────────
+#
+# Not a credential, and this rule does not pretend otherwise: an account id appears in every
+# ARN shared in a support ticket and in every cross-account trust policy. The boundary is the
+# OIDC trust policy, scoped to one repository and one environment.
+#
+# It is here because CLAUDE.md says this repository does not commit real account ids, and
+# for a while it did — `docs/DAY-ONE.md` in five places and `scripts/live-env.sh` as the
+# default state-bucket name, which embeds it. Nothing caught that, because gitleaks' default
+# rules look for credentials and an account id is not one. A rule the repository writes down
+# and does not enforce is a rule it will break again.
+#
+# Twelve bare digits, because that is the shape and because there is nothing else in this
+# tree shaped like it: one match across the whole repository, and it is the placeholder AWS
+# uses in its own documentation. Snapshot ids are nineteen digits and do not collide.
+[[rules]]
+id = "aws-account-id"
+description = "A twelve-digit AWS account id. CLAUDE.md says we do not commit these."
+regex = '''\b\d{12}\b'''
+tags = ["aws", "policy"]
+
+[rules.allowlist]
+description = "The account id AWS uses throughout its own documentation. Means nothing."
+regexes = ['''\b123456789012\b''']
