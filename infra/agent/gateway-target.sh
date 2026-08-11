@@ -75,6 +75,36 @@ case "$action" in
         --target-configuration "$payload" \
         --credential-provider-configurations "$credentials" >/dev/null
     fi
+
+    # Wait for the gateway to agree that the target is ready.
+    #
+    # `create-gateway-target` returns while the target is still `CREATING`, and the next thing
+    # Terraform does is create the Cedar policies. `CreatePolicy` validates every action name
+    # in a statement against the gateway, so a policy naming
+    # `attestor-tools___request_override` seconds after the call lands in CREATE_FAILED with
+    # `unrecognized action` — and the whole apply stops at step 19.
+    #
+    # The resource already carried `depends_on = [null_resource.gateway_target]` and a comment
+    # describing exactly this. The dependency was right and insufficient: Terraform waited for
+    # the script, and the script was not waiting for AWS. It only showed on a genuinely empty
+    # agent layer, because every other run found a target already attached from before and
+    # took the update path with the actions long since registered.
+    #
+    # Polling rather than sleeping, for the reason the detach path gives: the condition is
+    # observable, so a fixed sleep would be a guess that is too short on a bad day and wasted
+    # on every good one.
+    for _ in $(seq 1 60); do
+      status=$(aws bedrock-agentcore-control list-gateway-targets \
+        --gateway-identifier "$gateway_id" --region "$region" \
+        --query "items[?name=='$name'].status | [0]" --output text 2>/dev/null || echo UNKNOWN)
+      case "$status" in
+        READY) echo "  target on $gateway_id is READY"; break ;;
+        CREATE_FAILED|UPDATE_FAILED)
+          echo "  target on $gateway_id reports $status" >&2; exit 1 ;;
+        *) echo "  $gateway_id target is $status" ;;
+      esac
+      sleep 5
+    done
     ;;
 
   detach)
