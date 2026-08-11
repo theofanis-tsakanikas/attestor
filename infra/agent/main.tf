@@ -1173,3 +1173,72 @@ resource "aws_iam_role_policy" "runtime" {
     ]
   })
 }
+
+# ── Lake Formation ───────────────────────────────────────────────────────────
+#
+# This account's Data Catalog is governed by Lake Formation: `CreateDatabaseDefaultPermissions`
+# and `CreateTableDefaultPermissions` are both empty, which is the setting that removes
+# `IAM_ALLOWED_PRINCIPALS` and makes an IAM policy insufficient on its own. It was not set by
+# this project — the data lake admins are two roles belonging to others in the same account —
+# and it is not ours to change back, because that setting is account-wide and other people's
+# tables depend on it.
+#
+# What hid it is worth naming, because it will hide the next one too. The principal that
+# creates a catalog resource receives every Lake Formation permission on it, with the grant
+# option. So `attestor-github-deploy` builds the tables and can read them; `attestor run` and
+# `verify_live_estate.py` both run as that role and passed 32/32; and the two roles that never
+# created anything — the tools Lambda and the AgentCore Runtime — got `Insufficient Lake
+# Formation permissions` from Athena the first time the agent surface was asked for a figure.
+# A deploy can be green on every check that matters and still have an agent that cannot read.
+#
+# Additive only. Every statement below names this project's roles and this project's databases.
+locals {
+  # `gold` is what the resolver's SQL qualifies with. `ref` is dbt's custom-schema convention,
+  # `<database>_ref`, and five queries join it for emission factors, category screening and the
+  # chart of accounts — so a datapoint reached through the agent needs both.
+  lakeformation_readers = {
+    tools   = aws_iam_role.tools.arn
+    runtime = aws_iam_role.runtime.arn
+  }
+
+  # `ref` does not exist on the first apply: dbt creates it, and dbt runs between the two agent
+  # applies. Granting on a database that is not there yet fails, so the reference schema waits
+  # for the same flag the runtime waits for.
+  lakeformation_databases = concat(
+    ["${var.project}_gold"],
+    var.deploy_runtime ? ["${var.project}_gold_ref"] : [],
+  )
+
+  lakeformation_grants = {
+    for pair in setproduct(keys(local.lakeformation_readers), local.lakeformation_databases) :
+    "${pair[0]}:${pair[1]}" => { principal = local.lakeformation_readers[pair[0]], database = pair[1] }
+  }
+}
+
+# Seeing the database at all. Without it Athena reports the table as not found rather than as
+# forbidden, which sends the next person reading the log to the wrong layer entirely.
+resource "aws_lakeformation_permissions" "database" {
+  for_each = local.lakeformation_grants
+
+  principal   = each.value.principal
+  permissions = ["DESCRIBE"]
+
+  database {
+    name = each.value.database
+  }
+}
+
+# Reading the tables. `wildcard` rather than a list: dbt adds tables to these databases after
+# this layer applies, and a grant that enumerates them is a list that falls behind — which is
+# the failure this repository has already had once today, in `athena.sh`.
+resource "aws_lakeformation_permissions" "tables" {
+  for_each = local.lakeformation_grants
+
+  principal   = each.value.principal
+  permissions = ["SELECT", "DESCRIBE"]
+
+  table {
+    database_name = each.value.database
+    wildcard      = true
+  }
+}
