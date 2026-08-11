@@ -150,6 +150,14 @@ CHECKS: list[Check] = [
         "programs and every claim above is only approximately true.",
     ),
     Check(
+        "deployability",
+        "workflow permissions",
+        [PYTHON, "scripts/check_workflow_permissions.py"],
+        "A called workflow cannot exceed its caller's grant, and the token is built before "
+        "any job exists — so the failure is `startup_failure` with no logs to read. It cost "
+        "a deploy to find out.",
+    ),
+    Check(
         "consistency",
         "measured evidence",
         [PYTHON, "-m", "attestor.cli.main", "evidence", "export", "--check"],
