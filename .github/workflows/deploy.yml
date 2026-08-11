@@ -91,7 +91,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/attestor-github-deploy
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/attestor-github-deploy
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: resolve the backend from the account
