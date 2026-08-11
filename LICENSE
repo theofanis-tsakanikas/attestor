@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This licence covers the code. It is not advice, and the documents this system
-produces are not filings.
-
-Attestor demonstrates how CSRD/ESRS and EU AI Act Annex IV reporting can be made
-verifiable. The three tenants are invented, every figure in the lake is synthetic,
-and no output has been reviewed by an assurance provider. Nothing here should be
-submitted to a regulator or an auditor as though it were a real disclosure.
