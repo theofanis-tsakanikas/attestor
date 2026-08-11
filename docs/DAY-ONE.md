@@ -13,7 +13,7 @@ and initialled when it is done, so "who turned this on" has an answer a year fro
 | 4 | **External OIDC application** for `lumen` — register the app, note issuer, audience and groups claim | The tenant's identity provider is not ours to provision. **Not a blocker** — checked, see below | minutes | ☐ |
 | ~~5~~ | ~~Bootstrap apply~~ | **Done.** 19 resources in `<account>` / `eu-central-1`; the backend, the deploy role and `/attestor/bootstrap/*` all stand | — | ☑ |
 | ~~6~~ | ~~GitHub Environments `deploy` and `destroy`~~ | **Done, without reviewers** — the plan does not allow them on a private repository. See the section below; this one is not merely ticked | — | ☑ |
-| ~~7~~ | ~~Two repository variables~~ | **Done.** `AWS_ACCOUNT_ID` and `AWS_REGION`. No secret | — | ☑ |
+| ~~7~~ | ~~Repository configuration~~ | **Done.** `AWS_REGION` as a variable; `AWS_ACCOUNT_ID` as a **secret** — not because it is one, but because GitHub masks only secrets and this repository's logs are public | — | ☑ |
 | ~~8~~ | ~~Budget alert address confirmed~~ | **Nothing to confirm** — the row was wrong. See below | — | ☑ |
 
 ## Step 0 is not a formality
@@ -47,9 +47,17 @@ credentials exist. The role ARN is derived from the account id in the `role-to-a
 itself, which is why there is no longer a repository *secret* at all.
 
 What cannot be published is the account id: CI has to know **which** account before it can
-ask that account anything. That is the irreducible one, and it is a variable rather than a
-secret because an AWS account id is not one — the boundary is the OIDC trust policy, scoped
-to a single repository and a single environment.
+ask that account anything. That is the irreducible one — and it is held as a repository
+**secret**, which needs a word of explanation, because an account id is not a credential. It
+appears in every ARN pasted into a support ticket and in every cross-account trust policy, and
+the boundary here is the OIDC trust policy, scoped to a single repository and a single
+environment. Nothing about knowing it grants access.
+
+It is a secret because GitHub redacts secrets from workflow logs and does not redact
+variables, and this repository is public. Held as a variable, the account id appeared 231
+times in the log of a single deploy — which would have made the decision not to commit it to
+the tree a decision about one of the two places anyone would look. The classification is about
+where the value ends up, not about what the value is.
 
 ## Step 6 is ticked and the gate is still missing
 
