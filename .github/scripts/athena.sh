@@ -36,10 +36,24 @@ case "$action" in
   repair)
     # The seed writes `tenant_id=` prefixes; without this the partitions exist in S3 and not
     # in the catalogue, and every query returns zero rows while looking perfectly healthy.
-    for table in electricity_consumption meter_interval_reading ghg_scope_1_activity \
-                 ghg_scope_3_activity procurement_fuel_spend general_ledger_posting \
-                 financial_statement_extract model_evaluation_prediction \
-                 model_evaluation_confusion risk_register incident_log; do
+    #
+    # The list used to be typed here, and the sentence above turned out to be a description of
+    # what happens when it falls behind rather than a warning against it. `security_scan_result`
+    # was added to Terraform, to the seed and to dbt, and not to this line — so its data reached
+    # S3, its partition was never registered, `stg_security_scan_result` selected from nothing,
+    # dbt built the gold table with `OK 0`, and every data-contract test passed because
+    # `accepted_values` over zero rows is vacuously true. Deploy 31454723596 got to the last
+    # verification step before anything said so.
+    #
+    # Asking the catalogue removes the copy. A table Terraform creates is repaired because it
+    # exists, not because somebody remembered it twice.
+    tables=$(aws glue get-tables --database-name "$database" \
+      --query 'TableList[?PartitionKeys[?Name==`tenant_id`]].Name' --output text)
+    if [ -z "$tables" ]; then
+      echo "no partitioned tables in ${database}; the data layer has not been applied" >&2
+      exit 1
+    fi
+    for table in $tables; do
       echo "── repairing $table"
       run "MSCK REPAIR TABLE ${database}.${table}" "$database"
     done
