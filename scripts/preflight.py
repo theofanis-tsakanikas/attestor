@@ -151,6 +151,13 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "session duration",
+        [PYTHON, "scripts/check_session_duration.py"],
+        "A workflow asking for a longer session than its role allows does not get a short "
+        "session — STS refuses the assume and the job dies on its third step.",
+    ),
+    Check(
+        "deployability",
         "workflow permissions",
         [PYTHON, "scripts/check_workflow_permissions.py"],
         "A called workflow cannot exceed its caller's grant, and the token is built before "
