@@ -11,7 +11,7 @@ Python 3.12+ and `make`. No AWS account, no credentials, no Docker.
 git clone https://github.com/theofanis-tsakanikas/attestor.git
 cd attestor
 make install          # venv + editable install with the dev extra
-make ci               # everything CI runs — about a minute
+make ci               # everything CI runs — about three minutes, most of it gate-proof
 ```
 
 `make ci` green on a laptop with no cloud access is the contract. If a change cannot be validated
