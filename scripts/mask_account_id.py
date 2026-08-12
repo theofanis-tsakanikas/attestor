@@ -59,9 +59,13 @@ CHEVRON_MIN_GAP = 6
 INSET = 8
 MIN_GLYPH_WIDTH = 3
 
+#: Anything smaller than a console screenshot has no console chrome to redact.
+MIN_SCREENSHOT_WIDTH = 2000
+MIN_SCREENSHOT_HEIGHT = 400
+
 
 def _near(colour, target=PILL_FILL_COLOUR, tol=PILL_TOLERANCE) -> bool:
-    return all(abs(a - b) <= tol for a, b in zip(colour, target))
+    return all(abs(a - b) <= tol for a, b in zip(colour, target, strict=False))
 
 
 def _runs(values: list[int], gap: int) -> list[tuple[int, int]]:
@@ -113,7 +117,7 @@ def find_bar(image: Image.Image) -> tuple[int, int, int, int] | None:
     """Where the bar must go, or None if this image has no identity pill."""
     rgb = image.convert("RGB")
     width, height = rgb.size
-    if width < 2000 or height < 400:
+    if width < MIN_SCREENSHOT_WIDTH or height < MIN_SCREENSHOT_HEIGHT:
         return None
     px = rgb.load()
 
