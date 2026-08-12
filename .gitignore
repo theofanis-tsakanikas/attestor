@@ -23,6 +23,9 @@ override.tf.json
 # Secrets — never
 .env
 .env.*
+# The one exception: it documents the settings and their defaults, and holds no value.
+# Named explicitly rather than by pattern, so a `.env.local` can never slip through with it.
+!.env.example
 *.pem
 *.key
 credentials.json

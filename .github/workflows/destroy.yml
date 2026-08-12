@@ -51,11 +51,22 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/attestor-github-deploy
           aws-region: ${{ vars.AWS_REGION }}
-          # The default session is an hour, and a teardown can run longer than that: this one
-          # waits on AgentCore's network interfaces before it may delete a subnet. Destroy
-          # 31492173599 spent its wait and then answered `RequestExpired` to everything after
-          # it — a failure that looks like an AWS problem and is a clock.
-          role-duration-seconds: 10800
+          # Must not exceed the role's own `max_session_duration`, which `infra/bootstrap`
+          # sets to 3600. Asking for more is not a long session, it is a run that cannot
+          # start: `DurationSeconds exceeds the MaxSessionDuration set for this role`, before
+          # a single resource is touched.
+          #
+          # This was 10800, raised because destroy 31492173599 waited forty minutes on
+          # AgentCore's network interfaces and then answered `RequestExpired` to everything
+          # after it. That reason no longer holds: the wait now breaks out as soon as the
+          # service reports nothing left to claim them, so a teardown cannot spend an hour
+          # waiting on an owner that is not coming back.
+          #
+          # An hour on a role that can delete the whole estate is also the better posture.
+          # Raising the role to match a workflow would have widened it for every run to fix
+          # one, and `scripts/check_session_duration.py` now fails the build if the two
+          # numbers drift apart again.
+          role-duration-seconds: 3600
 
       - name: resolve the backend from the account
         # Everything except the account id is a consequence of names `infra/bootstrap`
@@ -197,6 +208,25 @@ jobs:
               # retry budget for a subnet is about forty minutes. Waiting costs nothing when
               # the subnets are already empty: the script returns as soon as they are.
               SUBNET_WAIT_SECONDS=2400 ./.github/scripts/wait-for-empty-subnets.sh || true
+
+              # Stop the meter before attempting the rest, because the rest may not succeed.
+              #
+              # Terraform destroys leaf-first, so a subnet held by an AgentCore interface
+              # blocks everything behind it — the route table, and the NAT gateway the route
+              # table points at. Three teardowns in a row spent themselves on the two subnets
+              # and the security group in front of the blockage and never reached the one
+              # resource that costs money. The NAT billed through all of them.
+              #
+              # The NAT does not depend on those subnets: it sits in the public one, which
+              # nothing holds. Destroying it first means a teardown that cannot finish still
+              # stops the bill, and what survives — a VPC, some subnets, a gateway endpoint —
+              # is free until AWS releases the interfaces and the next run clears it.
+              #
+              # `|| true`: if these are already gone, or if one of them is what fails, the
+              # full destroy below reports it properly. This step is about the meter.
+              echo "── stopping the billed resources first"
+              ./.github/scripts/tf.sh destroy "$layer" \
+                -target=aws_nat_gateway.main -target=aws_eip.nat || true
             fi
             ./.github/scripts/tf.sh destroy "$layer"
           done

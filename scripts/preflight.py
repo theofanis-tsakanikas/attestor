@@ -151,6 +151,13 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "session duration",
+        [PYTHON, "scripts/check_session_duration.py"],
+        "A workflow asking for a longer session than its role allows does not get a short "
+        "session — STS refuses the assume and the job dies on its third step.",
+    ),
+    Check(
+        "deployability",
         "workflow permissions",
         [PYTHON, "scripts/check_workflow_permissions.py"],
         "A called workflow cannot exceed its caller's grant, and the token is built before "
@@ -204,6 +211,14 @@ CHECKS: list[Check] = [
         "override register",
         [PYTHON, "scripts/check_overrides.py", "--warn-days", "30"],
         "No accepted defect has outlived its acceptance.",
+    ),
+    Check(
+        "consistency",
+        "screenshots redacted",
+        [PYTHON, "scripts/mask_account_id.py", "--check"],
+        "Every AWS console page prints the account id in its corner. gitleaks gates that "
+        "identifier in text and never sees a screenshot, so thirty-five of them reached a "
+        "public repository before anybody looked. This is the same rule, for pixels.",
     ),
     Check(
         "consistency",

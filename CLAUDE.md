@@ -47,7 +47,7 @@ with no cloud and no credentials. If a change does not serve one of them, questi
 | # | Claim | Enforced by |
 |---|---|---|
 | **1** | **Indirect prompt injection does not execute.** The evidence corpus is untrusted user content. | `evals/injection/` + `src/attestor/security/` — block rate on a labelled poisoned corpus, **zero false positives** on benign |
-| **2** | **A tenant never sees another tenant.** | `evals/isolation/` — 12 leakage paths (retrieval filter bypass, memory bleed, cache-key poisoning, Gateway tool-arg injection, session reuse, …) must all fail to leak |
+| **2** | **A tenant never sees another tenant.** | `src/attestor/security/isolation.py` — 12 leakage paths (retrieval filter bypass, memory bleed, cache-key poisoning, Gateway tool-arg injection, session reuse, …) must all fail to leak |
 | **3** | **No number comes from an LLM.** | `src/attestor/gates/provenance.py` — scans the **rendered** DOCX/XLSX/PPTX and fails on any numeral not registered to a datapoint id |
 | **4** | **A report is reproducible.** Re-resolving as-of an earlier instant yields identical values and identical lineage hashes. | `src/attestor/datapoints/` + Iceberg snapshot pinning |
 | **5** | **The system abstains, exactly and honestly.** On a corpus where evidence is deliberately missing for N datapoints, it must abstain **exactly N times, with 0 fabrications**. | `evals/abstention/` |
@@ -134,7 +134,8 @@ attestor/
 │   ├── contracts/        # Contract schema, loader, cross-checks
 │   ├── datapoints/       # Deterministic resolver + lineage + as-of resolution
 │   ├── documents/        # Placeholder engine + DOCX/XLSX/PPTX renderers + render manifest
-│   ├── gates/            # provenance · grounding · abstention · schema — the acceptance gates
+│   ├── gates/            # provenance (scans rendered files) + the abstention harness.
+│   │                     #   Grounding lives in the resolver, schema in contracts/model.py
 │   ├── retrieval/        # Chunking strategies, KB config, retrieval eval harness
 │   ├── agent/            # AgentCore tool handlers (MCP) + orchestration
 │   ├── policy/           # Cedar policy authoring + offline evaluation

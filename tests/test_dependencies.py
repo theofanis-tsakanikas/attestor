@@ -28,6 +28,7 @@ IMPORT_NAME = {
     "python-docx": "docx",
     "python-pptx": "pptx",
     "pytest-cov": "pytest_cov",
+    "pillow": "PIL",
 }
 
 #: Declared but never imported *by us*, with the reason. Anything not here must be reachable
