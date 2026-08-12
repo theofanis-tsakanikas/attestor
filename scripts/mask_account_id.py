@@ -17,8 +17,12 @@ of them. The pill is found by its fill colour, the text inside it by its darknes
 the bar is sized from what was found. A file where no pill is found is skipped and
 reported, never guessed at.
 
-    python promo/mask_account_id.py --check images/*.png   # report only
-    python promo/mask_account_id.py images/*.png           # rewrite in place
+    python scripts/mask_account_id.py --check    # every image; non-zero if any is legible
+    python scripts/mask_account_id.py            # rewrite them in place
+
+`--check` is preflight's, and it is why this file is a check and not a note in a README:
+gitleaks gates the account id in text, and thirty-five committed screenshots carried it
+past that gate because a scanner reads bytes and this was pixels.
 """
 
 from __future__ import annotations
@@ -175,6 +179,8 @@ def draw_bar(image: Image.Image, box: tuple[int, int, int, int]) -> None:
 def main(argv: list[str]) -> int:
     check = "--check" in argv
     paths = [Path(a) for a in argv if not a.startswith("--")]
+    if not paths:
+        paths = sorted((Path(__file__).resolve().parents[1] / "images").glob("*.png"))
     done, skipped = [], []
 
     for path in sorted(paths):
@@ -188,12 +194,17 @@ def main(argv: list[str]) -> int:
             image.save(path)
         done.append((path.name, box))
 
-    verb = "would mask" if check else "masked"
-    print(f"{verb} {len(done)}, no identity pill in {len(skipped)}")
+    if check:
+        print(f"  {len(done)} unredacted, {len(skipped)} with no identity pill")
+        for name, _ in done:
+            print(f"  {name}: the account id is legible in this screenshot", file=sys.stderr)
+        # A screenshot that still shows the pill has not been published yet. Refusing here is
+        # the whole point: gitleaks reads text, and this is the same rule for pixels.
+        return 1 if done else 0
+
+    print(f"masked {len(done)}, no identity pill in {len(skipped)}")
     for name, box in done:
         print(f"  {name:32} {box}")
-    if skipped:
-        print("  skipped: " + ", ".join(skipped))
     return 0
 
 

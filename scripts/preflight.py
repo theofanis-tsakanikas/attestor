@@ -214,6 +214,14 @@ CHECKS: list[Check] = [
     ),
     Check(
         "consistency",
+        "screenshots redacted",
+        [PYTHON, "scripts/mask_account_id.py", "--check"],
+        "Every AWS console page prints the account id in its corner. gitleaks gates that "
+        "identifier in text and never sees a screenshot, so thirty-five of them reached a "
+        "public repository before anybody looked. This is the same rule, for pixels.",
+    ),
+    Check(
+        "consistency",
         "lint",
         [RUFF, "check", "src", "tests", "scripts", "pipelines"],
         "The same command CI runs.",

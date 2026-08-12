@@ -61,12 +61,16 @@ Stated here rather than discovered later:
 
 ## Credentials
 
-There are no long-lived AWS access keys, and a `gitleaks` rule set (`.gitleaks.toml`) gates every
-push, including a custom rule for 12-digit account identifiers.
+There are no long-lived AWS access keys. Humans authenticate by SSO, CI by GitHub OIDC against a
+role whose trust policy is pinned to this repository and one environment, services by execution
+role, everything else by Secrets Manager. A `gitleaks` rule set (`.gitleaks.toml`) gates every push,
+including a custom rule for 12-digit account identifiers.
 
 `gitleaks` reads text, not pixels, and the AWS console prints the account id in the corner of every
-page. `scripts/mask_account_id.py` finds that pill by its fill colour and covers it before a
-screenshot is committed. Run it over `images/` after adding one; it is idempotent and reports the
-files it skipped. Humans authenticate by SSO, CI by
-GitHub OIDC against a role whose trust policy is pinned to this repository and one environment,
-services by execution role, everything else by Secrets Manager.
+page — so thirty-five committed screenshots carried it past that gate.
+`scripts/mask_account_id.py` finds the identity pill by its fill colour and covers it, and its
+`--check` mode is preflight check 40, so a screenshot that still shows the account id turns CI red
+rather than relying on somebody remembering. The account id is still legible in two earlier commits
+(`7605ed4`, `dd9c581`): an account id is not a credential, and rewriting history would invalidate
+every commit hash referenced by pull requests #12 onward, so it was left in place deliberately
+rather than overlooked.

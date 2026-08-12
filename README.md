@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/vector-OpenSearch%20Serverless-005EB8?logo=opensearch&logoColor=white" alt="OpenSearch Serverless">
   <br>
   <img src="https://img.shields.io/badge/tests-467%20passing-2ea44f" alt="467 tests passing">
-  <img src="https://img.shields.io/badge/preflight-39%20checks-2ea44f" alt="39 preflight checks">
+  <img src="https://img.shields.io/badge/preflight-40%20checks-2ea44f" alt="40 preflight checks">
   <img src="https://img.shields.io/badge/gate--proof-24%20planted%20%C2%B7%2024%20refused-2ea44f" alt="gate-proof 24 refused">
   <img src="https://img.shields.io/badge/abstention-24%2F24%20%C2%B7%200%20fabrications-2ea44f" alt="abstention 24/24, 0 fabrications">
   <img src="https://img.shields.io/badge/live-32%2F32%20estate%20%C2%B7%2010%2F10%20agent-2ea44f" alt="live 32/32 and 10/10">
@@ -70,7 +70,7 @@ The estate is **destroyed**. The numbers below come from the run that destroyed 
   control query proving the corpus was reachable in the first place.</sub>
 </p>
 
-Everything above also runs **with no AWS account at all**: 39 preflight checks and 467 tests on a
+Everything above also runs **with no AWS account at all**: 40 preflight checks and 467 tests on a
 laptop, including all five claims. Cloud is where proof is captured, not where logic is validated.
 
 ---
@@ -384,12 +384,14 @@ end to end, and the OpenSearch retrieval bake-off. Those are asserted against a 
 run inside the deploy workflow.
 
 <p align="center">
-  <img src="images/make_ci.png" width="880" alt="39 preflight checks passing offline"><br>
+  <img src="images/make_ci.png" width="880" alt="preflight passing offline with no cloud"><br>
   <sub><b>Preflight, no cloud</b> — correctness, consistency and deployability in three groups,
   including <code>terraform validate</code> against real provider schemas and Checkov over all five
   layers. The last line is the point: <i>ready to deploy; nothing here has been deployed</i>. This
-  frame was taken at <b>37</b>; the count is <b>39</b> today — the deploy that followed cost two
-  more checks, <code>check_workflow_permissions</code> and <code>check_session_duration</code>.</sub>
+  frame was taken at <b>37</b>; the count is <b>40</b> today. The deploy that followed cost two
+  of the three — <code>check_workflow_permissions</code> and <code>check_session_duration</code>,
+  each one a job that had already failed before touching a resource — and publishing this README
+  cost the third, <i>screenshots redacted</i>.</sub>
 </p>
 
 ```bash

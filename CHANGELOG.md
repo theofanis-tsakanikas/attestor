@@ -39,7 +39,10 @@ same day. Everything below came out of making that round trip actually work.
   `max_session_duration`. Two files, each correct alone, disagreeing.
 - Lake Formation grants derived per table from the dbt gold models, replacing a `TableWildcard`
   grant that AWS refuses to the resource creator.
-- `.gitleaks.toml` with a custom rule for 12-digit account identifiers.
+- `.gitleaks.toml` with a custom rule for 12-digit account identifiers, and
+  `scripts/mask_account_id.py` — the same rule for pixels, because the AWS console prints the
+  account id in the corner of every page and a text scanner never sees a screenshot. Its
+  `--check` mode is preflight check 40.
 - `LICENSE` (MIT), `DISCLAIMER.md`, `SECURITY.md`, `CONTRIBUTING.md`, `.env.example`, and this file.
 - Branch protection on `main`: six required checks, no direct pushes.
 
