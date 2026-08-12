@@ -83,7 +83,7 @@ Built in dependency order, each layer green offline before the next was started.
 - **Document layer** — typed placeholders, DOCX/XLSX/PPTX renderers, render manifests, and the
   assurance annex printed inside the artefact an auditor receives.
 - **Gates** — provenance, grounding, abstention and schema, each scanning the rendered binary.
-- **`make gate-proof`** — 24 planted violations, each a real one-line diff, each required to be
+- **`make gate-proof`** — 25 planted violations, each a real one-line diff, each required to be
   refused by a *named* check. Green-first, exit-code-is-not-evidence, and STALE-not-passed.
 - **Security** — layered injection detection, a labelled poisoned corpus, and 12 isolation probes.
 - **Agent surface** — AgentCore Gateway and Runtime per tenant, MCP tool handlers, Cedar policies

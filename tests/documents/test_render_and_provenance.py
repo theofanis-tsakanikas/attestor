@@ -323,13 +323,69 @@ def test_the_gate_catches_a_number_injected_into_a_finished_document(artefacts) 
     assert any("91,337" in f.detail for f in result.findings)
 
 
+#: The parts that carry text a reader sees but that no template here currently produces.
+#: `word/document.xml` is covered by the test above; these are the ones that were only ever
+#: covered by an assertion that the gate *passed*, which is not a test of anything.
+SMUGGLED_PARTS = [
+    ("docx", "word/header1.xml", "<w:hdr><w:p><w:r><w:t>{}</w:t></w:r></w:p></w:hdr>"),
+    ("docx", "word/footer1.xml", "<w:ftr><w:p><w:r><w:t>{}</w:t></w:r></w:p></w:ftr>"),
+    (
+        "docx",
+        "word/footnotes.xml",
+        "<w:footnotes><w:p><w:r><w:t>{}</w:t></w:r></w:p></w:footnotes>",
+    ),
+    ("pptx", "ppt/notesSlides/notesSlide1.xml", "<p:notes><a:t>{}</a:t></p:notes>"),
+]
+
+
+def _with_extra_part(artefact: Path, part: str, payload: bytes) -> Path:
+    """A copy of `artefact` carrying one more part. Everything else byte-identical."""
+    tampered = artefact.with_name(f"smuggled-{part.replace('/', '-')}{artefact.suffix}")
+    with zipfile.ZipFile(artefact) as source:
+        entries = {name: source.read(name) for name in source.namelist()}
+    entries[part] = payload
+    with zipfile.ZipFile(tampered, "w", zipfile.ZIP_DEFLATED) as out:
+        for name, blob in entries.items():
+            out.writestr(name, blob)
+    return tampered
+
+
 @pytest.mark.gate
-def test_the_gate_reads_speaker_notes_and_footers_too(artefacts) -> None:
-    """A number smuggled into a footer is still a number in a filing."""
-    pptx, manifest = next((p, m) for p, m in artefacts if p.suffix == ".pptx")
-    text = provenance.extract_text(pptx)
-    assert text.strip()
-    assert provenance.check(pptx, manifest).passed
+@pytest.mark.parametrize(("suffix", "part", "shape"), SMUGGLED_PARTS)
+def test_the_gate_reads_headers_footers_and_speaker_notes(
+    artefacts, suffix: str, part: str, shape: str
+) -> None:
+    """A number smuggled into a footer is still a number in a filing.
+
+    This test used to assert that the gate *passed* on an untouched deck, which proves
+    nothing: no template here emits a header, a footer, a footnote or a speaker note, so
+    those four patterns in `CONTENT_PARTS` were never once exercised. Deleting them from the
+    allowlist would have left the suite green — and left a filing where any numeral in a
+    header is invisible to claim 3.
+
+    The part is written straight into the archive rather than through python-docx. That is
+    both simpler and closer to the threat: the gate's contract is that it reads every content
+    part in the file it is handed, not that it trusts a library to have declared them.
+    """
+    artefact, manifest = next((p, m) for p, m in artefacts if p.suffix == f".{suffix}")
+    tampered = _with_extra_part(artefact, part, shape.format("Adjusted total: 91,337").encode())
+
+    result = provenance.check(tampered, manifest)
+    assert not result.passed, f"a numeral in {part} was not seen"
+    assert any(f.kind == "unaccounted-numeral" for f in result.findings)
+    assert any("91,337" in f.detail for f in result.findings)
+
+
+@pytest.mark.gate
+@pytest.mark.parametrize(("suffix", "part", "shape"), SMUGGLED_PARTS)
+def test_prose_in_those_parts_is_not_a_finding(
+    artefacts, suffix: str, part: str, shape: str
+) -> None:
+    """The other half. A gate that fails on every header fails on every real document."""
+    artefact, manifest = next((p, m) for p, m in artefacts if p.suffix == f".{suffix}")
+    tampered = _with_extra_part(artefact, part, shape.format("Confidential draft").encode())
+
+    assert provenance.check(tampered, manifest).passed
 
 
 @pytest.mark.gate

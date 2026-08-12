@@ -49,13 +49,25 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── Plumbing ─────────────────────────────────────────────────────────────
 
-    def log_message(self, fmt: str, *args: Any) -> None:
-        """Structured, and without the request line.
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        """The access log: method and status, never the request line.
 
-        The default writes the raw path to stderr, and a path can carry a datapoint id or a
-        tenant. Access logs are the classic accidental data export.
+        This used to route through `log_message`, whose docstring said "without the request
+        line" while the base class handed it `'"%s" %s %s' % (self.requestline, ...)` — so
+        every request logged its own path inside a JSON field, and the comment asserting
+        otherwise is what stopped anybody looking. The paths this server serves carry no
+        identifiers, so nothing leaked; a control that is only true by luck is not one.
         """
-        LOG.info(json.dumps({"event": "http", "detail": fmt % args}))
+        LOG.info(json.dumps({"event": "http", "method": self.command, "status": str(code)}))
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        """Everything the base class reports outside a completed request.
+
+        A malformed request line, a timeout, an unsupported version. Those messages are kept
+        whole: the text is what the caller sent rather than something this server routed to,
+        and a rejected request line is evidence.
+        """
+        LOG.info(json.dumps({"event": "http.note", "detail": fmt % args}))
 
     def _respond(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, default=str).encode("utf-8")
