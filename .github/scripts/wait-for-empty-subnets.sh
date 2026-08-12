@@ -81,10 +81,11 @@ while [ "$waited" -lt "$DEADLINE_SECONDS" ]; do
   # interfaces are not ours to remove — but it can stop pretending the deadline is the
   # question. Say so once, and stop, so the failure arrives in minutes rather than in an hour.
   if [ "$waited" -ge "$GRACE_SECONDS" ] && agentcore_holds_nothing; then
-    echo "  AgentCore holds no runtime, gateway or memory, and these interfaces are still" >&2
-    echo "  attached. They are 'ela-attach' and cannot be detached or deleted by this" >&2
-    echo "  account; AWS releases them on its own schedule. Re-run the teardown later." >&2
-    break
+    echo "  AgentCore holds no runtime, gateway or memory after ${waited}s, and these" >&2
+    echo "  interfaces are still attached. They are 'ela-attach' and cannot be detached or" >&2
+    echo "  deleted by this account; AWS releases them on its own schedule, which has taken" >&2
+    echo "  hours. The billed resources are destroyed next regardless. Re-run later." >&2
+    exit 1
   fi
 
   sleep "$INTERVAL_SECONDS"

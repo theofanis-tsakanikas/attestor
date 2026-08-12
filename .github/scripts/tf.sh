@@ -8,6 +8,14 @@ set -euo pipefail
 
 action="${1:?apply|plan|destroy}"
 layer="${2:?layer name}"
+shift 2
+# Anything after the layer is passed straight to Terraform. Used by the teardown to destroy
+# the billed resources on their own, before the ones an AgentCore interface may be holding.
+#
+# Expanded as `${extra[@]+"${extra[@]}"}` rather than `"${extra[@]}"`: under `set -u` an empty
+# array is an unbound variable in bash 3.2, which is what a Mac still ships. The runners have
+# 5.x and would not have noticed — the first person to run this locally would have.
+extra=("$@")
 
 terraform -chdir="infra/${layer}" init \
   -backend-config="bucket=${TF_STATE_BUCKET}" \
@@ -38,8 +46,8 @@ fi
 export TF_VAR_deploy_role_arn="${AWS_DEPLOY_ROLE_ARN}"
 
 case "$action" in
-  apply)   terraform -chdir="infra/${layer}" apply -auto-approve -input=false ;;
-  plan)    terraform -chdir="infra/${layer}" plan -input=false ;;
+  apply)   terraform -chdir="infra/${layer}" apply -auto-approve -input=false ${extra[@]+"${extra[@]}"} ;;
+  plan)    terraform -chdir="infra/${layer}" plan -input=false ${extra[@]+"${extra[@]}"} ;;
   destroy)
     # A layer that was never applied has nothing to destroy — and trying anyway is not a
     # harmless no-op. `terraform destroy` refreshes first, which evaluates this layer's
@@ -55,7 +63,7 @@ case "$action" in
       echo "infra/${layer}: no state, nothing to destroy"
       exit 0
     fi
-    terraform -chdir="infra/${layer}" destroy -auto-approve -input=false
+    terraform -chdir="infra/${layer}" destroy -auto-approve -input=false ${extra[@]+"${extra[@]}"}
     ;;
   *) echo "unknown action $action" >&2; exit 2 ;;
 esac
