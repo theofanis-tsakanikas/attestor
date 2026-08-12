@@ -134,7 +134,8 @@ attestor/
 │   ├── contracts/        # Contract schema, loader, cross-checks
 │   ├── datapoints/       # Deterministic resolver + lineage + as-of resolution
 │   ├── documents/        # Placeholder engine + DOCX/XLSX/PPTX renderers + render manifest
-│   ├── gates/            # provenance · grounding · abstention · schema — the acceptance gates
+│   ├── gates/            # provenance (scans rendered files) + the abstention harness.
+│   │                     #   Grounding lives in the resolver, schema in contracts/model.py
 │   ├── retrieval/        # Chunking strategies, KB config, retrieval eval harness
 │   ├── agent/            # AgentCore tool handlers (MCP) + orchestration
 │   ├── policy/           # Cedar policy authoring + offline evaluation
