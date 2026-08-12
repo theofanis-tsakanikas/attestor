@@ -18,8 +18,8 @@ vulnerability even though no live system is affected:
 - **Prompt injection reaching the narrative turn.** A passage in `evidence/` that carries an
   instruction and is neither flagged by `src/attestor/security/` nor refused by the guardrail.
 - **Cross-tenant leakage.** Any route by which one tenant's data, memory, cache entry or session
-  reaches another. The twelve routes already probed are in `evals/isolation/`; a thirteenth is
-  the interesting report.
+  reaches another. The twelve routes already probed are in `src/attestor/security/isolation.py`,
+  scored by `attestor eval isolation`; a thirteenth is the interesting report.
 - **A number reaching a rendered artefact without a datapoint contract.** Anything the provenance
   gate in `src/attestor/gates/provenance.py` scans past.
 - **An override the system granted itself.** No model, agent or service principal may request,

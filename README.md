@@ -109,7 +109,7 @@ flowchart TB
 
   subgraph deterministic["Deterministic layer — owns every figure"]
     CON["Datapoint contracts<br/>18 YAML · closed reason codes"]
-    RES["Resolver<br/>14 SQL · as-of pinning"]
+    RES["Resolver<br/>10 SQL + 4 cross-checks"]
     LAKE[("Iceberg on S3<br/>13 dbt gold models · Athena")]
   end
 
@@ -387,7 +387,7 @@ Artefacts land in `out/<tenant>/` with a `.manifest.json` beside each one. `atte
 builds `out/dashboard.html` from the recorded runs — self-contained, no network, and it still opens
 after the estate is destroyed, which is when somebody usually wants it.
 
-No configuration is needed for any of the above: figures are replayed from recorded values. The nine
+No configuration is needed for any of the above: figures are replayed from recorded values. The ten
 settings that exist — including `ATTESTOR_BACKEND=athena`, which resolves against live Iceberg
 instead — are documented with their defaults in [.env.example](.env.example). None of them is a
 credential.
@@ -404,10 +404,11 @@ schema and its cross-checks, the resolver and its as-of pinning, the placeholder
 three renderers, every gate, the Cedar policy set, the injection rules, and the agent handler
 driven through its real code path with a stub Bedrock client.
 
-They deliberately do **not** cover: anything requiring AWS credentials, the AgentCore surface
-end to end, and the OpenSearch retrieval bake-off. Those are asserted against a live estate by
-`scripts/verify_live_estate.py` (32 checks) and `scripts/verify_agentcore.py` (10 checks), which
-run inside the deploy workflow.
+They deliberately do **not** cover anything that needs AWS credentials: the AgentCore surface end
+to end, and the retrieval bake-off against real embedding models. The chunking comparison itself is
+tested offline — what is untested is how it scores once a live model does the embedding. The cloud
+half is asserted against a deployed estate by `scripts/verify_live_estate.py` (32 checks) and
+`scripts/verify_agentcore.py` (10 checks), which run inside the deploy workflow.
 
 <p align="center">
   <img src="images/make_ci.png" width="880" alt="preflight passing offline with no cloud"><br>
@@ -427,9 +428,10 @@ make claims      # the five claims, scored
 make ci          # everything above plus terraform, checkov and gate-proof
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs six required jobs on every push and
-pull request: secret scan, lint and tests, the five claims, attack our own gates, override register,
-terraform and checkov. `main` is protected; all six must be green before a merge.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs six jobs on every pull request and
+on every push to `main`: secret scan, lint and tests, the five claims, attack our own gates,
+override register, terraform and checkov. All six are required status checks on `main`, and the
+branch requires them to be up to date with it before a merge.
 
 ---
 
@@ -438,7 +440,7 @@ terraform and checkov. `main` is protected; all six must be green before a merge
 | Path | Purpose |
 |---|---|
 | [`contracts/`](contracts/) | **The source of truth.** 18 datapoint contracts, one YAML each — meaning, unit, tolerance, evidence requirement, and the conditions under which the figure must not be stated |
-| [`queries/`](queries/) | The 14 SQL resolvers. A quantitative datapoint reaches a page through exactly one of these |
+| [`queries/`](queries/) | 10 SQL resolvers and the 4 cross-checks that reconcile them. A quantitative datapoint reaches a page through exactly one resolver |
 | [`templates/`](templates/) | Document templates with typed placeholders — ESRS statement, datapoint annex, board deck, AI Act technical file |
 | [`prompts/`](prompts/) | Narrative prompts, versioned and digested into the lineage record |
 | [`tenants/`](tenants/) · [`overrides/`](overrides/) | Tenant registry and the signed, expiring override register |
@@ -482,13 +484,19 @@ terraform and checkov. `main` is protected; all six must be green before a merge
 
 ## Cost
 
-**€0 idle.** Nothing is standing. The estate exists only inside a gated workflow that takes a
-`days` input with no default, tags every resource with `attestor:expires-at`, and is torn down by a
-second workflow the same day.
+Three different numbers, because "what does it cost" has three different answers.
 
-Standing, a full estate costs roughly **$13–15/day**, dominated by OpenSearch Serverless: two OCUs
-at the default topology, four with cross-AZ redundancy enabled. An AWS Budget disables the deploy
-role at its threshold. The arithmetic is in [docs/DAY-ONE.md](docs/DAY-ONE.md).
+| | |
+|---|---|
+| **At rest — under $1/month** | What the account holds today: the `bootstrap` layer only. A state bucket, a DynamoDB lock table on `PAY_PER_REQUEST`, one KMS key. Plus a VPC, four subnets and a gateway endpoint that survive teardown behind AWS-owned AgentCore interfaces, and cost nothing. |
+| **A demo block — $0.62 · $3.39 · $4.09** | Three bounded stand-up, capture, destroy blocks, from the bill rather than from an estimate. That is the unit this project is actually operated in. |
+| **Standing continuously — $13–15/day** | If it were left up: roughly $400/month, dominated by OpenSearch Serverless at two OCUs, $23/day at four with cross-AZ redundancy. This number exists to be avoided. |
+
+Avoiding it is structural. The deploy workflow takes a `days` input **with no default** — standing
+the estate up requires saying how long it is meant to live — every resource carries
+`attestor:expires-at`, a scheduled reaper destroys what has expired, and an AWS Budget attaches a
+deny policy to the deploy role at 100% of a 300 USD ceiling. The arithmetic, including why the OCU
+floor is two and not four, is in [docs/DAY-ONE.md](docs/DAY-ONE.md).
 
 Per report, the model spend is small enough to be interesting:
 
