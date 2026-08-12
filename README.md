@@ -15,9 +15,9 @@
   <img src="https://img.shields.io/badge/authz-Cedar-2F855A" alt="Cedar">
   <img src="https://img.shields.io/badge/vector-OpenSearch%20Serverless-005EB8?logo=opensearch&logoColor=white" alt="OpenSearch Serverless">
   <br>
-  <img src="https://img.shields.io/badge/tests-467%20passing-2ea44f" alt="467 tests passing">
+  <img src="https://img.shields.io/badge/tests-489%20passing-2ea44f" alt="489 tests passing">
   <img src="https://img.shields.io/badge/preflight-40%20checks-2ea44f" alt="40 preflight checks">
-  <img src="https://img.shields.io/badge/gate--proof-24%20planted%20%C2%B7%2024%20refused-2ea44f" alt="gate-proof 24 refused">
+  <img src="https://img.shields.io/badge/gate--proof-25%20planted%20%C2%B7%2025%20refused-2ea44f" alt="gate-proof 25 refused">
   <img src="https://img.shields.io/badge/abstention-24%2F24%20%C2%B7%200%20fabrications-2ea44f" alt="abstention 24/24, 0 fabrications">
   <img src="https://img.shields.io/badge/live-32%2F32%20estate%20%C2%B7%2010%2F10%20agent-2ea44f" alt="live 32/32 and 10/10">
 </p>
@@ -69,7 +69,7 @@ The estate is **destroyed**. The numbers below come from the run that destroyed 
   control query proving the corpus was reachable in the first place.</sub>
 </p>
 
-Everything above also runs **with no AWS account at all**: 40 preflight checks and 467 tests on a
+Everything above also runs **with no AWS account at all**: 40 preflight checks and 489 tests on a
 laptop, including all five claims. Cloud is where proof is captured, not where logic is validated.
 
 ---
@@ -86,7 +86,7 @@ laptop, including all five claims. Cloud is where proof is captured, not where l
 | [The corpus is untrusted](#the-corpus-is-untrusted) | prompt injection, in a real document |
 | [One tenant never sees another](#one-tenant-never-sees-another) | Cedar, gateways, filters |
 | [The system documents itself](#the-system-documents-itself) | Attestor's own Annex IV, from measured figures |
-| [The gates are attacked](#the-gates-are-attacked) | 24 planted violations |
+| [The gates are attacked](#the-gates-are-attacked) | 25 planted violations |
 | [Quickstart](#quickstart) · [Testing](#testing) · [Repository layout](#repository-layout) | |
 | [What this does not do](#what-this-does-not-do) · [Cost](#cost) · [Decisions](#decisions) | |
 | [Docs](#docs) · [Security](#security) · [License](#license) | |
@@ -177,7 +177,7 @@ declares a `tolerance.cross_check`, and **only** from the side of that reconcili
 itself paper. For `ESRS_E1-6_gross_scope_1` telematics is primary and the fuel invoice is the
 cross-check, never the reverse — reconciling OCR against OCR proves that two readings of the same
 page agree, which is not a claim anyone needs. Where a contract declares no cross-check, extracted
-rows count as evidence coverage and nothing more. Two of the 24 planted violations attack exactly
+rows count as evidence coverage and nothing more. Two of the 25 planted violations attack exactly
 this, and it is a pure function of the contract set, so it is provable offline.
 
 ---
@@ -346,11 +346,13 @@ repository, plants a **real** violation, and fails unless the named gate refuses
 reason.
 
 <p align="center">
-  <img src="images/gate_proof.png" width="900" alt="24 planted violations, 24 refusals"><br>
-  <sub><b>24 planted, 24 refused, 0 accepted, 0 stale</b> — read the left column as a list of
-  plausible mistakes: <i>launder a resolver error into a lawful omission</i>, <i>let a model write
-  a number</i>, <i>let an agent approve an override</i>, <i>let one as-of pin serve every table</i>.
-  Each is one line of diff.</sub>
+  <img src="images/gate_proof.png" width="900" alt="25 planted violations, 25 refusals"><br>
+  <sub><b>0 accepted, 0 stale</b> — read the left column as a list of plausible mistakes:
+  <i>launder a resolver error into a lawful omission</i>, <i>let a model write a number</i>,
+  <i>let an agent approve an override</i>, <i>let one as-of pin serve every table</i>. Each is one
+  line of diff. This frame was taken at 24; the twenty-fifth is <i>stop reading headers and
+  footers</i>, and it exists because the test guarding those parts of the provenance gate turned
+  out to assert nothing.</sub>
 </p>
 
 Three rules keep it a proof rather than a ritual: every gate must be **green first**; a non-zero
@@ -399,7 +401,7 @@ Deploying to AWS is a gated workflow, never a laptop command. See
 
 ## Testing
 
-**467 tests**, 83% line coverage, running offline in about six seconds. They cover the contract
+**489 tests**, 85% line coverage, running offline in about fifteen seconds. They cover the contract
 schema and its cross-checks, the resolver and its as-of pinning, the placeholder engine and all
 three renderers, every gate, the Cedar policy set, the injection rules, and the agent handler
 driven through its real code path with a stub Bedrock client.

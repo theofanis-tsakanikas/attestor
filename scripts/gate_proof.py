@@ -82,6 +82,20 @@ def _let_a_model_write_a_number(root: Path) -> bool:
     )
 
 
+def _stop_reading_headers_and_footers(root: Path) -> bool:
+    """Narrow the provenance gate to the parts the templates happen to emit today.
+
+    A reviewer looking at `CONTENT_PARTS` sees four patterns that match nothing any template
+    produces, and removing dead configuration is a normal instinct. It is also how a numeral
+    in a header stops being a numeral anybody checks.
+    """
+    return _replace(
+        root / "src/attestor/gates/provenance.py",
+        '    re.compile(r"^word/(header|footer)\\d*\\.xml$"),\n',
+        "",
+    )
+
+
 def _drop_the_cross_tenant_forbid(root: Path) -> bool:
     """Delete the policy that separates tenants."""
     path = root / "policy/cedar/tenant_isolation.cedar"
@@ -431,6 +445,14 @@ MUTATIONS: tuple[Mutation, ...] = (
         "narrative",
         _let_a_model_write_a_number,
         "Plausible as a fix for a citation-marker false positive.",
+    ),
+    Mutation(
+        "stop reading headers and footers",
+        "provenance breadth",
+        ["pytest", "-q", "tests/documents", "-x"],
+        "header",
+        _stop_reading_headers_and_footers,
+        "Removing allowlist entries that match nothing today looks like tidying up.",
     ),
     Mutation(
         "delete the cross-tenant forbid",
