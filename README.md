@@ -2,8 +2,6 @@
   <img src="images/banner.png" alt="Attestor — every number carries its proof" width="100%">
 </p>
 
-# Attestor
-
 <p align="center">
   <a href="https://github.com/theofanis-tsakanikas/attestor/actions/workflows/ci.yml"><img src="https://github.com/theofanis-tsakanikas/attestor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
@@ -56,9 +54,10 @@ failure of the software.
 
 Deployed and verified against a real AWS account on **12 August 2026**, then torn down the same
 day. Three tenants ran end to end: `helios` and `aegis` under CSRD/ESRS, `lumen` under EU AI Act
-Annex IV. The deploy took **21m 47s** from a single button, applied five Terraform layers, seeded
-the lakehouse, built the dbt models, ingested the evidence corpora, stood up two AgentCore
-gateways and two runtimes, produced the documents, and then checked its own claims.
+Annex IV. The deploy took **21m 47s** from a single button, applied the four Terraform layers CI
+owns — `foundation`, `data`, `knowledge`, `agent` — seeded the lakehouse, built the dbt models,
+ingested the evidence corpora, stood up two AgentCore gateways and two runtimes, produced the
+documents, and then checked its own claims.
 
 The estate is **destroyed**. The numbers below come from the run that destroyed it.
 
@@ -114,13 +113,13 @@ flowchart TB
     LAKE[("Iceberg on S3<br/>13 dbt gold models · Athena")]
   end
 
-  subgraph gates["Acceptance gates — default to refusal"]
-    PG["provenance · grounding<br/>abstention · schema"]
+  subgraph gates["Acceptance — the default is refusal"]
+    PG["provenance gate<br/>scans the rendered file"]
   end
 
   subgraph surface["Agent surface"]
-    AC["AgentCore Gateway + Runtime<br/>one per tenant"]
-    CE["Cedar policy engine<br/>enforced at the edge"]
+    AC["AgentCore Gateway + Runtime<br/>one each per tenant surface"]
+    CE["Cedar policy engine<br/>one engine · per-gateway policies"]
   end
 
   DOCS --> KB --> GR --> LLM
@@ -136,9 +135,15 @@ flowchart TB
 
 The load-bearing edge is between the two middle boxes. The narrative layer never receives a
 figure it may place; it receives a list of placeholder ids and emits `{{dp:...}}` where a number
-belongs. The deterministic layer resolves those ids against pinned Iceberg snapshots. The gates
-sit after both and read the **rendered** file, not the intermediate data — because a rule that
-checks the input cannot see what the renderer did with it.
+belongs. The deterministic layer resolves those ids against pinned Iceberg snapshots. The
+provenance gate sits after both and reads the **rendered** file, not the intermediate data —
+because a rule that checks the input cannot see what the renderer did with it.
+
+Only provenance runs after rendering, because it is the only rule that has to. Grounding is a
+contract field the resolver enforces before a draft is accepted (`min_citations`, and the corpus
+it must have been drawn from); abstention is decided by the closed reason-code vocabulary, and a
+report holding a blocker never reaches a renderer at all; schema is `contracts/model.py`, which
+*is* the contract schema and validates on every push.
 
 ---
 
@@ -156,6 +161,24 @@ sentence and marked the slot; a declared SQL resolver filled it.</sub>
 Enforcement is not a convention. `check_draft` refuses any draft containing a digit in prose after
 citation markers and placeholders are stripped, and the provenance gate re-checks the rendered
 file afterwards. A model that writes a number fails the build twice.
+
+The same boundary decides what a scanned document may do. Most of a tenant's evidence is paper — a
+fuel invoice, a supplier attestation — and `datapoints/extraction.py` reads it into the lakehouse
+as ordinary rows, under the same data contracts and the same quarantine as any other source. The
+resolver cannot tell an extracted row from one a source system wrote, and that indistinguishability
+is the design: the moment the resolver has to know where a row came from, the boundary has moved
+into the resolver.
+
+What paper may *not* do is become a figure on trust. An OCR engine that reads `1` as `7` produces a
+number that is plausible, well-formed and wrong, and no confidence score fixes it — the errors that
+matter are the ones the reader was sure about. So `datapoints/admissibility.py` answers the question
+structurally instead: an extracted dataset may back a published figure **only** where the contract
+declares a `tolerance.cross_check`, and **only** from the side of that reconciliation that is not
+itself paper. For `ESRS_E1-6_gross_scope_1` telematics is primary and the fuel invoice is the
+cross-check, never the reverse — reconciling OCR against OCR proves that two readings of the same
+page agree, which is not a claim anyone needs. Where a contract declares no cross-check, extracted
+rows count as evidence coverage and nothing more. Two of the 24 planted violations attack exactly
+this, and it is a pure function of the contract set, so it is provable offline.
 
 ---
 
@@ -260,8 +283,11 @@ wrongly flagged**. Those two figures are also disclosed inside `lumen`'s own Ann
 
 ## One tenant never sees another
 
-Isolation is not a filter in one function. It is one Cedar policy engine, one gateway, one runtime
-and one memory store **per tenant**, plus a retrieval filter that refuses to run unscoped.
+Isolation is not a filter in one function. It is a gateway, a runtime and a memory store for each
+tenant with an agent surface, a single Cedar policy engine whose every policy is scoped to one of
+those gateways, and a retrieval filter that refuses to run unscoped. `lumen` has no AgentCore
+surface at all — it authenticates against an external OIDC provider, which is what makes *identity
+is per tenant* a property of the design rather than of the configuration.
 
 <p align="center">
   <img src="images/cedar_policies.png" width="880" alt="AgentCore policy engine with per-gateway Cedar policies"><br>
@@ -417,7 +443,7 @@ terraform and checkov. `main` is protected; all six must be green before a merge
 | [`prompts/`](prompts/) | Narrative prompts, versioned and digested into the lineage record |
 | [`tenants/`](tenants/) · [`overrides/`](overrides/) | Tenant registry and the signed, expiring override register |
 | [`evidence/`](evidence/) | Per-tenant corpora and their manifests. Untrusted content, trusted metadata |
-| [`src/attestor/`](src/attestor/) | `contracts` · `datapoints` · `documents` · `gates` · `retrieval` · `agent` · `policy` · `security` · `observability` |
+| [`src/attestor/`](src/attestor/) | `contracts` · `datapoints` (resolver, lineage, extraction, admissibility) · `documents` · `gates` · `retrieval` · `agent` · `policy` · `security` · `observability` · `evals` · `cli` |
 | [`evals/`](evals/) | Labelled corpora and scored harnesses — injection, abstention, retrieval |
 | [`infra/`](infra/) | Five Terraform layers: `bootstrap` (local apply only) · `foundation` · `data` · `knowledge` · `agent` |
 | [`pipelines/`](pipelines/) | Evidence ingestion, the deterministic seed generator, and dbt models (13 gold, Iceberg) |
@@ -433,9 +459,12 @@ terraform and checkov. `main` is protected; all six must be green before a merge
   builds rows backwards from recorded targets. The two robustness figures in `lumen`'s Annex IV are
   the only measured values in the repository. Nothing here has been through an assurance provider —
   see [DISCLAIMER.md](DISCLAIMER.md).
-- **`aegis` has no evidence documents.** Its manifest declares 26; none exist as files, so its
-  corpus indexes zero documents and its narrative datapoint cannot resolve. It exists to make the
-  isolation suite meaningful, and it does — but its refusal is partly structural, not only data-driven.
+- **`aegis` ships no evidence documents, so its knowledge base indexes nothing.** Its manifest
+  declares 26 and none exist as files. Its refusal is *not* affected — the evidence check reads the
+  manifest, all four of its blockers are data (`E_OUT_OF_TOLERANCE`, `E_UPSTREAM_QUARANTINE`) and
+  its narrative datapoint publishes normally. What is weakened is the attacker side of the isolation
+  suite: when `aegis` reaches for `helios`'s corpus and gets nothing back, that is the filter
+  working, but `aegis`'s own corpus was empty to begin with.
 - **The manifests declare more evidence than exists.** `helios` declares 28 documents and ships 5.
   The evidence check reads the manifest, by design — untrusted content, trusted metadata — so
   retrieval works over a subset of what is declared.
@@ -481,7 +510,7 @@ rejected.
 |---|---|
 | [0001](docs/adr/0001-fail-closed-with-a-recorded-key.md) | Every gate defaults to refusal, and every closed door has a key held by a named human — except one. Rejected: silent overrides, and controls with no override at all |
 | [0002](docs/adr/0002-templates-as-yaml.md) | Templates are YAML with typed placeholders, rendered into DOCX/XLSX/PPTX. Rejected: templating the Word file directly |
-| [0003](docs/adr/0003-opensearch-serverless-over-cheaper-stores.md) | OpenSearch Serverless as the vector store despite being the dominant cost. Rejected: pgvector on an idle RDS instance |
+| [0003](docs/adr/0003-opensearch-serverless-over-cheaper-stores.md) | OpenSearch Serverless as the vector store despite being the dominant cost — for hybrid search and for metadata filtering evaluated *at the index*. Rejected: the cheaper store an earlier draft of this project actually chose, which optimised idle cost in a system that is never idle for long |
 
 Engineering rules that shape every change are in [`CLAUDE.md`](CLAUDE.md) — the contract layer, the
 seven-rule doctrine, and the non-negotiables about IaC and offline validation.
