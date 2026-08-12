@@ -42,6 +42,11 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=5.0",
     "ruff>=0.7",
+    # Pillow arrives anyway as a python-pptx dependency, and `scripts/mask_account_id.py`
+    # was written against it on that basis. Declared here because a preflight check that
+    # only runs when some *other* package happens to still want its dependency is a check
+    # that will go quiet without anybody noticing.
+    "pillow>=10.0",
     # checkov is deliberately absent, and this is the note that keeps it absent. It pins
     # `boto3==1.35.49` exactly, in every release including the newest, and `bedrock-agentcore`
     # — the API AgentCore Memory is written through — does not exist in botocore that old. One
