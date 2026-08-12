@@ -304,17 +304,46 @@ answers `Tool Execution Denied … [Policy evaluation denied due to
 forbid_override_through_the_agent_helios]`, and `tools/list` returns five tools rather than six.
 The system may not open a door for itself.
 
+Underneath the policy engine, retrieval is filtered at the index rather than after it. The three
+frames below are **one knowledge base, one console session, one metadata filter changed between
+them** — the cheapest way to see a boundary is to stand still and move only the thing that defines
+it. They are full width because the proof is in small print: the `tenant:` line inside each
+retrieved document's metadata.
+
 <p align="center">
-  <img src="images/knowledge_base_helios.png" width="880" alt="Knowledge base retrieval filtered to one tenant"><br>
-  <sub><b>Retrieval is scoped at the index</b> — <code>tenant = helios</code> returns helios
-  documents only, including the poisoned one. An unfiltered retrieval raises
-  <code>UnfilteredRetrieval</code> before it reaches a backend.</sub>
+  <img src="images/knowledge_base_helios.png" width="100%" alt="Retrieval filtered to tenant helios returns three helios documents"><br>
+  <sub><b>1 · <code>tenant = helios</code> · "upstream transportation emissions"</b> — three
+  documents, every one of them <code>tenant: helios</code>, and the first is
+  <code>INV-HEL-2026-0009</code>: the supplier attestation carrying the injected instruction. The
+  filter is not a safety filter. It selects an undertaking's own evidence, poison included, and
+  leaves the poison to the scanner.</sub>
 </p>
 
-Twelve distinct leakage routes are probed on every push — retrieval filter bypass, memory bleed,
-cache-key poisoning, gateway tool-argument injection, session reuse and seven more — and all twelve
-must fail to leak. Live, a `helios` token gets **HTTP 403 `insufficient_scope`** at the `aegis`
-gateway and `Claim 'iss' value mismatch` at the `aegis` runtime.
+<p align="center">
+  <img src="images/knowledge_base_aegis.png" width="100%" alt="The same query filtered to tenant aegis returns nothing"><br>
+  <sub><b>2 · <code>tenant = aegis</code> · the same words, again</b> — <i>"Sorry, I am unable to
+  assist you with this request."</i> Scroll up in the same pane and helios's transition plan is
+  still sitting there from the turn before: same index, same session, same question. Only the
+  filter moved. <b>Read this one with its limit in mind</b> — `aegis` ships no evidence documents,
+  so an empty answer here is the filter <i>and</i> an empty index at once. The frame shows the
+  boundary; it does not on its own isolate the cause.</sub>
+</p>
+
+<p align="center">
+  <img src="images/knowledge_base_lumen.png" width="100%" alt="Retrieval filtered to tenant lumen returns lumen's own evaluation report"><br>
+  <sub><b>3 · <code>tenant = lumen</code> · the control</b> — and the reason the pair above means
+  anything. A filter that returned nothing for everyone would look identical in frame 2 and be
+  worthless. Here the same index answers with <code>EVALREPORT-ATT-2026</code>, metadata
+  <code>tenant: lumen</code> — a different undertaking's own corpus, retrieved through the same
+  path. The filter selects; it does not merely suppress.</sub>
+</p>
+
+Consoles are where a boundary is *shown*; the eval is where it is *measured*. Twelve distinct
+leakage routes are probed on every push — retrieval filter bypass, memory bleed, cache-key
+poisoning, gateway tool-argument injection, session reuse and seven more — and all twelve must fail
+to leak. An unfiltered call never reaches a backend at all: `UnfilteredRetrieval` is raised first.
+Live, a `helios` token gets **HTTP 403 `insufficient_scope`** at the `aegis` gateway and
+`Claim 'iss' value mismatch` at the `aegis` runtime.
 
 ---
 
