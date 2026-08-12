@@ -2,8 +2,6 @@
   <img src="images/banner.png" alt="Attestor — every number carries its proof" width="100%">
 </p>
 
-# Attestor
-
 <p align="center">
   <a href="https://github.com/theofanis-tsakanikas/attestor/actions/workflows/ci.yml"><img src="https://github.com/theofanis-tsakanikas/attestor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
