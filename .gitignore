@@ -59,3 +59,6 @@ notes/
 # in it is checkable.
 promo/
 .venv-checkov/
+
+# Personal marketing material, not part of the product.
+linkedin/

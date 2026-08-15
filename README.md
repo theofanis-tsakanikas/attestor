@@ -224,13 +224,31 @@ The provenance gate then scans the finished binaries. It does not sample.
 **4.30%** against a 0.50% bound, and 1,284 source rows failed their data contract. Same code, same
 templates, same pipeline; different data.
 
+<table>
+<tr>
+<td width="50%"><img src="images/attestor_run.png" alt="Three tenants run on a laptop: two issue, one is blocked"><br><sub><b>Offline, on a laptop</b> — <code>helios</code> 6 disclosed / 3 limitations, <code>lumen</code> 9 / 0, <code>aegis</code> <i>blocked — 4 datapoint(s), no artefact</i>. Two of the four read <i>inherited from</i>: a derived figure inherits its parent's defect rather than averaging it away.</sub></td>
+<td width="50%"><img src="images/ci_success_run3.png" alt="The same three tenants in the CI job summary, with five blockers"><br><sub><b>Live, in CI</b> — same code path, <b>five</b> blockers. The fifth is the interesting one, and it only exists when a real model is in the loop.</sub></td>
+</tr>
+</table>
+
+The difference between those two frames is the whole boundary, caught happening. Offline the
+narrative replays a recorded draft. Live it is drafted for real, and `check_draft` refused it three
+times — *attempt 1: cited 1 passage(s), contract demands 3* · **attempt 2: contains digits
+`['1', '3']` — a model never places a figure** · *attempt 3: cited 1 passage(s)*. After the third,
+the datapoint failed with `E_RESOLVER_ERROR`.
+
+That is the rule in the first section of this README refusing a live model's output, and then the
+one door with no key closing behind it. Nobody can sign that off, which is why `aegis` has five
+blockers in CI and no document.
+
+The reason codes are checkable one level down, in the lake, without taking the system's word for it:
+
 <p align="center">
-  <img src="images/attestor_run.png" width="900" alt="Three tenants run: two issue, one is blocked"><br>
-  <sub><b>Three tenants, one code path</b> — <code>helios</code>: 6 disclosed, 3 limitations.
-  <code>aegis</code>: <i>blocked — 4 datapoint(s), no artefact</i>, each with its reason code, the
-  resolver that disagreed and the bound it broke — and two of the four marked
-  <i>inherited from</i>, because a derived figure inherits its parent's defect rather than
-  averaging it away. <code>lumen</code>: 9 disclosed, 0 limitations.</sub>
+  <img src="images/athena_aegis_refuses.png" width="100%" alt="Athena showing 1,284 quarantined rows for aegis and none for helios"><br>
+  <sub><b><code>E_UPSTREAM_QUARANTINE</code>, by hand</b> — three rows answer it.
+  <code>aegis</code> has <b>1,284</b> rows that failed their data contract and <code>helios</code>
+  has none at all; the clean counts are identical at 120 each. The blocker is not a verdict the
+  system asks you to trust. It is a <code>GROUP BY</code> away.</sub>
 </p>
 
 A refusal is not the end of the conversation. A known gap may still ship — but only under a
@@ -353,14 +371,15 @@ Live, a `helios` token gets **HTTP 403 `insufficient_scope`** at the `aegis` gat
 file from its own repository as the evidence corpus — and two of the figures in it are not
 synthetic.
 
-<p align="center">
-  <img src="images/lumen_eu_ai_act.png" width="880" alt="Lumen Annex IV datapoints with resolver, lineage and source snapshot"><br>
-  <sub><b>Measured, not targeted</b> — <code>injection_block_rate 1.0000</code> and
-  <code>injection_false_positive_rate 0.0000</code>, resolved by SQL over
-  <code>gold.security_scan_result</code>, produced by running this repository's own scanner over
-  its own labelled corpus. Weaken the detector and these numbers move, the recording check fails,
-  and the Annex IV goes red with it.</sub>
-</p>
+<table>
+<tr>
+<td width="50%"><img src="images/lumen_eu_ai_act.png" alt="Lumen Annex IV datapoints with resolver, lineage and source snapshot"><br><sub><b>What the technical file states</b> — <code>injection_block_rate 1.0000</code> and <code>injection_false_positive_rate 0.0000</code>, each with its resolver, its lineage id, and <code>gold.security_scan_result@3319419023871123005</code> as the table and snapshot it was read from.</sub></td>
+<td width="50%"><img src="images/athena_system_measure.png" alt="The scanner's confusion matrix in Athena: two rows only"><br><sub><b>The rows those two figures came from</b> — <code>manipulated → withheld: 16</code>, <code>benign → admitted: 11</code>. <b>Read what is absent.</b> There is no <code>manipulated → admitted</code> row and no <code>benign → withheld</code> row, and that emptiness <i>is</i> the 1.0000 and the 0.0000.</sub></td>
+</tr>
+</table>
+
+Weaken the detector and those rows change, the recording check fails, and the Annex IV goes red with
+it. The document does not describe the scanner; it is computed from what the scanner did.
 
 Every other recorded value in this repository is a target the seed generator builds rows to reach —
 correct for a lake standing in for a client's ERP, and labelled `provenance: synthetic`. These two
@@ -493,11 +512,15 @@ branch requires them to be up to date with it before a merge.
   the only measured values in the repository. Nothing here has been through an assurance provider —
   see [DISCLAIMER.md](DISCLAIMER.md).
 - **`aegis` ships no evidence documents, so its knowledge base indexes nothing.** Its manifest
-  declares 26 and none exist as files. Its refusal is *not* affected — the evidence check reads the
-  manifest, all four of its blockers are data (`E_OUT_OF_TOLERANCE`, `E_UPSTREAM_QUARANTINE`) and
-  its narrative datapoint publishes normally. What is weakened is the attacker side of the isolation
-  suite: when `aegis` reaches for `helios`'s corpus and gets nothing back, that is the filter
-  working, but `aegis`'s own corpus was empty to begin with.
+  declares 26 and none exist as files. Its data blockers are unaffected — the evidence check reads
+  the manifest, and `E_OUT_OF_TOLERANCE` and `E_UPSTREAM_QUARANTINE` come from the lake. What is
+  weakened is the attacker side of the isolation suite: when `aegis` reaches for `helios`'s corpus
+  and gets nothing back, that is the filter working, but `aegis`'s own corpus was empty to begin with.
+- **Its blocker count is four offline and five in CI, and both are correct.** Offline the narrative
+  replays a recorded draft and `ESRS_E1-1_transition_plan` resolves. Live, the draft is written for
+  real, `check_draft` refuses it three times, and the datapoint fails with `E_RESOLVER_ERROR`. Any
+  count quoted for `aegis` is a count *in a mode*, and this README quotes both rather than picking
+  the flattering one.
 - **The manifests declare more evidence than exists.** `helios` declares 28 documents and ships 5.
   The evidence check reads the manifest, by design — untrusted content, trusted metadata — so
   retrieval works over a subset of what is declared.
@@ -515,19 +538,61 @@ branch requires them to be up to date with it before a merge.
 
 ## Cost
 
-Three different numbers, because "what does it cost" has three different answers.
+**Nothing is standing today.** The estate is provisioned by one dispatch, exercised, captured and
+destroyed. What follows is what it would cost *while it stands* — list prices for `eu-central-1`,
+against the resource inventory in `infra/`.
 
-| | |
-|---|---|
-| **At rest — under $1/month** | What the account holds today: the `bootstrap` layer only. A state bucket, a DynamoDB lock table on `PAY_PER_REQUEST`, one KMS key. Plus a VPC, four subnets and a gateway endpoint that survive teardown behind AWS-owned AgentCore interfaces, and cost nothing. |
-| **A demo block — $0.62 · $3.39 · $4.09** | Three bounded stand-up, capture, destroy blocks, from the bill rather than from an estimate. That is the unit this project is actually operated in. |
-| **Standing continuously — $13–15/day** | If it were left up: roughly $400/month, dominated by OpenSearch Serverless at two OCUs, $23/day at four with cross-AZ redundancy. This number exists to be avoided. |
+| Resource | Spec | Rate | Monthly |
+|---|---|---|---:|
+| **`knowledge` — the layer that dominates** | | | |
+| OpenSearch Serverless | 1 collection, **2-OCU floor** (1 indexing + 1 search), `production_topology = false` | $0.24/OCU-hr | **$350.40** |
+| Bedrock Knowledge Bases | 2 — evidence and regulatory, ingested on demand | per-token embedding | ~$1 |
+| Bedrock Guardrail | one policy set, pinned version | per text unit | < $1 |
+| **`foundation` — the network** | | | |
+| Interface VPC endpoints | **9 services × 2 AZs = 18 ENIs**, billed per ENI-hour whether or not anything calls them | $0.011/ENI-hr | **$144.54** |
+| NAT gateway | 1, in the first public subnet | $0.045/hr + $0.045/GB | **$32.85** + data |
+| S3 gateway endpoint | 1 | free | $0.00 |
+| KMS | 1 customer-managed key | $1/key-mo | $1.00 |
+| S3 | 4 buckets — evidence, reports, lake, Athena results — megabytes, lifecycled | $0.023/GB-mo | < $1 |
+| SNS · CloudWatch · SSM | alerts topic, log groups, parameters | list | ~$2 |
+| **`data` — the lakehouse** | | | |
+| Glue Data Catalog | 2 databases, 15 tables | free ≤ 1M objects | $0.00 |
+| Athena | 1 workgroup, tens of queries over a few MB | $5.00/TB scanned | < $0.01 |
+| **`agent` — the surface** | | | |
+| AgentCore Gateway · Runtime · Memory | 2 each, one per tenant surface | consumption — *rate not verified* | *unpriced* |
+| Cognito | 2 user pools | free ≤ 50k MAU | $0.00 |
+| ECR · Lambda · Secrets Manager | 1 image, 1 tool handler, 1 secret | list | ~$1.50 |
+| **`bootstrap` — applied once, never destroyed** | | | |
+| S3 state bucket · DynamoDB lock table · KMS | versioned, `PAY_PER_REQUEST`, 1 key | list | ~$1.50 |
+| **Total — standing, default topology** | | | **≈ $536 / month** |
+| **Total — with `production_topology = true`** | | 4 OCU instead of 2 | **≈ $886 / month** |
+| **Total — at rest, today** | `bootstrap` only | | **≈ $1.50 / month** |
 
-Avoiding it is structural. The deploy workflow takes a `days` input **with no default** — standing
-the estate up requires saying how long it is meant to live — every resource carries
-`attestor:expires-at`, a scheduled reaper destroys what has expired, and an AWS Budget attaches a
-deny policy to the deploy role at 100% of a 300 USD ceiling. The arithmetic, including why the OCU
-floor is two and not four, is in [docs/DAY-ONE.md](docs/DAY-ONE.md).
+**Three lines are 98% of the bill**, and only one of them is the interesting kind. OpenSearch
+Serverless at **$350.40** is a two-OCU floor that exists whether a query is ever asked. The nine
+interface endpoints at **$144.54** are the price of a private VPC with no route to the internet —
+each service the estate speaks to needs its own endpoint in each AZ, and they bill by the hour like
+the collection does. The NAT gateway is the remainder. Everything else in the estate, all four
+layers of it, is under ten dollars.
+
+**But it has never stood for a month, and that is the design.** Three real bounded blocks — stand
+up, capture, destroy — billed **$0.62, $3.39 and $4.09**. Those are measured, from the invoice, not
+modelled. `$4.09` is about eight hours at two OCUs.
+
+Keeping it that way is structural, not a habit:
+
+- The deploy workflow takes a `days` input **with no default**. Standing the estate up requires
+  saying how long it is meant to live.
+- Every resource carries `attestor:expires-at`, and a scheduled reaper destroys what has expired.
+- An AWS Budget attaches a **deny policy to the deploy role** at 100% of a 300 USD ceiling. Not an
+  email — an action. An alert that arrives while nobody is reading it has never stopped a bill.
+- `production_topology` defaults to `false`. Cross-AZ redundancy doubles the OCU floor to buy
+  availability that an estate rebuilt in half an hour does not need.
+
+*Two honesty notes. The AgentCore line is left unpriced rather than guessed — its consumption rates
+were not verified for this table, and a plausible number in a cost model is the same defect this
+project exists to prevent. And `docs/DAY-ONE.md` still records six interface endpoints at ~€95;
+`infra/foundation` now declares nine, which is the $144.54 line above.*
 
 Per report, the model spend is small enough to be interesting:
 
