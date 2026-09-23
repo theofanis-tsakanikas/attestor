@@ -18,15 +18,17 @@
     within the reporting window. A spend-based estimate for the gap was rejected as it
     would not be distinguishable from measured data in the disclosure. The category is
     therefore omitted and declared, and the three hauliers are contractually required to
-    report from FY2027 under the revised framework agreement.
+    report from FY2027 under the revised framework agreement. Renewed on re-review after
+    the first acceptance lapsed on 2026-09-15: the three hauliers missed the extended
+    deadline as well, so the gap and the reason for declaring it are unchanged.
   requested_by: Sustainability Data Lead
   approvals:
     - approver: M. Andreadis
       role: head_of_sustainability_reporting
-      approved_on: 2026-06-18
-      evidence_reference: SUS-BOARD-2026-041
+      approved_on: 2026-09-23
+      evidence_reference: SUS-BOARD-2026-058
     - approver: K. Vlachou
       role: chief_financial_officer
-      approved_on: 2026-06-19
-      evidence_reference: SUS-BOARD-2026-041
-  expires_on: 2026-09-15
+      approved_on: 2026-09-23
+      evidence_reference: SUS-BOARD-2026-058
+  expires_on: 2026-12-22
