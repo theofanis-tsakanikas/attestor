@@ -178,7 +178,11 @@ jobs:
         # It pins `boto3==1.35.49` exactly, and the application needs a botocore that
         # knows `bedrock-agentcore` — the API AgentCore Memory is written through. A
         # scanner is a tool; boto3 is the application. The scan itself is unchanged.
-        run: pipx install checkov
+        #
+        # Pinned. Unpinned, a release that added CKV_AWS_394 turned a green repository red with
+        # no change to the infrastructure — the gate moved, not the code. A new rule is adopted
+        # by bumping this line in a pull request, where it is read, not by the calendar.
+        run: pipx install checkov==3.3.19
       - run: terraform fmt -check -recursive infra
       - name: validate every layer against real provider schemas
         # `-backend=false`: no state, no credentials, nothing reached but the registry. This
