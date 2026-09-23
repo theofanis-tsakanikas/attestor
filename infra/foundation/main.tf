@@ -41,8 +41,17 @@ provider "aws" {
 }
 
 data "aws_caller_identity" "current" {}
+# The zones are named, not discovered. `state = "available"` alone returns whatever the region
+# offers today, so the day AWS adds a zone the subnet layout could change under an unchanged
+# plan. Naming the two this layer was built on keeps the set closed; `state` still refuses one
+# that is impaired.
 data "aws_availability_zones" "available" {
   state = "available"
+
+  filter {
+    name   = "zone-name"
+    values = ["${var.region}a", "${var.region}b"]
+  }
 }
 
 locals {
